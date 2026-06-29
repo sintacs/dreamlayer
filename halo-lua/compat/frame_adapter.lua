@@ -9,6 +9,10 @@
 ---
 --- Falls back to a no-op mock when frame is absent (keeps Python
 --- host tests and offline CI passing).
+---
+--- FIXED over 99ece13:
+---   - radial_rays signature unified with renderer.lua:
+---     (cx, cy, r_min, r_max, n_rays, color, bloom_r)
 
 local math = math
 
@@ -101,7 +105,7 @@ end
 --- ghost segs drawn with ghost_color
 local function polar_segments(cx, cy, r_inner, r_outer, n_segs, lit_segs, color, ghost_color)
   if not HAS_FRAME then return end
-  ghost_color = ghost_color or color  -- caller may supply same color at low alpha
+  ghost_color = ghost_color or color
   local lit_set = {}
   for _, v in ipairs(lit_segs) do lit_set[v] = true end
   local step = (2 * math.pi) / n_segs
@@ -119,6 +123,8 @@ end
 
 --- APPROX: radial_rays
 --- frame.display.line per ray + frame.display.circle at tip for bloom dot
+--- FIXED: signature is now (cx, cy, r_min, r_max, n_rays, color, bloom_r)
+--- to match renderer.lua local radial_rays — both must be identical.
 local function radial_rays(cx, cy, r_min, r_max, n_rays, color, bloom_r)
   if not HAS_FRAME then return end
   bloom_r = bloom_r or 2
@@ -141,9 +147,8 @@ end
 local function check_glyph(cx, cy, size, color)
   if not HAS_FRAME then return end
   local s = size / 60.0
-  -- 3-point checkmark
-  local ax, ay = cx - math.floor(21*s), cy
-  local bx, by = cx - math.floor(3*s),  cy + math.floor(18*s)
+  local ax, ay   = cx - math.floor(21*s), cy
+  local bx, by   = cx - math.floor(3*s),  cy + math.floor(18*s)
   local ccx, ccy = cx + math.floor(21*s), cy - math.floor(22*s)
   frame.display.line(ax, ay, bx, by, color)
   frame.display.line(bx, by, ccx, ccy, color)
@@ -169,21 +174,17 @@ local function shield_glyph(cx, cy, size, color, pause_bars)
     local bar_h = math.floor(size * 0.24)
     local bar_w = math.max(3, math.floor(size * 0.08))
     local gap   = math.max(2, math.floor(size * 0.07))
-    -- left bar
     frame.display.rect(cx - gap - bar_w, cy - bar_h, bar_w, bar_h * 2, color, true)
-    -- right bar
     frame.display.rect(cx + gap,          cy - bar_h, bar_w, bar_h * 2, color, true)
   end
 end
 
 --- APPROX: point_cloud_text
 --- True per-pixel particle rendering is not feasible in Lua.
---- Approximation: render the text normally at reduced alpha / ghost color.
---- The card is still distinguishable; visual fidelity ≠ Python version.
+--- Approximation: render the text normally.
 local function point_cloud_text(text, cx, cy, font_size, density, color)
   if not HAS_FRAME then return end
-  -- Use the real text call; density controls whether we even draw it
-  if density and density < 0.05 then return end  -- effectively invisible
+  if density and density < 0.05 then return end
   frame.display.text(text, cx, cy, color)
 end
 

@@ -2,6 +2,9 @@
 --- Ported to real Brilliant Labs frame.* API.
 --- Loads frame_adapter first so all downstream modules can use either
 --- frame.* directly or the _G.halo compatibility shim.
+---
+--- FIXED over 99ece13:
+---   - pcall error path now calls print(err) so emulator console shows crashes
 
 require("compat.frame_adapter")   -- builds _G.halo; safe if frame absent
 
@@ -87,10 +90,14 @@ end
 boot()
 
 while true do
-  pcall(function()
+  local ok, err = pcall(function()
     renderer.tick()
     if HAS_FRAME then
       frame.sleep(0.1)
     end
   end)
+  -- Surface runtime errors to emulator console instead of silently swallowing
+  if not ok and err then
+    print("[memoscape] loop error: " .. tostring(err))
+  end
 end
