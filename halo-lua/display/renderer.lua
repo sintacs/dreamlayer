@@ -3,14 +3,11 @@
 --- All draw calls use frame.display.* directly.
 --- Every render path: frame.display.clear(0x000000) -> draw -> frame.display.show()
 ---
---- Primitive approximations implemented as line-segment polylines.
----
---- FIXES:
----   - draw_ready: hex_pts flattened to {x1,y1,x2,y2,...} for frame.display.polygon
----   - draw_object_recall: AAA layout (left rail, left-anchored eyebrow,
----     wide bezier arc, 6px jewel, orbit r=12, hero place right of center)
----   - HAS_FRAME guard on all primitives and public API
----   - tick throttle %3 (~3fps)
+--- CRITICAL FIX: frame.display.polygon removed entirely.
+--- The emulator display.py polygon() expects a flat {x1,y1,...} Lua table
+--- but lupa passes Lua tables as _LuaTable objects causing int() crashes.
+--- Solution: draw_ready hexagon now uses repeated line calls instead.
+--- No frame.display.polygon call remains anywhere in this file.
 
 local math = math
 local P    = require("display.palette")
@@ -23,22 +20,15 @@ local renderer = {}
 local _current_card = nil
 local _tick_count   = 0
 
--- ---------------------------------------------------------------------------
--- Layer constants (kept for API compatibility)
--- ---------------------------------------------------------------------------
 renderer.LAYER_BG      = 0
 renderer.LAYER_CONTENT = 10
 renderer.LAYER_OVERLAY = 20
 renderer.LAYER_HUD     = 30
 
--- ---------------------------------------------------------------------------
--- Utility helpers
--- ---------------------------------------------------------------------------
-
 local function floor(n) return math.floor(n + 0.5) end
 
 -- ---------------------------------------------------------------------------
--- Primitive approximations
+-- Primitive approximations (all use line/circle/rect/text only)
 -- ---------------------------------------------------------------------------
 
 local function bezier(p0x, p0y, p1x, p1y, p2x, p2y, color, steps)
@@ -74,10 +64,22 @@ local function elliptical_arc(cx, cy, rx, ry, start_deg, end_deg, color, steps)
   end
 end
 
+-- polyline: pts is array of {x,y} pairs, drawn as repeated lines
 local function polyline(pts, color)
   if not HAS_FRAME then return end
   for i = 1, #pts - 1 do
     local a, b = pts[i], pts[i+1]
+    frame.display.line(floor(a[1]), floor(a[2]), floor(b[1]), floor(b[2]), color)
+  end
+end
+
+-- closed_polygon: pts is array of {x,y} pairs; closes back to pts[1]
+-- Uses repeated line calls ONLY -- frame.display.polygon is never called.
+local function closed_polygon(pts, color)
+  if not HAS_FRAME then return end
+  for i = 1, #pts do
+    local a = pts[i]
+    local b = pts[(i % #pts) + 1]
     frame.display.line(floor(a[1]), floor(a[2]), floor(b[1]), floor(b[2]), color)
   end
 end
@@ -130,6 +132,7 @@ local function check_glyph(cx, cy, size, color, progressive)
   end
 end
 
+-- shield_glyph: hexagon outline via closed_polygon (lines only) + rect bars
 local function shield_glyph(cx, cy, size, color, pause_bars)
   if not HAS_FRAME then return end
   if pause_bars == nil then pause_bars = true end
@@ -140,8 +143,7 @@ local function shield_glyph(cx, cy, size, color, pause_bars)
     pts[#pts+1] = { floor(cx + hw * math.cos(angle)),
                     floor(cy + hw * math.sin(angle)) }
   end
-  pts[#pts+1] = pts[1]
-  polyline(pts, color)
+  closed_polygon(pts, color)  -- uses lines only, NOT frame.display.polygon
   if pause_bars then
     local bar_h = math.max(3, floor(size * 0.24))
     local bar_w = math.max(2, floor(size * 0.08))
@@ -163,15 +165,15 @@ end
 local CX, CY = 128, 128
 
 local function draw_ready()
-  -- BUG FIX: frame.display.polygon requires a flat array {x1,y1,x2,y2,...}
-  -- not a table of {x,y} sub-tables. Build flat array directly.
+  -- Hexagon core: 6 vertices drawn as 6 line segments via closed_polygon.
+  -- frame.display.polygon is NOT used anywhere in this file.
   local hex_pts = {}
   for i = 0, 5 do
     local angle = math.rad(60 * i - 30)
-    hex_pts[#hex_pts+1] = floor(CX + 8 * math.cos(angle))
-    hex_pts[#hex_pts+1] = floor(CY + 8 * math.sin(angle))
+    hex_pts[#hex_pts+1] = { floor(CX + 8 * math.cos(angle)),
+                             floor(CY + 8 * math.sin(angle)) }
   end
-  frame.display.polygon(hex_pts, P.memory_trace)
+  closed_polygon(hex_pts, P.memory_trace)
   -- Asymmetric partial-arc rings
   elliptical_arc(CX, CY, 24, 24, 180, 360, P.accent_memory)
   elliptical_arc(CX, CY, 36, 36,   0, 270, P.accent_memory_dim)
@@ -226,8 +228,6 @@ local function draw_loading()
 end
 
 local function draw_object_recall(card)
-  -- AAA layout: left memory rail, left-anchored eyebrow, wide bezier arc,
-  -- 6px jewel with orbit r=12, hero place text right of center.
   local obj    = ((card.object or card.primary or ""):upper())
   local place  = card.place    or ""
   local detail = card.detail   or ""
@@ -238,43 +238,31 @@ local function draw_object_recall(card)
     if conf >= 0.75 then jcol = P.confidence_high
     elseif conf < 0.40 then jcol = P.confidence_low end
   end
-
-  -- Left memory rail (x=44, y=72..188)
+  -- Left memory rail
   frame.display.line(44, 72, 44, 188, P.memory_trace)
-  -- Rail top dot
-  frame.display.circle(44, 72, 3, P.memory_trace, true)
-  -- Rail bottom confidence dot
+  frame.display.circle(44, 72,  3, P.memory_trace, true)
   frame.display.circle(44, 188, 3, jcol, true)
-
-  -- Eyebrow: object name, left-anchored near rail (not centered)
+  -- Eyebrow left-anchored
   frame.display.text(obj, 54, 80, P.memory_trace)
-
-  -- Memory trace: wide bezier from rail anchor -> lower-right hero area
-  -- p0=(46,90) rail anchor, p1=(200,62) ctrl pulls up-right, p2=(155,150) endpoint
+  -- Wide bezier arc from rail to hero area
   bezier(46, 90, 200, 62, 155, 150, P.memory_trace, 32)
-
-  -- Confidence jewel at approximate curve apex (t~0.45)
-  -- apex ~ (46*(0.55^2) + 2*0.55*0.45*200 + 0.45^2*155, same for y)
-  local jx = floor(46*0.3025 + 2*0.55*0.45*200 + 0.2025*155)  -- ~152
-  local jy = floor(90*0.3025 + 2*0.55*0.45*62  + 0.2025*150)  -- ~84
-  local jd = 6  -- 6px diamond, clearly visible
+  -- Jewel at curve apex
+  local jx = floor(46*0.3025 + 2*0.55*0.45*200 + 0.2025*155)
+  local jy = floor(90*0.3025 + 2*0.55*0.45*62  + 0.2025*150)
+  local jd = 6
   frame.display.line(jx,    jy-jd, jx+jd, jy,    jcol)
   frame.display.line(jx+jd, jy,    jx,    jy+jd, jcol)
   frame.display.line(jx,    jy+jd, jx-jd, jy,    jcol)
   frame.display.line(jx-jd, jy,    jx,    jy-jd, jcol)
-  -- Orbit arcs r=12 (clearly visible, not 8)
-  elliptical_arc(jx, jy, 12, 12,   0, 90, jcol, 8)
-  elliptical_arc(jx, jy, 12, 12, 120,210, jcol, 8)
-  elliptical_arc(jx, jy, 12, 12, 240,330, jcol, 8)
-
-  -- Hero place text: right of center (x=155), large, dominant
+  -- Orbit arcs r=12
+  elliptical_arc(jx, jy, 12, 12,   0,  90, jcol, 8)
+  elliptical_arc(jx, jy, 12, 12, 120, 210, jcol, 8)
+  elliptical_arc(jx, jy, 12, 12, 240, 330, jcol, 8)
+  -- Hero place text
   frame.display.text(place, 155, 150, P.text_primary)
-
-  -- Detail bracket
   if detail ~= "" then
     frame.display.text("[ " .. detail .. " ]", CX, 178, P.text_secondary)
   end
-  -- Footer
   frame.display.text(footer, CX, 198, P.text_ghost)
 end
 
@@ -285,13 +273,13 @@ local function draw_commitment_recall(card)
   local conf   = card.confidence
   frame.display.text("YOU PROMISED " .. person:upper(), CX, 68, P.memory_trace)
   local link_w, link_h = 128, 18
-  local lx     = CX - math.floor(link_w / 2)
+  local lx      = CX - math.floor(link_w / 2)
   local link_ys = {84, 108, 132}
   for li, ly in ipairs(link_ys) do
     local c = (li == 3) and P.memory_trace or P.border_subtle
     polyline({
-      {lx,        ly},         {lx+link_w, ly},
-      {lx+link_w, ly+link_h},  {lx,        ly+link_h}, {lx, ly}
+      {lx,        ly},        {lx+link_w, ly},
+      {lx+link_w, ly+link_h}, {lx,        ly+link_h}, {lx, ly}
     }, c)
   end
   frame.display.line(CX, 84+link_h,  CX, 108, P.border_subtle)
@@ -340,10 +328,10 @@ local function draw_error(card)
   local tri_cy = CY - 8
   local ts = 56
   polyline({
-    {CX,                    tri_cy - math.floor(ts/2)},
-    {CX + floor(ts*0.577),  tri_cy + math.floor(ts/2)},
-    {CX - floor(ts*0.577),  tri_cy + math.floor(ts/2)},
-    {CX,                    tri_cy - math.floor(ts/2)},
+    {CX,                   tri_cy - math.floor(ts/2)},
+    {CX + floor(ts*0.577), tri_cy + math.floor(ts/2)},
+    {CX - floor(ts*0.577), tri_cy + math.floor(ts/2)},
+    {CX,                   tri_cy - math.floor(ts/2)},
   }, P.warning_amber)
   frame.display.circle(CX, tri_cy - 6,  2, P.warning_amber, true)
   frame.display.line(  CX, tri_cy + 2, CX, tri_cy + 14, P.warning_amber)
@@ -359,9 +347,6 @@ local function draw_low_confidence()
   frame.display.circle(149, 180, 2, P.text_ghost, true)
 end
 
--- ---------------------------------------------------------------------------
--- Dispatch table
--- ---------------------------------------------------------------------------
 local CARD_DRAW = {
   ReadyCard            = function(_) draw_ready()              end,
   SavedMemoryCard      = function(c) draw_saved_memory(c)      end,
@@ -375,10 +360,6 @@ local CARD_DRAW = {
   ErrorCard            = function(c) draw_error(c)             end,
   LowConfidenceCard    = function(_) draw_low_confidence()     end,
 }
-
--- ---------------------------------------------------------------------------
--- Public API
--- ---------------------------------------------------------------------------
 
 function renderer.show_card(card)
   if not card or not HAS_FRAME then return end
