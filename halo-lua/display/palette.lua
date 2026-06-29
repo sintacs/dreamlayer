@@ -26,6 +26,8 @@ M.confidence_high   = 0xAA00FF
 M.privacy_danger    = 0xFF4444
 M.privacy_caution   = 0xFF8800
 M.warning_amber     = 0xFF6600
-M.ghost_white       = 0xFFFFFF  -- use with alpha separately; Lua hex can't encode alpha in one literal
-
+-- If your renderer expects ARGB in a single int with alpha in top byte:
+M.ghost_white       = 0x08FFFFFF   -- alpha=0x08 (3%), white=0xFFFFFF
+-- Or if it takes color+alpha separately, just:
+-- M.ghost_white       = 0xFFFFFF
 return M
