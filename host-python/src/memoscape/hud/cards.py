@@ -172,7 +172,7 @@ def proactive_memory(
         "primary":    summary,
         "person":     person,
         "confidence": confidence,
-        "lines":      ["Last time here", summary, *(([f"With {person}"] if person else [])],
+        "lines":      ["Last time here", summary, *([f"With {person}"] if person else [])],
     }
     if footer is not None:
         payload["footer"] = footer
