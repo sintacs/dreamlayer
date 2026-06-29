@@ -1,29 +1,141 @@
+"""cards.py — Python card payload constructors.
+
+Each function returns a plain dict that mirrors the Lua card descriptor.
+The dict is serialised by real_bridge.py / emulator_bridge.py and consumed
+by halo-lua/display/cards.lua on the device side.
+
+All coordinates, sizes, and color tokens must match cards.lua exactly.
+"""
 from __future__ import annotations
 from . import themes as T
 
-def _card(type_, **kw):
-    p = {"type": type_}
-    p.update({k: v for k, v in kw.items() if v is not None})
-    return p
 
-def ready():               return _card("ReadyCard", primary="Memoscape", footer="Ready", accent=T.ACCENT_MEMORY)
-def saved_memory(label):   return _card("SavedMemoryCard", eyebrow="Saved", primary=label or "Memory saved", accent=T.ACCENT_SUCCESS, confidence=1.0)
-def query_listening():     return _card("QueryListeningCard", eyebrow="Listening", primary="…", accent=T.ACCENT_ATTENTION)
-def loading():             return _card("LoadingCard", primary="Thinking…", accent=T.ACCENT_MEMORY)
-def object_recall(o):      return _card("ObjectRecallCard", primary=o["object"], lines=[o["place"], o.get("detail")], footer=o.get("last_seen"), accent=T.ACCENT_MEMORY, confidence=o.get("confidence"))
-def commitment_recall(c):  return _card("CommitmentRecallCard", eyebrow=f"You promised {c.get('person','')}", primary=c["task"], footer=c.get("due"), accent=T.ACCENT_MEMORY, confidence=c.get("confidence"))
-def proactive_memory(p):   return _card("ProactiveMemoryCard", eyebrow="Last time here", primary=p["summary"], footer=(f"With {p['person']}" if p.get("person") else None), accent=T.ACCENT_ATTENTION, confidence=p.get("confidence"))
-def person_context(p):     return _card("PersonContextCard", eyebrow=p["person"], primary=p["headline"], lines=[p.get("detail")], accent=T.ACCENT_MEMORY, confidence=p.get("confidence"))
-def privacy_paused():      return _card("PrivacyPausedCard", primary="Memory paused", lines=["Nothing is being captured"], accent=T.STATUS_PAUSED)
-def error(msg="Try again"): return _card("ErrorCard", eyebrow="Something went wrong", primary=msg, accent=T.ACCENT_ERROR)
-def low_confidence():      return _card("LowConfidenceCard", eyebrow="Not sure", primary="No clear memory", lines=["Try rephrasing"], accent=T.STATUS_PAUSED, confidence=0.2)
+def ready() -> dict:
+    return {"type": "ReadyCard", "dismiss_ms": 0}
 
-ALL_SAMPLES = {
-    "ready": ready(), "saved": saved_memory("Keys on table"),
-    "listening": query_listening(), "loading": loading(),
-    "object_recall": object_recall({"object":"Keys","place":"Kitchen table","detail":"Beside blue notebook","last_seen":"Last seen 7:42 PM","confidence":0.86}),
-    "commitment": commitment_recall({"person":"Jordan","task":"Send the invoice","due":"Tomorrow before noon","confidence":0.8}),
-    "proactive": proactive_memory({"summary":"You discussed the invoice","person":"Jordan","confidence":0.7}),
-    "person": person_context({"person":"Jordan","headline":"Owes you a reply","detail":"Invoice thread","confidence":0.6}),
-    "paused": privacy_paused(), "error": error("Disconnected"), "low_conf": low_confidence(),
-}
+
+def saved_memory(label: str) -> dict:
+    return {
+        "type": "SavedMemoryCard",
+        "dismiss_ms": 1200,
+        "primary": label,
+        "lines": [label],
+    }
+
+
+def query_listening() -> dict:
+    return {"type": "QueryListeningCard", "dismiss_ms": 0}
+
+
+def loading() -> dict:
+    return {"type": "LoadingCard", "dismiss_ms": 0}
+
+
+def object_recall(
+    object_name: str,
+    place: str,
+    detail: str = "",
+    last_seen: str = "",
+    confidence: float | None = None,
+) -> dict:
+    if len(detail) > 18:
+        detail = detail[:17] + "\u2026"
+    return {
+        "type": "ObjectRecallCard",
+        "dismiss_ms": 3500,
+        "primary": place,
+        "object": object_name,
+        "detail": detail,
+        "last_seen": last_seen,
+        "confidence": confidence,
+        "conf_color": T.conf_color(confidence),
+        # Layout spec (mirrors cards.lua pixel positions)
+        "layout": {
+            "eyebrow":   {"x": 128, "y": 76,  "size": "sm",   "color": T.ACCENT_MEMORY,  "tracking": 2},
+            "separator": {"x1": 54, "x2": 202, "y": 92},
+            "vbar":      {"x": 22, "y1": 104, "y2": 128, "w": 2, "color": T.ACCENT_MEMORY},
+            "primary":   {"x": 128, "y": 116, "size": "hero", "color": T.TEXT_PRIMARY},
+            "detail":    {"x": 128, "y": 148, "size": "md",   "color": T.TEXT_SECONDARY},
+            "footer":    {"x": 128, "y": 173, "size": "sm",   "color": T.TEXT_GHOST},
+            "conf_dot":  {"x": 128, "y": 196, "r": 3},
+        },
+    }
+
+
+def commitment_recall(
+    person: str,
+    task: str,
+    due: str = "",
+    confidence: float | None = None,
+) -> dict:
+    return {
+        "type": "CommitmentRecallCard",
+        "dismiss_ms": 4000,
+        "primary": task,
+        "person": person,
+        "due": due,
+        "confidence": confidence,
+        "conf_color": T.conf_color(confidence),
+        "lines": [f"You promised {person}", task, due],
+    }
+
+
+def proactive_memory(
+    summary: str,
+    person: str | None = None,
+    confidence: float | None = None,
+) -> dict:
+    return {
+        "type": "ProactiveMemoryCard",
+        "dismiss_ms": 3500,
+        "primary": summary,
+        "person": person,
+        "confidence": confidence,
+        "lines": [
+            "Last time here",
+            summary,
+            *([f"With {person}"] if person else []),
+        ],
+    }
+
+
+def person_context(
+    person: str,
+    headline: str = "",
+    detail: str = "",
+) -> dict:
+    return {
+        "type": "PersonContextCard",
+        "dismiss_ms": 3500,
+        "primary": person,
+        "headline": headline,
+        "detail": detail,
+        "lines": [person, headline, detail],
+    }
+
+
+def privacy_paused() -> dict:
+    return {
+        "type": "PrivacyPausedCard",
+        "dismiss_ms": 0,
+        "primary": "Memory paused",
+        "lines": ["Memory paused", "Nothing is being captured"],
+    }
+
+
+def error_card(msg: str = "Try again") -> dict:
+    return {
+        "type": "ErrorCard",
+        "dismiss_ms": 4000,
+        "primary": msg,
+        "lines": ["Something went wrong", msg],
+    }
+
+
+def low_confidence() -> dict:
+    return {
+        "type": "LowConfidenceCard",
+        "dismiss_ms": 3000,
+        "primary": "Not sure",
+        "lines": ["Not sure", "Try rephrasing"],
+    }
