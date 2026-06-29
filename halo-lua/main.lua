@@ -2,25 +2,18 @@
 --- Ported to real Brilliant Labs frame.* API.
 --- Loads frame_adapter first so all downstream modules can use either
 --- frame.* directly or the _G.halo compatibility shim.
----
---- FIXED over 99ece13:
----   - pcall error path now calls print(err) so emulator console shows crashes
 
 require("compat.frame_adapter")   -- builds _G.halo; safe if frame absent
 
-local renderer    = require("display.renderer")
-local cards       = require("display.cards")
-local host_comm   = require("ble.host_comm")
+local renderer      = require("display.renderer")
+local cards         = require("display.cards")
+local host_comm     = require("ble.host_comm")
 local state_machine = require("app.state_machine")
-local session     = require("app.session")
-local E           = require("app.events")
+local session       = require("app.session")
+local E             = require("app.events")
 
--- Detect real frame API
 local HAS_FRAME = (type(_G.frame) == "table")
 
--- ---------------------------------------------------------------------------
--- BLE -> state machine event mapping
--- ---------------------------------------------------------------------------
 local BUTTON_MAP = {
   single = E.EVENTS.single_click,
   double = E.EVENTS.double_click,
@@ -48,56 +41,36 @@ local function on_ble_data(raw)
   end
 end
 
--- ---------------------------------------------------------------------------
--- Boot
--- ---------------------------------------------------------------------------
 local function boot()
-  -- Register BLE receive callback (frame API: function-call registration)
   if HAS_FRAME then
     frame.bluetooth.receive_callback(on_ble_data)
-
-    -- Button callbacks
-    frame.button.single(function()
-      state_machine.dispatch(E.EVENTS.single_click)
-    end)
-    frame.button.double(function()
-      state_machine.dispatch(E.EVENTS.double_click)
-    end)
-    frame.button.long(function()
-      state_machine.dispatch(E.EVENTS.long_press)
-    end)
-
-    -- IMU tap
-    frame.imu.tap_callback(function()
-      state_machine.dispatch(E.EVENTS.imu_tap)
-    end)
+    frame.button.single(function() state_machine.dispatch(E.EVENTS.single_click) end)
+    frame.button.double(function() state_machine.dispatch(E.EVENTS.double_click) end)
+    frame.button.long(function()   state_machine.dispatch(E.EVENTS.long_press)   end)
+    frame.imu.tap_callback(function() state_machine.dispatch(E.EVENTS.imu_tap)   end)
   end
-
-  -- Init state machine and show ReadyCard
   state_machine.init(renderer, nil, function(old, new, ev) end)
   state_machine.dispatch(E.EVENTS.startup)
-
-  -- Render ReadyCard immediately so emulator has something to show
   renderer.show_card(cards.ready())
-
-  -- Signal host that Lua side is ready
-  print(0)
+  print(0)  -- signal host: Lua ready
 end
 
--- ---------------------------------------------------------------------------
--- Main loop
--- ---------------------------------------------------------------------------
 boot()
 
+-- Main loop: break cleanly when emulator stops rather than spamming console.
 while true do
   local ok, err = pcall(function()
     renderer.tick()
     if HAS_FRAME then
-      frame.sleep(0.1)
+      frame.sleep(0.05)
     end
   end)
-  -- Surface runtime errors to emulator console instead of silently swallowing
-  if not ok and err then
-    print("[memoscape] loop error: " .. tostring(err))
+  if not ok then
+    -- "Emulator stopped" is a normal shutdown signal, not a real error.
+    local msg = tostring(err or "")
+    if msg:find("Emulator stopped") or msg:find("stopped") then
+      break  -- exit cleanly, no spam
+    end
+    print("[memoscape] error: " .. msg)
   end
 end
