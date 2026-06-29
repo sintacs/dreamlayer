@@ -1,0 +1,6 @@
+{
+  "place": {"name": "Living room couch", "signature": "home_living"},
+  "object": {"name": "Glasses", "near": "Left armrest"},
+  "last_seen": "Last seen 2 hours ago",
+  "confidence": 0.79
+}

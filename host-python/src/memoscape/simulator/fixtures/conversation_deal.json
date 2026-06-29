@@ -1,0 +1,13 @@
+{
+  "participants": ["You", "Marcus"],
+  "summary": "Discussed partnership deal with Marcus",
+  "place": {"name": "Coffee shop", "signature": "coffeeshop_a"},
+  "turns": [
+    {"speaker": "Marcus", "text": "Can you send the contract by Friday?"},
+    {"speaker": "You", "text": "I will send the contract before Friday EOD.",
+     "commitment": {"to": "Marcus", "task": "Send the contract", "due": "Friday EOD", "confidence": 0.85}},
+    {"speaker": "Marcus", "text": "And the pricing deck too if possible."},
+    {"speaker": "You", "text": "I'll include the pricing deck.",
+     "commitment": {"to": "Marcus", "task": "Include the pricing deck", "due": "Friday EOD", "confidence": 0.75}}
+  ]
+}

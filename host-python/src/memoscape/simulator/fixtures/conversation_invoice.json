@@ -1,0 +1,10 @@
+{
+  "participants": ["You", "Jordan"],
+  "summary": "Discussed invoice with Jordan",
+  "place": {"name": "Office", "signature": "work_office"},
+  "turns": [
+    {"speaker": "Jordan", "text": "Can you send the invoice?"},
+    {"speaker": "You", "text": "I will send the invoice tomorrow.",
+     "commitment": {"to": "Jordan", "task": "Send the invoice", "due": "Tomorrow before noon", "confidence": 0.8}}
+  ]
+}

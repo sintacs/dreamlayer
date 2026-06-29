@@ -1,0 +1,6 @@
+{
+  "place": {"name": "Office", "signature": "work_office"},
+  "summary": "You discussed the invoice",
+  "person": "Jordan",
+  "confidence": 0.7
+}

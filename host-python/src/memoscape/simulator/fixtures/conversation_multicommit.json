@@ -1,0 +1,13 @@
+{
+  "participants": ["You", "Sofia"],
+  "summary": "Logistics planning with Sofia before the tournament",
+  "place": {"name": "Gym office", "signature": "labyrinth_office"},
+  "turns": [
+    {"speaker": "Sofia", "text": "Did you book the van?"},
+    {"speaker": "You", "text": "I promise I will book the van by Wednesday.",
+     "commitment": {"to": "Sofia", "task": "Book the van", "due": "Wednesday", "confidence": 0.9}},
+    {"speaker": "Sofia", "text": "And the hotel too?"},
+    {"speaker": "You", "text": "Yes I will handle the hotel reservation.",
+     "commitment": {"to": "Sofia", "task": "Handle hotel reservation", "due": "Before the tournament", "confidence": 0.8}}
+  ]
+}
