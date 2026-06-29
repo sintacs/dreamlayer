@@ -1,38 +1,19 @@
-"""renderer.py — Pillow-based 256×256 card renderer for emulator previews.
 
-Produces PNG snapshots of each card type at the final pixel positions
-specified in cards.lua and the design spec.
-
-Used by:
-  - scripts/render_samples.py  (exports assets/hud/samples/*.png)
-  - emulator_bridge.py         (on-screen preview in dev mode)
-
-NOT used on-device. On device, the Lua renderer reads the card dict directly.
-"""
+"""renderer.py — Pillow-based 256x256 HUD renderer."""
 from __future__ import annotations
-import math
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from . import themes as T
-from . import cards as C
 
 SIZE = 256
-CENTER = (128, 128)
 
-# Font sizes (px) per size token — tuned for 256px display
 FONT_PX = {
-    "hero": 22,   # SIZE_HERO: largest, primary answer
+    "hero": 22,
     "xl":   19,
-    "lg":   16,
+    "lg":   17,
     "md":   13,
     "sm":   10,
 }
-
-# Safe margins
-SAFE_L = 22
-SAFE_R = 234
-SAFE_T = 32
-SAFE_B = 224
 
 
 def _hex_to_rgb(h: int) -> tuple[int, int, int]:
@@ -41,17 +22,23 @@ def _hex_to_rgb(h: int) -> tuple[int, int, int]:
 
 def _font(size_token: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     px = FONT_PX.get(size_token, 13)
-    try:
-        return ImageFont.truetype("DejaVuSans-Bold.ttf", px)
-    except OSError:
+    candidates = [
+        "DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/Library/Fonts/Arial Bold.ttf",
+    ]
+    for path in candidates:
         try:
-            return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", px)
-        except OSError:
-            return ImageFont.load_default()
+            return ImageFont.truetype(path, px)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default()
 
 
 def _mask() -> Image.Image:
-    """Circular mask: 1=visible inside circle, 0=clipped."""
     m = Image.new("L", (SIZE, SIZE), 0)
     ImageDraw.Draw(m).ellipse([0, 0, SIZE - 1, SIZE - 1], fill=255)
     return m
@@ -62,42 +49,69 @@ class CardRenderer:
         self._mask = _mask()
 
     def render(self, card: dict) -> Image.Image:
-        """Render a card dict to a 256×256 RGBA PIL Image."""
         img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 255))
         draw = ImageDraw.Draw(img, "RGBA")
-        ctype = card.get("type", "")
-
-        if ctype == "ReadyCard":            self._ready(draw, card)
-        elif ctype == "SavedMemoryCard":    self._saved_memory(draw, card)
-        elif ctype == "QueryListeningCard": self._query_listening(draw, card)
-        elif ctype == "LoadingCard":        self._loading(draw, card)
-        elif ctype == "ObjectRecallCard":   self._object_recall(draw, card)
-        elif ctype == "CommitmentRecallCard": self._commitment_recall(draw, card)
-        elif ctype == "ProactiveMemoryCard": self._proactive_memory(draw, card)
-        elif ctype == "PersonContextCard":  self._person_context(draw, card)
-        elif ctype == "PrivacyPausedCard":  self._privacy_paused(draw, card)
-        elif ctype == "ErrorCard":          self._error_card(draw, card)
-        elif ctype == "LowConfidenceCard":  self._low_confidence(draw, card)
-
-        # Apply circular clip
+        dispatch = {
+            "ReadyCard":            self._ready,
+            "SavedMemoryCard":      self._saved_memory,
+            "QueryListeningCard":   self._query_listening,
+            "LoadingCard":          self._loading,
+            "ObjectRecallCard":     self._object_recall,
+            "CommitmentRecallCard": self._commitment_recall,
+            "ProactiveMemoryCard":  self._proactive_memory,
+            "PersonContextCard":    self._person_context,
+            "PrivacyPausedCard":    self._privacy_paused,
+            "ErrorCard":            self._error_card,
+            "LowConfidenceCard":    self._low_confidence,
+        }
+        fn = dispatch.get(card.get("type", ""))
+        if fn:
+            fn(draw, card)
         img.putalpha(self._mask)
         return img
 
     def save(self, card: dict, path: str | Path) -> None:
         self.render(card).save(str(path))
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
     def _text(self, draw, x, y, text, size, color, anchor="mm"):
-        draw.text((x, y), text, font=_font(size), fill=_hex_to_rgb(color), anchor=anchor)
+        draw.text((x, y), str(text), font=_font(size),
+                  fill=_hex_to_rgb(color), anchor=anchor)
+
+    def _multiline_text(self, draw, x, y, text, size, color, max_width=192):
+        font = _font(size)
+        words = str(text).split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            test = (current + " " + word).strip()
+            try:
+                w = font.getlength(test)
+            except AttributeError:
+                w = len(test) * FONT_PX.get(size, 13) * 0.6
+            if w <= max_width:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        if not lines:
+            return
+        line_h = FONT_PX.get(size, 13) + 5
+        total_h = len(lines) * line_h
+        start_y = y - total_h / 2 + line_h / 2
+        for i, line in enumerate(lines):
+            draw.text((x, start_y + i * line_h), line, font=font,
+                      fill=_hex_to_rgb(color), anchor="mm")
 
     def _hline(self, draw, x1, x2, y, color, alpha=255):
         r, g, b = _hex_to_rgb(color)
         draw.line([(x1, y), (x2, y)], fill=(r, g, b, alpha), width=1)
 
-    def _vbar(self, draw, x, y1, y2, width, color):
-        draw.rectangle([x, y1, x + width - 1, y2], fill=_hex_to_rgb(color))
+    def _vbar(self, draw, x, y1, y2, width, color, alpha=255):
+        r, g, b = _hex_to_rgb(color)
+        draw.rectangle([x, y1, x + width - 1, y2], fill=(r, g, b, alpha))
 
     def _dot(self, draw, x, y, r, color, alpha=255):
         r_, g_, b_ = _hex_to_rgb(color)
@@ -105,59 +119,76 @@ class CardRenderer:
 
     def _circle(self, draw, cx, cy, r, stroke, color, alpha=255):
         r_, g_, b_ = _hex_to_rgb(color)
-        draw.ellipse(
-            [cx - r, cy - r, cx + r, cy + r],
-            outline=(r_, g_, b_, alpha), width=stroke
-        )
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                     outline=(r_, g_, b_, alpha), width=stroke)
 
     def _arc(self, draw, cx, cy, r, start_deg, end_deg, stroke, color, alpha=255):
         r_, g_, b_ = _hex_to_rgb(color)
-        box = [cx - r, cy - r, cx + r, cy + r]
-        draw.arc(box, start=start_deg, end=end_deg,
+        draw.arc([cx - r, cy - r, cx + r, cy + r],
+                 start=start_deg, end=end_deg,
                  fill=(r_, g_, b_, alpha), width=stroke)
 
-    # ------------------------------------------------------------------
-    # Card renderers
-    # ------------------------------------------------------------------
+    def _pause_glyph(self, draw, cx, cy, color):
+        r_, g_, b_ = _hex_to_rgb(color)
+        draw.ellipse([cx - 20, cy - 20, cx + 20, cy + 20],
+                     outline=(r_, g_, b_, 255), width=2)
+        draw.rectangle([cx - 8, cy - 8, cx - 4, cy + 8], fill=(r_, g_, b_, 255))
+        draw.rectangle([cx + 2, cy - 8, cx + 6, cy + 8], fill=(r_, g_, b_, 255))
+
+    def _warning_triangle(self, draw, cx, cy, h, stroke, color, alpha=255):
+        r_, g_, b_ = _hex_to_rgb(color)
+        half_base = int(h * 0.58)
+        pts = [
+            (cx, cy - h // 2),
+            (cx + half_base, cy + h // 2),
+            (cx - half_base, cy + h // 2),
+            (cx, cy - h // 2),
+        ]
+        draw.line(pts, fill=(r_, g_, b_, alpha), width=stroke, joint="curve")
+
     def _ready(self, draw, card):
-        # Breathing dot at idle (peak radius)
-        self._dot(draw, 128, 128, 9, T.ACCENT_MEMORY)
-        # Glow (static preview = 18% alpha)
-        self._dot(draw, 128, 128, 14, T.ACCENT_MEMORY_DIM, alpha=46)
-        # Satellites
-        for pos in [(128,108),(148,128),(128,148),(108,128)]:
-            self._dot(draw, pos[0], pos[1], 2, T.ACCENT_MEMORY_DIM)
+        self._dot(draw, 128, 128, 10, T.ACCENT_MEMORY)
+        self._dot(draw, 128, 128, 16, T.ACCENT_MEMORY_DIM, alpha=46)
+        for sx, sy in [
+            (128, 106), (144, 112), (150, 128), (144, 144),
+            (128, 150), (112, 144), (106, 128), (112, 112),
+        ]:
+            self._dot(draw, sx, sy, 2, T.ACCENT_MEMORY_DIM)
 
     def _saved_memory(self, draw, card):
-        self._text(draw, 128, 102, "SAVED", "sm", T.ACCENT_SUCCESS)
-        self._text(draw, 128, 126, card.get("primary",""), "lg", T.TEXT_PRIMARY)
+        self._text(draw, 128, 98, "SAVED", "sm", T.ACCENT_SUCCESS)
+        self._hline(draw, 88, 168, 110, T.ACCENT_SUCCESS, alpha=64)
+        self._multiline_text(draw, 128, 130, card.get("primary", ""),
+                             "lg", T.TEXT_PRIMARY, max_width=188)
         self._dot(draw, 128, 158, 3, T.ACCENT_SUCCESS)
-        self._arc(draw, 128, 128, 110, 210, 330, 1, T.ACCENT_SUCCESS, alpha=77)
+        self._arc(draw, 128, 128, 108, 200, 340, 1, T.ACCENT_SUCCESS, alpha=64)
 
     def _query_listening(self, draw, card):
-        self._text(draw, 128, 110, "Listening\u2026", "sm", T.ACCENT_ATTENTION)
-        for i, cx in enumerate([104,112,120,128,136,144,152]):
-            h = 8 + (i % 3) * 4  # deterministic heights for static preview
-            draw.rectangle([cx-1, 136-h//2, cx+1, 136+h//2],
+        self._dot(draw, 128, 92, 3, T.ACCENT_ATTENTION, alpha=153)
+        self._text(draw, 128, 104, "Listening", "sm", T.ACCENT_ATTENTION)
+        for cx_b, bh in zip([101, 109, 117, 128, 139, 147, 155],
+                            [10, 16, 20, 22, 20, 14, 10]):
+            draw.rectangle([cx_b - 1, 138 - bh // 2, cx_b + 1, 138 + bh // 2],
                            fill=_hex_to_rgb(T.ACCENT_ATTENTION))
 
     def _loading(self, draw, card):
-        self._arc(draw, 128, 128, 48, 0, 90, 2, T.ACCENT_MEMORY)
+        self._circle(draw, 128, 128, 52, 1, T.BORDER_SUBTLE, alpha=128)
+        self._arc(draw, 128, 128, 52, -70, 20, 2, T.ACCENT_MEMORY)
 
     def _object_recall(self, draw, card):
-        obj   = (card.get("object") or "").upper()
-        place = card.get("primary") or ""
-        detail = card.get("detail") or ""
-        footer = card.get("last_seen") or ""
-        conf   = card.get("confidence")
+        obj_name = (card.get("object") or card.get("primary") or "").upper()
+        place    = card.get("place") or ""
+        detail   = card.get("detail") or ""
+        footer   = card.get("last_seen") or card.get("footer") or ""
+        conf     = card.get("confidence")
 
-        self._text(draw, 128, 76,  obj,    "sm",   T.ACCENT_MEMORY)
-        self._hline(draw, 54, 202, 92,     T.BORDER_SUBTLE)
-        self._vbar(draw, 22, 104, 128, 2,  T.ACCENT_MEMORY)
-        self._text(draw, 128, 116, place,  "hero", T.TEXT_PRIMARY)
-        self._text(draw, 128, 148, detail, "md",   T.TEXT_SECONDARY)
-        self._text(draw, 128, 173, footer, "sm",   T.TEXT_GHOST)
-        self._dot(draw, 128, 196, 3, T.conf_color(conf))
+        self._text(draw, 128, 72, obj_name, "sm", T.ACCENT_MEMORY)
+        self._hline(draw, 48, 208, 86, T.BORDER_SUBTLE)
+        self._vbar(draw, 20, 98, 130, 2, T.MEMORY_RAIL)
+        self._multiline_text(draw, 128, 114, place, "hero", T.TEXT_PRIMARY, max_width=192)
+        self._text(draw, 128, 146, detail, "md", T.TEXT_SECONDARY)
+        self._text(draw, 128, 170, footer, "sm", T.TEXT_GHOST)
+        self._dot(draw, 128, 192, 3, T.conf_color(conf))
 
     def _commitment_recall(self, draw, card):
         person = card.get("person") or ""
@@ -165,49 +196,47 @@ class CardRenderer:
         due    = card.get("due") or ""
         conf   = card.get("confidence")
 
-        self._text(draw, 128, 82,  f"YOU PROMISED {person.upper()}", "sm", T.ACCENT_MEMORY)
-        self._vbar(draw, 22, 96, 168, 2, T.ACCENT_MEMORY)
-        self._text(draw, 128, 108, task, "lg", T.TEXT_PRIMARY)
-        self._text(draw, 128, 174, due,  "sm", T.TEXT_SECONDARY)
-        self._dot(draw, 128, 195, 2, T.conf_color(conf))
+        self._text(draw, 128, 74, f"YOU PROMISED {person.upper()}", "sm", T.ACCENT_MEMORY)
+        self._hline(draw, 48, 208, 88, T.BORDER_SUBTLE)
+        self._vbar(draw, 20, 100, 158, 2, T.MEMORY_RAIL)
+        self._multiline_text(draw, 128, 118, task, "lg", T.TEXT_PRIMARY, max_width=192)
+        self._text(draw, 128, 166, due, "sm", T.ACCENT_MEMORY)
+        self._dot(draw, 128, 186, 2, T.conf_color(conf))
 
     def _proactive_memory(self, draw, card):
         summary = card.get("primary") or ""
         person  = card.get("person")
 
         self._text(draw, 128, 68, "LAST TIME HERE", "sm", T.TEXT_GHOST)
-        self._hline(draw, 68, 188, 82, T.BORDER_SUBTLE)
-        self._text(draw, 128, 96, summary, "md", T.TEXT_SECONDARY)
+        self._arc(draw, 128, 128, 96, 200, 340, 1, T.ACCENT_MEMORY, alpha=77)
+        self._hline(draw, 72, 184, 82, T.BORDER_SUBTLE)
+        self._multiline_text(draw, 128, 116, summary, "lg", T.TEXT_SECONDARY, max_width=180)
         if person:
-            self._text(draw, 128, 178, f"With {person}", "sm", T.ACCENT_MEMORY)
+            self._text(draw, 128, 174, f"With {person}", "sm", T.ACCENT_MEMORY)
 
     def _person_context(self, draw, card):
-        self._circle(draw, 128, 128, 112, 1, T.BORDER_SUBTLE)
-        self._text(draw, 128, 88,  card.get("primary") or "",  "lg", T.ACCENT_MEMORY)
-        self._text(draw, 128, 122, card.get("headline") or "", "md", T.TEXT_PRIMARY)
-        self._text(draw, 128, 150, card.get("detail") or "",   "sm", T.TEXT_SECONDARY)
+        self._arc(draw, 128, 128, 108, 240, 300, 1, T.ACCENT_MEMORY, alpha=100)
+        self._text(draw, 128, 84, card.get("primary") or "", "lg", T.ACCENT_MEMORY)
+        self._hline(draw, 72, 184, 98, T.BORDER_SUBTLE)
+        self._multiline_text(draw, 128, 122, card.get("headline") or "",
+                             "md", T.TEXT_PRIMARY, max_width=192)
+        self._text(draw, 128, 148, card.get("detail") or "", "sm", T.TEXT_SECONDARY)
 
     def _privacy_paused(self, draw, card):
-        self._circle(draw, 128, 128, 118, 1, T.STATUS_PAUSED, alpha=102)
-        r_, g_, b_ = _hex_to_rgb(T.STATUS_PAUSED)
-        draw.ellipse([100,72,156,128], fill=(r_,g_,b_, 51))  # 20% alpha fill
-        # Pause bars: left at x=119, right at x=128+5=133
-        draw.rectangle([119, 93, 123, 107], fill=_hex_to_rgb(T.STATUS_PAUSED))
-        draw.rectangle([128, 93, 132, 107], fill=_hex_to_rgb(T.STATUS_PAUSED))
-        self._text(draw, 128, 142, "Memory paused",     "lg", T.STATUS_PAUSED)
-        self._text(draw, 128, 166, "Nothing is captured","sm", T.TEXT_GHOST)
+        self._circle(draw, 128, 128, 116, 1, T.STATUS_PAUSED, alpha=89)
+        self._pause_glyph(draw, 128, 100, T.STATUS_PAUSED)
+        self._text(draw, 128, 146, "Memory paused", "lg", T.STATUS_PAUSED)
+        self._text(draw, 128, 168, "Nothing is captured", "sm", T.TEXT_GHOST)
 
     def _error_card(self, draw, card):
-        self._circle(draw, 128, 128, 118, 1, T.ACCENT_ERROR, alpha=77)
-        # Triangle outline at (128, 88), height 24
-        cx, cy, h = 128, 88, 24
-        pts = [(cx, cy-h//2), (cx+h*0.6, cy+h//2), (cx-h*0.6, cy+h//2)]
-        draw.polygon(pts, outline=_hex_to_rgb(T.ACCENT_ERROR), width=2)
-        self._text(draw, 128, 108, "Something went wrong", "sm", T.TEXT_SECONDARY)
-        self._text(draw, 128, 128, card.get("primary","Try again"), "md", T.ACCENT_ERROR)
+        self._circle(draw, 128, 128, 116, 1, T.ACCENT_ERROR, alpha=64)
+        self._warning_triangle(draw, 128, 90, 20, 2, T.ACCENT_ERROR)
+        self._text(draw, 128, 122, "Connection issue", "lg", T.TEXT_PRIMARY)
+        self._text(draw, 128, 146, card.get("primary", "Try again"), "sm", T.TEXT_GHOST)
 
     def _low_confidence(self, draw, card):
-        self._text(draw, 128, 110, "Not sure",      "lg", T.TEXT_SECONDARY)
-        self._text(draw, 128, 142, "Try rephrasing", "sm", T.TEXT_GHOST)
-        for dx in [-20, 0, 20]:
-            self._dot(draw, 128+dx, 170, 3, T.TEXT_GHOST)
+        self._text(draw, 128, 106, "Not sure", "lg", T.TEXT_SECONDARY)
+        self._text(draw, 128, 136, "Try rephrasing", "sm", T.TEXT_GHOST)
+        self._dot(draw, 107, 168, 2, T.TEXT_GHOST)
+        self._dot(draw, 128, 172, 2, T.TEXT_GHOST)
+        self._dot(draw, 149, 168, 2, T.TEXT_GHOST)
