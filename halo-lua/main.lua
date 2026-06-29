@@ -15,10 +15,9 @@ local HAS_FRAME = (type(_G.frame) == "table")
 
 -- ---------------------------------------------------------------------------
 -- Inbound BLE dispatch
+-- msg is a fully decoded table from host_comm.on_receive()
 -- ---------------------------------------------------------------------------
-local function on_ble_data(raw)
-  if not raw or raw == "" then return end
-  local msg = host_comm.on_receive(raw)
+local function process_inbound(msg)
   if not msg or not msg.t then return end
   local t = msg.t
 
@@ -43,14 +42,12 @@ local function on_ble_data(raw)
     state_machine.dispatch(E.EVENTS.host_disconnected)
 
   elseif t == MT.CARD then
-    -- msg.payload contains the card descriptor table
     state_machine.set_card(msg.payload or msg)
 
   elseif t == MT.COMMAND then
     state_machine.set_command(msg)
 
   elseif t == MT.EVENT then
-    -- generic named event from host
     if msg.name then
       state_machine.dispatch(msg.name, msg)
     end
@@ -60,16 +57,29 @@ local function on_ble_data(raw)
   end
 end
 
+-- Raw BLE callback: feed every chunk through host_comm framing reassembler.
+-- host_comm.on_receive() returns a decoded table only when a complete
+-- length-prefixed frame has been reassembled; nil while still buffering.
+local function on_ble_raw(raw)
+  local msg = host_comm.on_receive(raw)
+  if msg then process_inbound(msg) end
+end
+
 -- ---------------------------------------------------------------------------
 -- Boot
 -- ---------------------------------------------------------------------------
 local function boot()
-  state_machine.init(renderer, nil, function(old, new, ev)
-    -- Uncomment for debug: print("[fsm] " .. old .. " -> " .. new)
+  -- Bind host_comm to halo.bluetooth BEFORE registering the callback
+  host_comm.bind(_G.halo.bluetooth)
+
+  state_machine.init(renderer, nil, function(old, new_state, _)
+    -- Uncomment for debug: print("[fsm] " .. old .. " -> " .. new_state)
   end)
 
   if HAS_FRAME then
-    frame.bluetooth.receive_callback(on_ble_data)
+    -- Route all inbound BLE through the framing reassembler
+    frame.bluetooth.receive_callback(on_ble_raw)
+    -- Physical button callbacks go directly to FSM
     frame.button.single(function() state_machine.dispatch(E.EVENTS.single_click) end)
     frame.button.double(function() state_machine.dispatch(E.EVENTS.double_click) end)
     frame.button.long(function()   state_machine.dispatch(E.EVENTS.long_press)   end)
