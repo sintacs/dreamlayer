@@ -10,7 +10,7 @@ import json
 import struct
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -50,6 +50,11 @@ def _make_app(
         log_level="WARNING",
     )
     return MemoscapeApp(config=cfg, on_loading=on_loading)
+
+
+def _make_app_no_autoload(**kwargs) -> MemoscapeApp:
+    """App with on_loading=None so LISTENING does NOT auto-advance to LOADING."""
+    return _make_app(on_loading=None, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -121,18 +126,31 @@ class TestAppInit:
 
 # ---------------------------------------------------------------------------
 # _on_rx — RX notification handler
+#
+# NOTE: _on_transition fires LOADING_START when FSM enters LISTENING,
+# so after a button-single RX the state is LOADING (not LISTENING)
+# when on_loading is set.  Use _make_app_no_autoload() to stop at LISTENING.
 # ---------------------------------------------------------------------------
 
 class TestOnRx:
     def _app(self):
-        app = _make_app()
+        # No on_loading → _on_transition does NOT fire LOADING_START
+        app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         return app
 
-    def test_button_single(self):
+    def test_button_single_reaches_listening(self):
         app = self._app()
         app._on_rx(None, _make_frame({"t": "button", "kind": "single"}))
         assert app.state == State.LISTENING
+
+    def test_button_single_with_on_loading_reaches_loading(self):
+        """With on_loading set, _on_transition auto-advances to LOADING."""
+        async def fake_ai(a): pass
+        app = _make_app(on_loading=fake_ai)
+        app._fsm.send(Event.BLE_CONNECT)
+        app._on_rx(None, _make_frame({"t": "button", "kind": "single"}))
+        assert app.state == State.LOADING
 
     def test_button_double_idle(self):
         app = self._app()
@@ -147,7 +165,7 @@ class TestOnRx:
     def test_imu_tap_ignored_in_idle(self):
         app = self._app()
         app._on_rx(None, _make_frame({"t": "imu_tap"}))
-        assert app.state == State.IDLE   # no transition from IDLE on IMU
+        assert app.state == State.IDLE
 
     def test_card_received(self):
         app = self._app()
@@ -166,8 +184,8 @@ class TestOnRx:
 
     def test_unparseable_frame_ignored(self):
         app = self._app()
-        app._on_rx(None, b"\x00")   # too short
-        assert app.state == State.IDLE   # unchanged
+        app._on_rx(None, b"\x00")
+        assert app.state == State.IDLE
 
     def test_unknown_type_ignored(self):
         app = self._app()
@@ -186,14 +204,14 @@ class TestOnRx:
 
 class TestShowCard:
     @pytest.mark.asyncio
-    async def test_show_card_advances_fsm_to_loading_first(self):
-        app  = _make_app()
+    async def test_show_card_advances_fsm_to_card(self):
+        app = _make_app()
         app._fsm.send(Event.BLE_CONNECT)
         app._fsm.send(Event.BUTTON_SINGLE)
         app._fsm.send(Event.LOADING_START)
         assert app.state == State.LOADING
 
-        mock_client        = MagicMock()
+        mock_client = MagicMock()
         mock_client.is_connected = True
         mock_client.write_gatt_char = AsyncMock()
         app._client = mock_client
@@ -209,10 +227,8 @@ class TestShowCard:
     async def test_show_card_no_client_still_advances_fsm(self):
         app = _make_app()
         app._fsm.send(Event.BLE_CONNECT)
-        app._fsm.send(Event.CARD_RECEIVED)   # → CARD
-        app._fsm.send(Event.BUTTON_DOUBLE)   # → IDLE
-        app._fsm.send(Event.BUTTON_SINGLE)   # → LISTENING
-        app._fsm.send(Event.LOADING_START)   # → LOADING
+        app._fsm.send(Event.BUTTON_SINGLE)
+        app._fsm.send(Event.LOADING_START)
         card = MemoryCard(card_type="LoadingCard", payload={})
         await app.show_card(card)
         assert app.state == State.CARD
@@ -236,8 +252,8 @@ class TestRunLoading:
 
         app = _make_app(on_loading=fake_ai)
         app._fsm.send(Event.BLE_CONNECT)
-        app._fsm.send(Event.BUTTON_SINGLE)    # → LISTENING
-        app._fsm.send(Event.LOADING_START)    # → LOADING
+        app._fsm.send(Event.BUTTON_SINGLE)
+        app._fsm.send(Event.LOADING_START)
         await app._run_loading()
         assert called == [True]
         assert app.state == State.CARD
@@ -245,7 +261,7 @@ class TestRunLoading:
     @pytest.mark.asyncio
     async def test_loading_timeout_sends_timeout_event(self):
         async def slow_ai(app):
-            await asyncio.sleep(99)   # will timeout
+            await asyncio.sleep(99)
 
         app = _make_app(on_loading=slow_ai, loading_timeout=0.05)
         app._fsm.send(Event.BLE_CONNECT)
@@ -323,24 +339,31 @@ class TestBackoff:
 class TestScanForHalo:
     @pytest.mark.asyncio
     async def test_returns_highest_rssi(self):
+        """_scan_for_halo imports BleakScanner locally; patch bleak.BleakScanner."""
         d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Frame v1", rssi=-60)
         d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="Frame v2", rssi=-45)
         d3 = MagicMock(address="AA:BB:CC:DD:EE:03", name="Phone",    rssi=-30)
 
-        with patch("memoscape.app.BleakScanner") as MockScanner:
-            MockScanner.discover = AsyncMock(return_value=[d1, d2, d3])
-            with patch.dict("sys.modules", {"bleak": MagicMock(BleakScanner=MockScanner)}):
-                from importlib import import_module, reload
-                import memoscape.app as app_mod
-                app_mod.BleakScanner = MockScanner
-                result = await _scan_for_halo.__wrapped__(6.0) if hasattr(_scan_for_halo, "__wrapped__") else None
+        mock_bleak = MagicMock()
+        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d1, d2, d3])
+
+        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+            result = await _scan_for_halo(5.0)
+
+        # Highest RSSI among Frame devices is d2 (-45)
+        assert result == "AA:BB:CC:DD:EE:02"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_halos(self):
-        with patch("memoscape.app._scan_for_halo", new_callable=AsyncMock) as mock_scan:
-            mock_scan.return_value = None
-            result = await mock_scan(5.0)
-            assert result is None
+        mock_bleak = MagicMock()
+        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[
+            MagicMock(address="X", name="Phone", rssi=-30)
+        ])
+
+        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+            result = await _scan_for_halo(5.0)
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -349,15 +372,15 @@ class TestScanForHalo:
 
 class TestFSMIntegration:
     def test_full_happy_path_via_rx(self):
-        """connect → single → loading → card → dismiss"""
-        app = _make_app()
+        """connect → single → loading (auto) → card → dismiss"""
+        app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         assert app.state == State.IDLE
 
+        # No on_loading → stays at LISTENING after single click
         app._on_rx(None, _make_frame({"t": "button", "kind": "single"}))
         assert app.state == State.LISTENING
 
-        # Manually advance to LOADING (simulating app._on_transition)
         app._fsm.send(Event.LOADING_START)
         assert app.state == State.LOADING
 
@@ -374,7 +397,7 @@ class TestFSMIntegration:
 
     def test_privacy_flow_via_rx(self):
         """connect → card → long press → privacy → long press → idle"""
-        app = _make_app()
+        app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         app._on_rx(None, _make_frame({
             "t": "card",
@@ -389,7 +412,7 @@ class TestFSMIntegration:
         assert app.state == State.IDLE
 
     def test_disconnect_resets_fsm(self):
-        app = _make_app()
+        app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         app._on_rx(None, _make_frame({"t": "button", "kind": "long"}))
         assert app.state == State.PRIVACY
