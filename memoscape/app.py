@@ -36,8 +36,7 @@ import asyncio
 import json
 import logging
 import struct
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
 from memoscape.fsm import (
@@ -56,7 +55,6 @@ HALO_RX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # device → host (n
 HALO_NAME_PREFIX  = "Frame"
 MTU               = 240
 
-# BLE message type tags sent by the device
 _BUTTON_MAP = {
     "single": Event.BUTTON_SINGLE,
     "double": Event.BUTTON_DOUBLE,
@@ -69,16 +67,15 @@ _BUTTON_MAP = {
 
 @dataclass
 class AppConfig:
-    device_address:  Optional[str] = None   # None = auto-discover
-    scan_timeout:    float         = 6.0    # seconds to scan for device
-    loading_timeout: float         = 10.0   # seconds before TIMEOUT event
-    reconnect_base:  float         = 1.0    # initial backoff seconds
-    reconnect_max:   float         = 30.0   # cap backoff seconds
-    reconnect_tries: int           = 0      # 0 = infinite
+    device_address:  Optional[str] = None
+    scan_timeout:    float         = 6.0
+    loading_timeout: float         = 10.0
+    reconnect_base:  float         = 1.0
+    reconnect_max:   float         = 30.0
+    reconnect_tries: int           = 0
     log_level:       str           = "INFO"
 
 
-# AI callback type: async fn that receives the app and produces a card
 LoadingCallback = Callable[["MemoscapeApp"], Awaitable[None]]
 
 
@@ -95,8 +92,7 @@ def _decode_frame(data: bytes) -> Optional[dict]:
     try:
         if len(data) < 4:
             return None
-        payload = data[4:]
-        return json.loads(payload)
+        return json.loads(data[4:])
     except Exception:
         return None
 
@@ -136,14 +132,14 @@ class MemoscapeApp:
         config:     Optional[AppConfig]      = None,
         on_loading: Optional[LoadingCallback] = None,
     ) -> None:
-        self.config     = config or AppConfig()
-        self._fsm       = MemoscapeFSM(on_transition=self._on_transition)
+        self.config      = config or AppConfig()
+        self._fsm        = MemoscapeFSM(on_transition=self._on_transition)
         self._on_loading: Optional[LoadingCallback] = on_loading
-        self._client: Any = None          # BleakClient when connected
-        self._running   = False
+        self._client: Any                    = None
+        self._running    = False
         self._stop_event: Optional[asyncio.Event] = None
         self._loading_task: Optional[asyncio.Task] = None
-        self._reconnect_delay = self.config.reconnect_base
+        self._reconnect_delay  = self.config.reconnect_base
         self._connect_attempts = 0
         logging.basicConfig(level=getattr(logging, self.config.log_level))
 
@@ -160,16 +156,11 @@ class MemoscapeApp:
         return self._fsm
 
     def stop(self) -> None:
-        """Request a clean shutdown."""
         self._running = False
         if self._stop_event:
             self._stop_event.set()
 
     async def show_card(self, card: MemoryCard) -> None:
-        """
-        Push a MemoryCard to the device display and advance the FSM.
-        Safe to call from the on_loading callback.
-        """
         self._fsm.send(Event.RESULT_READY, payload=card)
         if self._client and self._client.is_connected:
             frame = _encode_frame({
@@ -180,7 +171,6 @@ class MemoscapeApp:
             log.info("show_card: %s", card.card_type)
 
     async def send_command(self, kind: str) -> None:
-        """Send a command frame (ask, pause, loading, resume)."""
         if self._client and self._client.is_connected:
             frame = _encode_frame({"t": "command", "kind": kind})
             await _send_frame(self._client, frame)
@@ -190,7 +180,6 @@ class MemoscapeApp:
     # ------------------------------------------------------------------
 
     async def run(self) -> None:
-        """Main entry point. Runs until stop() is called."""
         self._running    = True
         self._stop_event = asyncio.Event()
         attempt = 0
@@ -240,14 +229,12 @@ class MemoscapeApp:
         log.info("Connecting to %s...", address)
         async with BleakClient(address) as client:
             self._client = client
-            self._reconnect_delay = self.config.reconnect_base   # reset backoff
+            self._reconnect_delay = self.config.reconnect_base
             self._fsm.send(Event.BLE_CONNECT)
             log.info("Connected to %s", address)
 
             await client.start_notify(HALO_RX_CHAR_UUID, self._on_rx)
 
-            # Wait until disconnected or stop requested
-            await self._stop_event.wait() if not self._running else None
             disconnect_event = asyncio.Event()
 
             def _on_disconnect(c: Any) -> None:
@@ -280,20 +267,16 @@ class MemoscapeApp:
         log.debug("RX: %s", msg)
 
         if t == "button":
-            kind  = msg.get("kind", "")
-            event = _BUTTON_MAP.get(kind)
+            event = _BUTTON_MAP.get(msg.get("kind", ""))
             if event:
                 self._fsm.send(event)
-
         elif t == "imu_tap":
             self._fsm.send(Event.IMU_TAP)
-
         elif t == "card":
             payload   = msg.get("payload", {})
             card_type = payload.pop("type", "UnknownCard")
             card      = MemoryCard(card_type=card_type, payload=payload, source="ble")
             self._fsm.send(Event.CARD_RECEIVED, payload=card)
-
         elif t == "privacy_toggle":
             self._fsm.send(Event.PRIVACY_TOGGLE)
 
@@ -301,18 +284,19 @@ class MemoscapeApp:
     # Internal: FSM transition hook
     # ------------------------------------------------------------------
 
-    def _on_transition(
-        self, prev: State, event: Event, nxt: State
-    ) -> None:
+    def _on_transition(self, prev: State, event: Event, nxt: State) -> None:
         log.info("FSM: %s --%s--> %s", prev.name, event.name, nxt.name)
 
-        if nxt == State.LISTENING:
-            # Fire LOADING_START to move FSM to LOADING, then call AI
+        # Only auto-advance to LOADING when an AI callback is registered.
+        # Without on_loading the FSM stays at LISTENING so callers can
+        # drive the transition manually (and tests can assert LISTENING).
+        if nxt == State.LISTENING and self._on_loading is not None:
             self._fsm.send(Event.LOADING_START)
-            if self._on_loading:
-                self._loading_task = asyncio.get_event_loop().create_task(
-                    self._run_loading()
-                )
+            try:
+                loop = asyncio.get_running_loop()
+                self._loading_task = loop.create_task(self._run_loading())
+            except RuntimeError:
+                pass  # no running loop (e.g. sync tests) — caller drives manually
 
     async def _run_loading(self) -> None:
         try:

@@ -23,6 +23,7 @@ from memoscape.app import (
     _decode_frame,
     _encode_frame,
     _scan_for_halo,
+    HALO_NAME_PREFIX,
 )
 from memoscape.fsm import Event, MemoryCard, State
 
@@ -53,7 +54,7 @@ def _make_app(
 
 
 def _make_app_no_autoload(**kwargs) -> MemoscapeApp:
-    """App with on_loading=None so LISTENING does NOT auto-advance to LOADING."""
+    """No on_loading → FSM stays at LISTENING after single-click (no auto-advance)."""
     return _make_app(on_loading=None, **kwargs)
 
 
@@ -64,20 +65,17 @@ def _make_app_no_autoload(**kwargs) -> MemoscapeApp:
 class TestFrameCodec:
     def test_encode_length_prefix(self):
         frame = _encode_frame({"t": "connect"})
-        length = struct.unpack(">I", frame[:4])[0]
-        assert length == len(frame)
+        assert struct.unpack(">I", frame[:4])[0] == len(frame)
 
     def test_encode_decode_roundtrip(self):
-        msg   = {"t": "card", "payload": {"type": "ObjectRecallCard", "object": "KEYS"}}
-        frame = _encode_frame(msg)
-        assert _decode_frame(frame) == msg
+        msg = {"t": "card", "payload": {"type": "ObjectRecallCard", "object": "KEYS"}}
+        assert _decode_frame(_encode_frame(msg)) == msg
 
     def test_decode_too_short(self):
         assert _decode_frame(b"\x00\x01") is None
 
     def test_decode_invalid_json(self):
-        bad = struct.pack(">I", 8) + b"not json"
-        assert _decode_frame(bad) is None
+        assert _decode_frame(struct.pack(">I", 8) + b"not json") is None
 
     def test_encode_button_frame(self):
         frame = _encode_frame({"t": "button", "kind": "single"})
@@ -98,8 +96,7 @@ class TestAppConfig:
         assert cfg.reconnect_tries == 0
 
     def test_custom_address(self):
-        cfg = AppConfig(device_address="AA:BB:CC:DD:EE:FF")
-        assert cfg.device_address == "AA:BB:CC:DD:EE:FF"
+        assert AppConfig(device_address="AA:BB:CC:DD:EE:FF").device_address == "AA:BB:CC:DD:EE:FF"
 
 
 # ---------------------------------------------------------------------------
@@ -108,33 +105,27 @@ class TestAppConfig:
 
 class TestAppInit:
     def test_starts_disconnected(self):
-        app = _make_app()
-        assert app.state == State.DISCONNECT
+        assert _make_app().state == State.DISCONNECT
 
     def test_fsm_accessible(self):
-        app = _make_app()
-        assert app.fsm is not None
+        assert _make_app().fsm is not None
 
     def test_default_config_used_when_none(self):
-        app = MemoscapeApp()
-        assert app.config.reconnect_base == 1.0
+        assert MemoscapeApp().config.reconnect_base == 1.0
 
     def test_stop_before_run_safe(self):
-        app = _make_app()
-        app.stop()   # should not raise
+        _make_app().stop()   # should not raise
 
 
 # ---------------------------------------------------------------------------
 # _on_rx — RX notification handler
 #
-# NOTE: _on_transition fires LOADING_START when FSM enters LISTENING,
-# so after a button-single RX the state is LOADING (not LISTENING)
-# when on_loading is set.  Use _make_app_no_autoload() to stop at LISTENING.
+# _on_transition only fires LOADING_START when on_loading is set.
+# Use _make_app_no_autoload() to stop at LISTENING.
 # ---------------------------------------------------------------------------
 
 class TestOnRx:
     def _app(self):
-        # No on_loading → _on_transition does NOT fire LOADING_START
         app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         return app
@@ -145,7 +136,7 @@ class TestOnRx:
         assert app.state == State.LISTENING
 
     def test_button_single_with_on_loading_reaches_loading(self):
-        """With on_loading set, _on_transition auto-advances to LOADING."""
+        """With on_loading set, FSM auto-advances LISTENING → LOADING."""
         async def fake_ai(a): pass
         app = _make_app(on_loading=fake_ai)
         app._fsm.send(Event.BLE_CONNECT)
@@ -155,7 +146,7 @@ class TestOnRx:
     def test_button_double_idle(self):
         app = self._app()
         app._on_rx(None, _make_frame({"t": "button", "kind": "double"}))
-        assert app.state == State.IDLE   # noop from IDLE
+        assert app.state == State.IDLE
 
     def test_button_long_enters_privacy(self):
         app = self._app()
@@ -178,7 +169,7 @@ class TestOnRx:
 
     def test_privacy_toggle(self):
         app = self._app()
-        app._fsm.send(Event.BUTTON_LONG)   # enter PRIVACY
+        app._fsm.send(Event.BUTTON_LONG)
         app._on_rx(None, _make_frame({"t": "privacy_toggle"}))
         assert app.state == State.IDLE
 
@@ -199,7 +190,7 @@ class TestOnRx:
 
 
 # ---------------------------------------------------------------------------
-# show_card — sends card to device and advances FSM
+# show_card
 # ---------------------------------------------------------------------------
 
 class TestShowCard:
@@ -229,8 +220,7 @@ class TestShowCard:
         app._fsm.send(Event.BLE_CONNECT)
         app._fsm.send(Event.BUTTON_SINGLE)
         app._fsm.send(Event.LOADING_START)
-        card = MemoryCard(card_type="LoadingCard", payload={})
-        await app.show_card(card)
+        await app.show_card(MemoryCard(card_type="LoadingCard", payload={}))
         assert app.state == State.CARD
 
 
@@ -245,10 +235,11 @@ class TestRunLoading:
 
         async def fake_ai(app):
             called.append(True)
-            card = MemoryCard(card_type="ObjectRecallCard",
-                              payload={"object": "WALLET", "place": "DESK",
-                                       "last_seen": "1h", "confidence": 0.88})
-            await app.show_card(card)
+            await app.show_card(MemoryCard(
+                card_type="ObjectRecallCard",
+                payload={"object": "WALLET", "place": "DESK",
+                         "last_seen": "1h", "confidence": 0.88}
+            ))
 
         app = _make_app(on_loading=fake_ai)
         app._fsm.send(Event.BLE_CONNECT)
@@ -288,7 +279,7 @@ class TestRunLoading:
         app._fsm.send(Event.BLE_CONNECT)
         app._fsm.send(Event.BUTTON_SINGLE)
         app._fsm.send(Event.LOADING_START)
-        await app._run_loading()   # should not raise
+        await app._run_loading()  # should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -302,10 +293,9 @@ class TestBackoff:
         app.config.reconnect_base = 1.0
         app.config.reconnect_max  = 8.0
         app._reconnect_delay      = 1.0
-
         delays = []
-        async def fake_sleep(s):
-            delays.append(s)
+
+        async def fake_sleep(s): delays.append(s)
 
         with patch("memoscape.app.asyncio.sleep", side_effect=fake_sleep):
             await app._backoff_sleep()
@@ -317,29 +307,32 @@ class TestBackoff:
     @pytest.mark.asyncio
     async def test_backoff_capped_at_max(self):
         app = _make_app()
-        app.config.reconnect_max  = 5.0
-        app._reconnect_delay      = 4.0
-
+        app.config.reconnect_max = 5.0
+        app._reconnect_delay     = 4.0
         delays = []
-        async def fake_sleep(s):
-            delays.append(s)
+
+        async def fake_sleep(s): delays.append(s)
 
         with patch("memoscape.app.asyncio.sleep", side_effect=fake_sleep):
             await app._backoff_sleep()
             await app._backoff_sleep()
 
-        assert delays[0] == 4.0
-        assert delays[1] == 5.0
+        assert delays == [4.0, 5.0]
 
 
 # ---------------------------------------------------------------------------
-# Scan helper (mocked)
+# Scan helper — mocked via sys.modules so local import picks it up
+#
+# _scan_for_halo does: from bleak import BleakScanner
+# So we patch sys.modules["bleak"] to inject our mock BleakScanner.
+# The name filter (startswith(HALO_NAME_PREFIX)) runs inside _scan_for_halo;
+# we must give mock devices real .name strings.
 # ---------------------------------------------------------------------------
 
 class TestScanForHalo:
     @pytest.mark.asyncio
-    async def test_returns_highest_rssi(self):
-        """_scan_for_halo imports BleakScanner locally; patch bleak.BleakScanner."""
+    async def test_returns_highest_rssi_halo(self):
+        """Two Frame devices + one non-Frame; should return highest RSSI Frame."""
         d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Frame v1", rssi=-60)
         d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="Frame v2", rssi=-45)
         d3 = MagicMock(address="AA:BB:CC:DD:EE:03", name="Phone",    rssi=-30)
@@ -350,34 +343,46 @@ class TestScanForHalo:
         with patch.dict("sys.modules", {"bleak": mock_bleak}):
             result = await _scan_for_halo(5.0)
 
-        # Highest RSSI among Frame devices is d2 (-45)
+        # d3 is "Phone" (filtered out); d2 has higher RSSI than d1
         assert result == "AA:BB:CC:DD:EE:02"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_halos(self):
+        """No Frame-prefixed devices → returns None."""
+        d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Phone",  rssi=-30)
+        d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="AirPods", rssi=-50)
+
         mock_bleak = MagicMock()
-        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[
-            MagicMock(address="X", name="Phone", rssi=-30)
-        ])
+        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d1, d2])
 
         with patch.dict("sys.modules", {"bleak": mock_bleak}):
             result = await _scan_for_halo(5.0)
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_single_halo_returned(self):
+        d = MagicMock(address="AA:BB:CC:DD:EE:FF", name="Frame glasses", rssi=-55)
+        mock_bleak = MagicMock()
+        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d])
+
+        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+            result = await _scan_for_halo(5.0)
+
+        assert result == "AA:BB:CC:DD:EE:FF"
+
 
 # ---------------------------------------------------------------------------
-# Integration: FSM wired through app correctly
+# Integration: FSM wired through app
 # ---------------------------------------------------------------------------
 
 class TestFSMIntegration:
     def test_full_happy_path_via_rx(self):
-        """connect → single → loading (auto) → card → dismiss"""
+        """connect → single (no on_loading → LISTENING) → LOADING → CARD → dismiss"""
         app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         assert app.state == State.IDLE
 
-        # No on_loading → stays at LISTENING after single click
         app._on_rx(None, _make_frame({"t": "button", "kind": "single"}))
         assert app.state == State.LISTENING
 
@@ -396,7 +401,6 @@ class TestFSMIntegration:
         assert app.fsm.ctx.current_card is None
 
     def test_privacy_flow_via_rx(self):
-        """connect → card → long press → privacy → long press → idle"""
         app = _make_app_no_autoload()
         app._fsm.send(Event.BLE_CONNECT)
         app._on_rx(None, _make_frame({
@@ -404,10 +408,8 @@ class TestFSMIntegration:
             "payload": {"type": "SavedMemoryCard", "primary": "test"}
         }))
         assert app.state == State.CARD
-
         app._on_rx(None, _make_frame({"t": "button", "kind": "long"}))
         assert app.state == State.PRIVACY
-
         app._on_rx(None, _make_frame({"t": "button", "kind": "long"}))
         assert app.state == State.IDLE
 
