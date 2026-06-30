@@ -7,9 +7,11 @@
 ---   EXIT   120 ms  linear          ripple dismiss: contract + fade
 ---
 --- Special behaviours:
----   PrivacyPausedCard  → shield slam (rings expand radially, glyph delayed)
----   LoadingCard        → spinner angle advances each tick during HOLD
----   QueryListeningCard → waveform phase advances each tick during HOLD
+---   PrivacyPausedCard   → shield slam (rings expand radially, glyph delayed)
+---   LoadingCard         → spinner angle advances each tick during HOLD
+---   QueryListeningCard  → waveform phase advances each tick during HOLD
+---   CommitmentDriftCard → confidence dot pulses during HOLD
+---   DeviationAlertCard  → ripple ring expands during HOLD
 ---   show_card(new) during ENTER/HOLD → crossfade: old card exits while new
 ---                                       card enters simultaneously
 ---
@@ -451,25 +453,262 @@ local function draw_low_confidence(sc, enter_t, exit_t)
 end
 
 -- ---------------------------------------------------------------------------
+-- CommitmentDriftCard
+-- Fired by tick_drift() when a commitment exceeds its staleness threshold.
+--
+-- Layout:
+--   EYEBROW   "DRIFT DETECTED"   memory_trace
+--   rail      vertical, left edge — full height = full confidence,
+--             decayed portion drawn in border_subtle
+--   PRIMARY   task summary        text_primary
+--   PERSON    "→ <person>"        memory_trace (with chain dots)
+--   DETAIL    days-ago footer     text_ghost
+--   idle      confidence dot pulses via ease_in_out_sine on idle_t
+-- ---------------------------------------------------------------------------
+local function draw_commitment_drift(card, sc, enter_t, exit_t, idle_t)
+  local task    = card.primary  or card.task    or ""
+  local person  = card.person   or ""
+  local detail  = card.footer   or card.detail  or ""
+  local conf    = card.confidence or 0.5
+  local decay   = card.decay    or 0.0   -- 0=fresh, 1=fully stale
+
+  -- Urgency colour: shifts amber → danger as decay increases
+  local urgency_col = (decay >= 0.6) and P.privacy_danger or P.warning_amber
+
+  -- Left rail: full bar (border_subtle) with live portion (urgency_col) on top
+  local rail_x  = 44
+  local rail_y0 = floor(lerp(CY, 68,  sc))
+  local rail_y1 = floor(lerp(CY, 192, sc))
+  local rail_h  = rail_y1 - rail_y0
+  frame.display.line(rail_x, rail_y0, rail_x, rail_y1, P.border_subtle)
+  -- live portion = conf * (1-decay) of total rail height
+  local live_frac = clamp(conf * (1.0 - decay), 0, 1)
+  local live_h    = floor(rail_h * live_frac)
+  if live_h > 0 then
+    frame.display.line(rail_x, rail_y1-live_h, rail_x, rail_y1, urgency_col)
+  end
+  frame.display.circle(rail_x, rail_y0, 2, P.border_subtle, true)
+  frame.display.circle(rail_x, rail_y1, 3, urgency_col,     true)
+
+  -- Eyebrow
+  if layer_ok(enter_t, A.STAGGER_EYEBROW_MS) then
+    frame.display.text("DRIFT DETECTED", CX, 72, P.memory_trace)
+  end
+
+  -- Primary task text
+  if layer_ok(enter_t, A.STAGGER_PRIMARY_MS) then
+    frame.display.text(task, CX, CY - 12, P.text_primary)
+  end
+
+  -- Person chain: three dots then arrow then name
+  if layer_ok(enter_t, A.STAGGER_DETAIL_MS) then
+    if person ~= "" then
+      -- chain dots
+      for i = 0, 2 do
+        frame.display.circle(CX - 20 + i * 8, CY + 16, 2, P.border_subtle, true)
+      end
+      frame.display.text("\xe2\x86\x92 " .. person, CX, CY + 32, P.memory_trace)
+    end
+  end
+
+  -- Footer detail
+  if layer_ok(enter_t, A.STAGGER_FOOTER_MS) then
+    frame.display.text(detail, CX, 184, P.text_ghost)
+  end
+
+  -- Hold-phase confidence dot pulse (size oscillates)
+  if enter_t >= 1.0 and exit_t == 0 then
+    local pulse = ease_in_out_sine((math.sin(idle_t / 600 * math.pi) + 1) / 2)
+    local dot_r = floor(lerp(2, 5, pulse) * sc)
+    if dot_r >= 1 then
+      frame.display.circle(CX, 200, dot_r, urgency_col, true)
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- TimeScrubNodeCard
+-- Streamed one card per node during start_scrub() / scrub() sessions.
+--
+-- Layout:
+--   timeline  horizontal bar (full card width) with node dots
+--   current   larger filled dot at card.index position
+--   EYEBROW   timestamp / breadcrumb     text_ghost
+--   PRIMARY   node summary text          text_primary
+--   DETAIL    place name (if present)    memory_trace
+--   prev/next faint neighbour labels     text_ghost
+-- ---------------------------------------------------------------------------
+local function draw_time_scrub_node(card, sc, enter_t, exit_t, idle_t)
+  local summary   = card.primary  or card.summary  or ""
+  local place     = card.place    or ""
+  local timestamp = card.eyebrow  or card.timestamp or ""
+  local idx       = card.index    or 1   -- 1-based position
+  local total     = card.total    or 1   -- total nodes in session
+  local prev_lbl  = card.prev_label or ""
+  local next_lbl  = card.next_label or ""
+
+  -- Timeline bar
+  local bar_y   = floor(lerp(CY, 82, sc))
+  local bar_x0  = floor(lerp(CX, 40,  sc))
+  local bar_x1  = floor(lerp(CX, 216, sc))
+  local bar_w   = bar_x1 - bar_x0
+  if bar_w > 0 then
+    frame.display.line(bar_x0, bar_y, bar_x1, bar_y, P.border_subtle)
+  end
+
+  -- Node dots along the bar
+  if layer_ok(enter_t, A.STAGGER_EYEBROW_MS) and total > 0 then
+    for i = 1, total do
+      local nx = bar_x0 + floor(bar_w * (i - 1) / math.max(total - 1, 1))
+      if i == idx then
+        -- current node: larger dot in memory_trace
+        local cur_r = floor(lerp(3, 5, ease_out_expo(clamp((enter_t - A.STAGGER_PRIMARY_MS / A.ENTER_DURATION_MS) * 3, 0, 1))))
+        frame.display.circle(nx, bar_y, cur_r, P.memory_trace, true)
+        -- tick below current dot
+        frame.display.line(nx, bar_y + cur_r + 1, nx, bar_y + cur_r + 6, P.memory_trace)
+      else
+        -- ghost dot
+        local ghost_r = (i < idx) and 2 or 1
+        frame.display.circle(nx, bar_y, ghost_r, P.border_subtle, true)
+      end
+    end
+  end
+
+  -- Eyebrow: timestamp / position
+  if layer_ok(enter_t, A.STAGGER_EYEBROW_MS) then
+    local crumb = timestamp ~= "" and timestamp or (idx .. " / " .. total)
+    frame.display.text(crumb, CX, 66, P.text_ghost)
+  end
+
+  -- Primary summary
+  if layer_ok(enter_t, A.STAGGER_PRIMARY_MS) then
+    frame.display.text(summary, CX, CY - 4, P.text_primary)
+  end
+
+  -- Place name
+  if layer_ok(enter_t, A.STAGGER_DETAIL_MS) and place ~= "" then
+    frame.display.text(place, CX, CY + 22, P.memory_trace)
+  end
+
+  -- Prev / next neighbour ghost labels
+  if layer_ok(enter_t, A.STAGGER_FOOTER_MS) then
+    if prev_lbl ~= "" then
+      frame.display.text("\xe2\x97\x80 " .. prev_lbl, 56, 182, P.text_ghost)
+    end
+    if next_lbl ~= "" then
+      frame.display.text(next_lbl .. " \xe2\x96\xb6", 200, 182, P.text_ghost)
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- DeviationAlertCard
+-- Fired by TellEngine when a new transcript contradicts a prior commitment.
+--
+-- Layout:
+--   EYEBROW   "Sounds different…"   warning_amber
+--   separator horizontal rule
+--   PRIOR     prior_summary (what was promised)  text_ghost  (above divider)
+--   divider   dashed rule
+--   NEW       new_summary (what was just said)   text_primary (below divider)
+--   SCORE_DOT coloured dot encodes deviation score
+--   hold      ripple ring expands & fades with idle_t
+-- ---------------------------------------------------------------------------
+local function draw_deviation_alert(card, sc, enter_t, exit_t, idle_t)
+  local prior_text = card.prior_summary  or card.footer   or ""
+  local new_text   = card.new_summary    or card.primary  or ""
+  local score      = card.score          or 0.0
+
+  -- Score → colour: low=med, high=danger
+  local score_col = (score >= 0.75) and P.privacy_danger
+                 or (score >= 0.50) and P.warning_amber
+                 or P.confidence_med
+
+  -- Outer attention ring scales in with enter
+  local ring_r = floor(lerp(52, 108, ease_out_expo(enter_t)) * sc)
+  if ring_r >= 1 then
+    arc(CX, CY, ring_r, 0, 360, P.warning_amber, 48)
+  end
+
+  -- Eyebrow
+  if layer_ok(enter_t, A.STAGGER_EYEBROW_MS) then
+    frame.display.text("SOUNDS DIFFERENT", CX, 66, P.warning_amber)
+  end
+
+  -- Separator
+  if layer_ok(enter_t, A.STAGGER_EYEBROW_MS) then
+    local sep_x0 = floor(lerp(CX, 52,  sc))
+    local sep_x1 = floor(lerp(CX, 204, sc))
+    frame.display.line(sep_x0, 78, sep_x1, 78, P.border_subtle)
+  end
+
+  -- Prior summary (above central divider)
+  if layer_ok(enter_t, A.STAGGER_PRIMARY_MS) then
+    frame.display.text(prior_text, CX, 100, P.text_ghost)
+  end
+
+  -- Central dashed divider
+  if layer_ok(enter_t, A.STAGGER_PRIMARY_MS) then
+    local d_x0 = floor(lerp(CX, 80,  sc))
+    local d_x1 = floor(lerp(CX, 176, sc))
+    local dash_w = 6; local gap = 4; local x = d_x0
+    while x < d_x1 do
+      local xe = math.min(x + dash_w, d_x1)
+      frame.display.line(x, 120, xe, 120, P.border_subtle)
+      x = x + dash_w + gap
+    end
+  end
+
+  -- New summary (below central divider)
+  if layer_ok(enter_t, A.STAGGER_DETAIL_MS) then
+    frame.display.text(new_text, CX, 142, P.text_primary)
+  end
+
+  -- Score dot
+  if layer_ok(enter_t, A.STAGGER_FOOTER_MS) then
+    local dot_r = floor(lerp(2, 5, score) * sc)
+    if dot_r >= 1 then
+      frame.display.circle(CX, 170, dot_r, score_col, true)
+    end
+  end
+
+  -- Hold-phase: ripple ring expands outward then resets
+  if enter_t >= 1.0 and exit_t == 0 then
+    local ripple_period = 2400  -- ms per cycle
+    local rp = (idle_t % ripple_period) / ripple_period
+    local rr = floor(lerp(6, 44, rp) * sc)
+    local alpha = 1.0 - rp  -- conceptual; Frame doesn't support alpha, so dim via smaller arc
+    if rr >= 4 then
+      local steps = math.max(4, floor(alpha * 20))
+      arc(CX, CY, rr, 0, 360, P.warning_amber, steps)
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- Dispatch table
 -- Each entry: function(card, sc, enter_t, exit_t, idle_t)
 -- sc      = effective scale factor (0→1 for enter, 1→0 for exit)
 -- enter_t = raw 0→1 (used for stagger thresholds; 1.0 during hold/exit)
 -- exit_t  = raw 0→1 (0 until exit begins)
--- idle_t  = ms elapsed in hold phase (for spinning/waving)
+-- idle_t  = ms elapsed in hold phase (for spinning/waving/pulsing)
 -- ---------------------------------------------------------------------------
 local DRAW = {
-  ReadyCard            = function(c,sc,et,xt,it) draw_ready(sc,et,xt)              end,
-  SavedMemoryCard      = function(c,sc,et,xt,it) draw_saved_memory(c,sc,et,xt)    end,
-  QueryListeningCard   = function(c,sc,et,xt,it) draw_query_listening(sc,et,it)    end,
-  LoadingCard          = function(c,sc,et,xt,it) draw_loading(sc,et,it)            end,
-  ObjectRecallCard     = function(c,sc,et,xt,it) draw_object_recall(c,sc,et,xt)   end,
-  CommitmentRecallCard = function(c,sc,et,xt,it) draw_commitment_recall(c,sc,et,xt) end,
-  ProactiveMemoryCard  = function(c,sc,et,xt,it) draw_proactive_memory(c,sc,et,xt) end,
-  PersonContextCard    = function(c,sc,et,xt,it) draw_person_context(c,sc,et,xt)  end,
-  PrivacyPausedCard    = function(c,sc,et,xt,it) draw_privacy_paused(sc,et,xt)    end,
-  ErrorCard            = function(c,sc,et,xt,it) draw_error(c,sc,et,xt)           end,
-  LowConfidenceCard    = function(c,sc,et,xt,it) draw_low_confidence(sc,et,xt)    end,
+  ReadyCard             = function(c,sc,et,xt,it) draw_ready(sc,et,xt)                    end,
+  SavedMemoryCard       = function(c,sc,et,xt,it) draw_saved_memory(c,sc,et,xt)           end,
+  QueryListeningCard    = function(c,sc,et,xt,it) draw_query_listening(sc,et,it)           end,
+  LoadingCard           = function(c,sc,et,xt,it) draw_loading(sc,et,it)                  end,
+  ObjectRecallCard      = function(c,sc,et,xt,it) draw_object_recall(c,sc,et,xt)          end,
+  CommitmentRecallCard  = function(c,sc,et,xt,it) draw_commitment_recall(c,sc,et,xt)      end,
+  ProactiveMemoryCard   = function(c,sc,et,xt,it) draw_proactive_memory(c,sc,et,xt)       end,
+  PersonContextCard     = function(c,sc,et,xt,it) draw_person_context(c,sc,et,xt)         end,
+  PrivacyPausedCard     = function(c,sc,et,xt,it) draw_privacy_paused(sc,et,xt)           end,
+  ErrorCard             = function(c,sc,et,xt,it) draw_error(c,sc,et,xt)                  end,
+  LowConfidenceCard     = function(c,sc,et,xt,it) draw_low_confidence(sc,et,xt)           end,
+  -- new engines
+  CommitmentDriftCard   = function(c,sc,et,xt,it) draw_commitment_drift(c,sc,et,xt,it)    end,
+  TimeScrubNodeCard     = function(c,sc,et,xt,it) draw_time_scrub_node(c,sc,et,xt,it)     end,
+  DeviationAlertCard    = function(c,sc,et,xt,it) draw_deviation_alert(c,sc,et,xt,it)     end,
 }
 
 -- ---------------------------------------------------------------------------
