@@ -12,9 +12,13 @@
 -- Framing: real_bridge.py prepends a 4-byte big-endian total-length header
 -- (including the 4-byte header itself) before each JSON envelope, then fragments
 -- over BLE MTU.  protocol.lua handles reassembly.
+--
+-- Dream Mode: host_comm_dream.lua registers handlers for t="palette",
+-- t="geometry", t="sprite", t="dream_enter", t="dream_exit" via DC.register().
 
 local protocol = require("ble.protocol")
 local MT       = require("ble.message_types")
+local DC       = require("ble.host_comm_dream")   -- Dream Mode handlers
 
 local M = {}
 
@@ -23,6 +27,9 @@ local _bt = nil
 
 -- Handler registry: type-string -> function(msg)
 local _handlers = {}
+
+-- Register Dream Mode handlers immediately
+DC.register(_handlers)
 
 -- ---------------------------------------------------------------------------
 -- bind(bluetooth_api)
@@ -51,10 +58,8 @@ function M.on_receive(raw)
   if not raw or raw == "" then return nil end
   local complete = protocol.feed(raw)
   if not complete then return nil end
-  -- complete is a JSON string; decode it
   local ok, msg = pcall(M._decode, complete)
   if not ok then
-    -- malformed JSON -- log and discard
     if _G.halo and _G.halo.log then
       _G.halo.log("[host_comm] JSON decode error: " .. tostring(msg))
     end
@@ -74,19 +79,24 @@ function M.on_message(msg)
   if handler then
     handler(msg)
   end
-  -- Also dispatch to a catch-all "*" handler if registered
   local catch = _handlers["*"]
   if catch then catch(msg) end
 end
 
 -- ---------------------------------------------------------------------------
+-- dream_active()
+-- Proxy to host_comm_dream — lets main.lua check mode without importing DC.
+-- ---------------------------------------------------------------------------
+function M.dream_active()
+  return DC.is_active()
+end
+
+-- ---------------------------------------------------------------------------
 -- send(tbl)
--- Encode tbl as JSON, frame it with the 4-byte length prefix, and send
--- via halo.bluetooth.  Only available after bind().
 -- ---------------------------------------------------------------------------
 function M.send(tbl)
   if not _bt then return end
-  local json = M._encode(tbl)
+  local json   = M._encode(tbl)
   local framed = protocol.frame(json)
   if _bt.send then
     _bt.send(framed)
@@ -95,14 +105,11 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Internal: minimal JSON encode / decode
--- Halo Lua runtime ships a tiny cjson-compatible table at halo.json,
--- or we fall back to a lightweight hand-rolled encoder for simple tables.
 -- ---------------------------------------------------------------------------
 function M._decode(s)
   if _G.halo and _G.halo.json and _G.halo.json.decode then
     return _G.halo.json.decode(s)
   end
-  -- Fallback: require lib.json if available
   local ok, json = pcall(require, "lib.json")
   if ok then return json.decode(s) end
   error("No JSON decoder available")

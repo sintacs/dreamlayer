@@ -60,7 +60,27 @@ class Orchestrator:
             privacy=self.privacy,
         )
 
+        # Wire vision pipeline into SceneDescriber if LLM available
+        if getattr(cfg, "openai_api_key", "") or os.environ.get("OPENAI_API_KEY"):
+            self.dream.describer.set_vision_fn(self._vision_describe)
+
         bridge.on_event(self._on_event)
+
+    # ------------------------------------------------------------------
+    # Vision fn for SceneDescriber (poetic 6-word VLM mode)
+    # ------------------------------------------------------------------
+
+    async def _vision_describe(self, jpeg_bytes: bytes, prompt: str) -> str:
+        """Async vision callable wired into SceneDescriber.
+
+        Calls the existing vision pipeline in poetic mode: returns a
+        short evocative description rather than a structured memory.
+        """
+        try:
+            result = await vision.describe_poetic(jpeg_bytes, prompt, config=self.config)
+            return result
+        except Exception:
+            return ""
 
     # ------------------------------------------------------------------
     # Boot
@@ -148,12 +168,10 @@ class Orchestrator:
 
     def on_scene_frame(self, scene: dict, *, now_ms: int | None = None):
         """Process a scene frame — feeds Dream Mode if active."""
-        # Feed camera JPEG to dream engine if present
         if self.state.is_dream():
             jpeg = scene.get("camera_jpeg") or scene.get("camera_frame")
             if jpeg:
                 self.dream.feed_camera(jpeg)
-            # Feed IMU if present
             imu_pose  = scene.get("imu_pose")
             imu_delta = scene.get("imu_delta")
             if imu_pose:
@@ -178,7 +196,6 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def tick_drift(self, now: float | None = None) -> list[dict]:
-        """Recompute decay for all ring commitments. Returns HUD cards for new alerts."""
         alert_records = self.drift_engine.tick(now=now)
         hud_cards = []
         for rec in alert_records:
@@ -200,12 +217,10 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def start_scrub(self, lookback_s: float = 3600.0, now: float | None = None) -> dict | None:
-        """Begin a time-scrub session, positioned at most-recent node."""
         self._scrub_session = TimeScrubSession(self.ring, lookback_s=lookback_s, now=now)
         return self._scrub_session.current()
 
     def scrub(self, direction: str) -> dict | None:
-        """Move cursor: direction='forward' or 'back'."""
         if self._scrub_session is None:
             return None
         if direction == "forward":
@@ -213,7 +228,6 @@ class Orchestrator:
         return self._scrub_session.back()
 
     def scrub_select(self, index: int) -> dict | None:
-        """Jump to specific scrub node index."""
         if self._scrub_session is None:
             return None
         return self._scrub_session.select(index)
@@ -223,7 +237,6 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def tell_check(self, transcript: str, confidence: float = 0.80) -> dict | None:
-        """Score transcript against promise baseline. Returns DeviationAlertCard or None."""
         result = self.tell_engine.check(transcript, confidence=confidence)
         if result.fired and result.card:
             self.bridge.send_card(result.card, event="deviation_alert")
@@ -252,7 +265,6 @@ class Orchestrator:
             return None
         p = self.proactive.on_place(signature)
 
-        # Feed anchors to dream ghost layer
         if self.state.is_dream():
             anchors = []
             if p:
@@ -264,8 +276,6 @@ class Orchestrator:
                     "confidence": getattr(p, "confidence", None),
                 }]
             self.dream.feed_place(signature, anchors)
-            # In dream mode, proactive results become ghost overlays via
-            # GhostLayer.tick() on the next ambient loop tick — not a direct card.
             return None
 
         card = answer_builder.build_proactive(p)
