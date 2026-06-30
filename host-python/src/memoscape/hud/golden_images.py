@@ -43,7 +43,7 @@ except ImportError:
     _PIL_AVAILABLE = False
 
 from . import cards as C
-from .renderer import Renderer
+from .renderer import CardRenderer
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -112,7 +112,7 @@ def _render_card(card_key: str) -> "Image.Image":
     card = C.ALL_SAMPLES.get(card_key)
     if card is None:
         raise KeyError(f"Unknown card key: {card_key!r}")
-    r = Renderer(width=256, height=256)
+    r = CardRenderer()
     return r.render(card)
 
 

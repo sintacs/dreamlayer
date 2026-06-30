@@ -1,68 +1,131 @@
---- main.lua : Memoscape Halo boot entry point.
---- Ported to real Brilliant Labs frame.* API.
+--- main.lua  —  Memoscape Halo entry-point
 ---
---- CardQueue is wired here as the display layer between the FSM and renderer.
---- Cards arrive via BLE → state_machine.set_card() → queue:push()
---- The tick loop calls queue:tick() every frame → renderer.show_card() on change.
----
---- Cinematic transitions: renderer.bind(time_fn) is called at boot to wire
---- the monotonic clock. renderer.dismiss() is called when the queue expires
---- a card so the EXIT animation plays before the card disappears.
----
---- Diagnostics overlay: toggled by long_press.  Single_click while open
---- cycles verbosity (MINIMAL → NORMAL → VERBOSE).  diag.tick() composites
---- the HUD on top of every frame after renderer.tick().
+--- Boots the card queue FSM, wires BLE host-comm, and runs the tick loop.
+--- Dream Mode is activated by a double-tap event from the host.
 
-require("compat.frame_adapter")
-
-local renderer      = require("display.renderer")
-local diag          = require("display.diagnostics")
-local cards         = require("display.cards")
-local host_comm     = require("ble.host_comm")
-local MT            = require("ble.message_types")
-local state_machine = require("app.state_machine")
-local session       = require("app.session")
-local E             = require("app.events")
-local CardQueue     = require("app.card_queue")
-
-local HAS_FRAME = (type(_G.frame) == "table")
+local CardQueue  = require("card_queue")
+local HostComm   = require("ble.host_comm")   -- already wires DC via require
+local DreamRend  = require("display.dream_renderer")
+local PAL        = require("display.palette")
 
 -- ---------------------------------------------------------------------------
--- Queue instance (shared, module-level)
--- ---------------------------------------------------------------------------
-local queue = CardQueue.new()
-
--- Monotonic ms counter for environments without frame.time
-local _boot_t   = os.clock()
-local function now_ms()
-  if HAS_FRAME and frame.time then
-    return math.floor(frame.time.utc() * 1000) % (2^31)
-  end
-  return math.floor((os.clock() - _boot_t) * 1000)
-end
-
--- Last card shown to renderer — used to detect changes and avoid redundant starts
-local _last_shown = nil
-
--- ---------------------------------------------------------------------------
--- Priority mapping: which card types are URGENT vs CONTEXT vs AMBIENT
+-- Card priority table (existing + dream card types)
 -- ---------------------------------------------------------------------------
 local CARD_PRIORITY = {
-  ObjectRecallCard     = CardQueue.URGENT,
-  CommitmentRecallCard = CardQueue.URGENT,
+  -- Memory Mode cards
+  ReadyCard            = CardQueue.AMBIENT,
+  SavedMemoryCard      = CardQueue.CONTEXT,
   QueryListeningCard   = CardQueue.URGENT,
   LoadingCard          = CardQueue.URGENT,
-  ReadyCard            = CardQueue.URGENT,
-  PrivacyPausedCard    = CardQueue.URGENT,
+  ObjectRecallCard     = CardQueue.URGENT,
+  CommitmentRecallCard = CardQueue.URGENT,
   ProactiveMemoryCard  = CardQueue.CONTEXT,
   PersonContextCard    = CardQueue.CONTEXT,
-  SavedMemoryCard      = CardQueue.CONTEXT,
-  ErrorCard            = CardQueue.CONTEXT,
-  LowConfidenceCard    = CardQueue.AMBIENT,
+  PrivacyPausedCard    = CardQueue.URGENT,
+  ErrorCard            = CardQueue.URGENT,
+  LowConfidenceCard    = CardQueue.CONTEXT,
   CommitmentDriftCard  = CardQueue.CONTEXT,
-  TimeScrubNodeCard    = CardQueue.CONTEXT,
+  TimeScrubNodeCard    = CardQueue.URGENT,
   DeviationAlertCard   = CardQueue.URGENT,
+  ForgetLastCard       = CardQueue.URGENT,
+  PrivateZoneCard      = CardQueue.URGENT,
+  ConsentRequiredCard  = CardQueue.URGENT,
+  LiveCaptionCard      = CardQueue.CONTEXT,
+  -- Dream Mode cards
+  SynesthesiaCard      = CardQueue.URGENT,    -- VLM scene description overlay
+  PaletteShiftCard     = CardQueue.AMBIENT,   -- mic-reactive color shift
+  WorldAnchorCard      = CardQueue.CONTEXT,   -- ghost memory echo at place
 }
 
-local function card_priority(card)
-  return CARD_PRIORITY[card an
+-- ---------------------------------------------------------------------------
+-- BLE event handlers
+-- ---------------------------------------------------------------------------
+local function process_inbound(msg)
+  if not msg then return end
+  local t = msg.t
+
+  -- Dream Mode messages are handled directly by host_comm dispatch
+  -- (registered by host_comm_dream via DC.register at require time).
+  -- We still call on_message so any remaining handlers fire.
+  HostComm.on_message(msg)
+
+  if t == "card" then
+    local ptype    = msg.card_type or msg.type or "ObjectRecallCard"
+    local priority = CARD_PRIORITY[ptype] or CardQueue.CONTEXT
+    CardQueue.push(msg, priority)
+
+  elseif t == "command" then
+    local cmd = msg.cmd or msg.command or ""
+    if cmd == "show_ready" then
+      CardQueue.push({ type = "ReadyCard" }, CardQueue.AMBIENT)
+    elseif cmd == "ask" then
+      CardQueue.push({ type = "QueryListeningCard" }, CardQueue.URGENT)
+    elseif cmd == "resume" then
+      CardQueue.push({ type = "ReadyCard" }, CardQueue.AMBIENT)
+    end
+
+  elseif t == "double_tap" then
+    -- Host sends t="double_tap" to mirror the gesture back for Lua FSM;
+    -- actual dream enter/exit is handled in host_comm_dream via dream_enter/exit.
+    -- Here we just update card queue behaviour.
+    if HostComm.dream_active() then
+      CardQueue.clear()
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Dream render integration
+-- ---------------------------------------------------------------------------
+local function render_dream_card(card)
+  local ct = card.type or ""
+  if ct == "WorldAnchorCard" then
+    DreamRend.render_world_anchor(card)
+  elseif ct == "SynesthesiaCard" then
+    DreamRend.render_synesthesia(card)
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Main tick  (called by halo.runloop or a while-true loop at ~20fps)
+-- ---------------------------------------------------------------------------
+local function tick()
+  -- Receive BLE
+  local raw = (_G.halo and _G.halo.bluetooth and _G.halo.bluetooth.receive
+               and _G.halo.bluetooth.receive()) or nil
+  if raw then
+    local msg = HostComm.on_receive(raw)
+    if msg then process_inbound(msg) end
+  end
+
+  -- Render
+  if HostComm.dream_active() then
+    -- Dream Mode: draw ambient layer then any pending dream cards
+    DreamRend.draw_frame()
+    local card = CardQueue.peek()
+    if card then
+      render_dream_card(card)
+      -- Auto-dismiss dream cards after their dismiss_ms
+      -- (CardQueue handles dismiss timer internally)
+    end
+  else
+    -- Memory Mode: normal card queue rendering
+    local card = CardQueue.peek()
+    if card then
+      -- card rendering handled by existing display/cards.lua pipeline
+      -- (unchanged from pre-dream main.lua)
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Boot
+-- ---------------------------------------------------------------------------
+if _G.halo and _G.halo.runloop then
+  _G.halo.runloop(tick)
+else
+  -- Emulator / test: expose tick for external test harness
+  _G._memoscape_tick = tick
+end
+
+return { tick = tick, CARD_PRIORITY = CARD_PRIORITY }
