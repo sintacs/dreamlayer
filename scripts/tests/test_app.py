@@ -54,7 +54,7 @@ def _make_app(
 
 
 def _make_app_no_autoload(**kwargs) -> MemoscapeApp:
-    """No on_loading → FSM stays at LISTENING after single-click (no auto-advance)."""
+    """No on_loading → FSM stays at LISTENING after single-click."""
     return _make_app(on_loading=None, **kwargs)
 
 
@@ -78,8 +78,9 @@ class TestFrameCodec:
         assert _decode_frame(struct.pack(">I", 8) + b"not json") is None
 
     def test_encode_button_frame(self):
-        frame = _encode_frame({"t": "button", "kind": "single"})
-        assert _decode_frame(frame) == {"t": "button", "kind": "single"}
+        assert _decode_frame(_encode_frame({"t": "button", "kind": "single"})) == {
+            "t": "button", "kind": "single"
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -114,14 +115,11 @@ class TestAppInit:
         assert MemoscapeApp().config.reconnect_base == 1.0
 
     def test_stop_before_run_safe(self):
-        _make_app().stop()   # should not raise
+        _make_app().stop()
 
 
 # ---------------------------------------------------------------------------
 # _on_rx — RX notification handler
-#
-# _on_transition only fires LOADING_START when on_loading is set.
-# Use _make_app_no_autoload() to stop at LISTENING.
 # ---------------------------------------------------------------------------
 
 class TestOnRx:
@@ -279,7 +277,7 @@ class TestRunLoading:
         app._fsm.send(Event.BLE_CONNECT)
         app._fsm.send(Event.BUTTON_SINGLE)
         app._fsm.send(Event.LOADING_START)
-        await app._run_loading()  # should not raise
+        await app._run_loading()
 
 
 # ---------------------------------------------------------------------------
@@ -321,41 +319,40 @@ class TestBackoff:
 
 
 # ---------------------------------------------------------------------------
-# Scan helper — mocked via sys.modules so local import picks it up
+# Scan helper — patch at module level (memoscape.app.BleakScanner)
 #
-# _scan_for_halo does: from bleak import BleakScanner
-# So we patch sys.modules["bleak"] to inject our mock BleakScanner.
-# The name filter (startswith(HALO_NAME_PREFIX)) runs inside _scan_for_halo;
-# we must give mock devices real .name strings.
+# BleakScanner is now a module-level name in app.py so patch() binds correctly.
+# The name filter (d.name.startswith("Frame")) runs inside _scan_for_halo;
+# mock devices must carry real string .name attributes.
 # ---------------------------------------------------------------------------
 
 class TestScanForHalo:
     @pytest.mark.asyncio
     async def test_returns_highest_rssi_halo(self):
-        """Two Frame devices + one non-Frame; should return highest RSSI Frame."""
+        """Two Frame devices + one non-Frame; highest RSSI Frame wins."""
         d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Frame v1", rssi=-60)
         d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="Frame v2", rssi=-45)
         d3 = MagicMock(address="AA:BB:CC:DD:EE:03", name="Phone",    rssi=-30)
 
-        mock_bleak = MagicMock()
-        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d1, d2, d3])
+        mock_scanner = MagicMock()
+        mock_scanner.discover = AsyncMock(return_value=[d1, d2, d3])
 
-        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+        with patch("memoscape.app.BleakScanner", mock_scanner):
             result = await _scan_for_halo(5.0)
 
-        # d3 is "Phone" (filtered out); d2 has higher RSSI than d1
+        # d3 "Phone" filtered out; d2 RSSI=-45 > d1 RSSI=-60
         assert result == "AA:BB:CC:DD:EE:02"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_halos(self):
         """No Frame-prefixed devices → returns None."""
-        d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Phone",  rssi=-30)
+        d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Phone",   rssi=-30)
         d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="AirPods", rssi=-50)
 
-        mock_bleak = MagicMock()
-        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d1, d2])
+        mock_scanner = MagicMock()
+        mock_scanner.discover = AsyncMock(return_value=[d1, d2])
 
-        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+        with patch("memoscape.app.BleakScanner", mock_scanner):
             result = await _scan_for_halo(5.0)
 
         assert result is None
@@ -363,10 +360,10 @@ class TestScanForHalo:
     @pytest.mark.asyncio
     async def test_single_halo_returned(self):
         d = MagicMock(address="AA:BB:CC:DD:EE:FF", name="Frame glasses", rssi=-55)
-        mock_bleak = MagicMock()
-        mock_bleak.BleakScanner.discover = AsyncMock(return_value=[d])
+        mock_scanner = MagicMock()
+        mock_scanner.discover = AsyncMock(return_value=[d])
 
-        with patch.dict("sys.modules", {"bleak": mock_bleak}):
+        with patch("memoscape.app.BleakScanner", mock_scanner):
             result = await _scan_for_halo(5.0)
 
         assert result == "AA:BB:CC:DD:EE:FF"

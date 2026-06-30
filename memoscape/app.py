@@ -15,7 +15,6 @@ Usage
     import asyncio
 
     async def my_ai_handler(app: MemoscapeApp) -> None:
-        # called when FSM enters LOADING
         card = MemoryCard(card_type="ObjectRecallCard",
                           payload={"object": "KEYS", "place": "KITCHEN",
                                    "last_seen": "2h ago", "confidence": 0.91},
@@ -39,11 +38,26 @@ import struct
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
-from memoscape.fsm import (
-    Event, MemoryCard, MemoscapeFSM, State,
-)
+from memoscape.fsm import Event, MemoryCard, MemoscapeFSM, State
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Optional bleak import — lifted to module level so patch() works in tests.
+# If bleak is not installed the stubs raise RuntimeError at call-time.
+# ---------------------------------------------------------------------------
+try:
+    from bleak import BleakClient, BleakScanner  # type: ignore
+except ImportError:  # pragma: no cover
+    class BleakScanner:  # type: ignore
+        @staticmethod
+        async def discover(timeout: float = 5.0):  # type: ignore
+            raise RuntimeError("bleak not installed. Run: pip install bleak")
+
+    class BleakClient:  # type: ignore
+        def __init__(self, address: str) -> None: ...
+        async def __aenter__(self): raise RuntimeError("bleak not installed")
+        async def __aexit__(self, *_): ...
 
 # ---------------------------------------------------------------------------
 # BLE UUIDs (Nordic UART)
@@ -52,8 +66,8 @@ HALO_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 HALO_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # host → device
 HALO_RX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # device → host (notify)
 
-HALO_NAME_PREFIX  = "Frame"
-MTU               = 240
+HALO_NAME_PREFIX = "Frame"
+MTU = 240
 
 _BUTTON_MAP = {
     "single": Event.BUTTON_SINGLE,
@@ -98,14 +112,12 @@ def _decode_frame(data: bytes) -> Optional[dict]:
 
 
 async def _scan_for_halo(timeout: float) -> Optional[str]:
-    try:
-        from bleak import BleakScanner
-    except ImportError:
-        raise RuntimeError("bleak not installed. Run: pip install bleak")
+    """Discover the nearest Halo (Frame-prefixed) device by RSSI."""
     devices = await BleakScanner.discover(timeout=timeout)
-    halos   = sorted(
+    halos = sorted(
         [d for d in devices if d.name and d.name.startswith(HALO_NAME_PREFIX)],
-        key=lambda d: d.rssi, reverse=True,
+        key=lambda d: d.rssi,
+        reverse=True,
     )
     return halos[0].address if halos else None
 
@@ -135,7 +147,7 @@ class MemoscapeApp:
         self.config      = config or AppConfig()
         self._fsm        = MemoscapeFSM(on_transition=self._on_transition)
         self._on_loading: Optional[LoadingCallback] = on_loading
-        self._client: Any                    = None
+        self._client: Any                     = None
         self._running    = False
         self._stop_event: Optional[asyncio.Event] = None
         self._loading_task: Optional[asyncio.Task] = None
@@ -161,6 +173,7 @@ class MemoscapeApp:
             self._stop_event.set()
 
     async def show_card(self, card: MemoryCard) -> None:
+        """Advance FSM to CARD and push the card frame to the device."""
         self._fsm.send(Event.RESULT_READY, payload=card)
         if self._client and self._client.is_connected:
             frame = _encode_frame({
@@ -221,11 +234,6 @@ class MemoscapeApp:
     # ------------------------------------------------------------------
 
     async def _connect_and_run(self, address: str) -> None:
-        try:
-            from bleak import BleakClient
-        except ImportError:
-            raise RuntimeError("bleak not installed. Run: pip install bleak")
-
         log.info("Connecting to %s...", address)
         async with BleakClient(address) as client:
             self._client = client
@@ -287,16 +295,15 @@ class MemoscapeApp:
     def _on_transition(self, prev: State, event: Event, nxt: State) -> None:
         log.info("FSM: %s --%s--> %s", prev.name, event.name, nxt.name)
 
-        # Only auto-advance to LOADING when an AI callback is registered.
-        # Without on_loading the FSM stays at LISTENING so callers can
-        # drive the transition manually (and tests can assert LISTENING).
+        # Only auto-advance LISTENING → LOADING when an AI callback is wired.
+        # Without on_loading the FSM parks at LISTENING (tests can assert it).
         if nxt == State.LISTENING and self._on_loading is not None:
             self._fsm.send(Event.LOADING_START)
             try:
                 loop = asyncio.get_running_loop()
                 self._loading_task = loop.create_task(self._run_loading())
             except RuntimeError:
-                pass  # no running loop (e.g. sync tests) — caller drives manually
+                pass  # no running loop — caller advances manually
 
     async def _run_loading(self) -> None:
         try:
