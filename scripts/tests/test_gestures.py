@@ -8,24 +8,23 @@ Install: uv add lupa
 
 All tests are pure synthetic IMU streams — no hardware, no BLE.
 
-Lupa notes
-----------
-* lua55 always returns require() as (table, path) — _lua_require unwraps it.
-* lupa does NOT follow __index metamethods when accessing table fields from
-  Python.  G.feed / G.reset are inherited via __index = M, so they appear
-  as None from Python.  All method calls on gesture instances are therefore
-  made from Lua-side helpers (_run_lua_stream, _lua_reset) rather than from
-  Python directly.
-* lupa silently drops Python kwargs whose names contain underscores when
-  building Lua tables via lua.table(**kw).  All opts tables are constructed
-  as Lua literals via rt.execute() and read back as globals (_build_lua_opts).
+Design
+------
+Every interaction with the Lua classifier happens inside a single
+self-contained Lua script string built by _run_lua().  Nothing crosses
+the Python<->Lua boundary except:
+  * scalar config values, formatted into the script as Lua literals
+  * the results table, read back via lua.eval() after the script runs
+
+This sidesteps three lupa gotchas that caused all prior versions to fail:
+  1. lua.table(**kw) silently drops kwargs whose names contain underscores
+  2. G.feed from Python is None — lupa does not follow __index metamethods
+  3. lua.globals().underscore_name = x does not set the global correctly
 
 EMA / stream design
 -------------------
-No EMA seeding or priming samples are used.  With alpha=0.35, feeding
-5 samples at ±35 reliably crosses threshold ±28 organically
-(EMA: 0→12.25→20.3→25.4→28.9 on sample 4).  Streams are designed so
-that every required crossing occurs naturally within the gesture window.
+No EMA seeding or priming samples.  With alpha=0.35, feeding 5 samples
+at ±35 crosses threshold ±28 organically (EMA reaches ~28.9 on sample 4).
 """
 from __future__ import annotations
 
@@ -50,14 +49,8 @@ requires_lupa = pytest.mark.skipif(
 
 
 # ---------------------------------------------------------------------------
-# Runtime + module helpers
+# Runtime fixture  (one LuaRuntime per test-module run)
 # ---------------------------------------------------------------------------
-
-def _lua_require(rt, module: str):
-    """require() and always return just the table (lua55 returns a tuple)."""
-    result = rt.eval(f"require('{module}')")
-    return result[0] if isinstance(result, tuple) else result
-
 
 @pytest.fixture(scope="module")
 def lua():
@@ -65,68 +58,86 @@ def lua():
         pytest.skip("lupa not available")
     rt = LuaRuntime(unpack_returned_tuples=False)
     rt.execute(f"""
-        package.path = package.path .. ";{LUA_ROOT}/?.lua;{LUA_ROOT}/?/init.lua"
+        package.path = package.path
+            .. ";{LUA_ROOT}/?.lua"
+            .. ";{LUA_ROOT}/?/init.lua"
     """)
     return rt
 
 
-@pytest.fixture
-def gesture_module(lua):
-    lua.execute("package.loaded['app.imu_gesture'] = nil")
-    return _lua_require(lua, "app.imu_gesture")
-
-
 # ---------------------------------------------------------------------------
-# Lua opts builder
+# Core runner
 #
-# lupa drops underscore kwargs in lua.table(**kw).  Serialise numeric/bool
-# cfg values into a Lua table literal, execute it, read back the global.
-# on_gesture is wired separately from the pre-declared _test_on_gesture.
+# Builds and executes a self-contained Lua script.  Returns a list of
+# (gesture_name, confidence) tuples that fired during the stream.
 # ---------------------------------------------------------------------------
 
-def _build_lua_opts(lua, **cfg):
+def _lua_require(rt, module: str):
+    result = rt.eval(f"require('{module}')")
+    return result[0] if isinstance(result, tuple) else result
+
+
+def _cfg_to_lua(cfg: dict) -> str:
+    """Serialise a Python cfg dict to Lua table field lines."""
     parts = []
     for k, v in cfg.items():
         if isinstance(v, bool):
-            parts.append(f"  {k} = {'true' if v else 'false'}")
+            parts.append(f"  {k} = {'true' if v else 'false'},")
         elif isinstance(v, (int, float)):
-            parts.append(f"  {k} = {v}")
+            parts.append(f"  {k} = {v},")
         elif isinstance(v, str):
-            escaped = v.replace('"', '\\"')
-            parts.append(f'  {k} = "{escaped}"')
-    body = ",\n".join(parts)
-    lua.execute(f"_test_opts = {{\n{body}\n}}")
-    lua.execute("_test_opts.on_gesture = _test_on_gesture")
-    return lua.eval("_test_opts")
+            parts.append(f'  {k} = "{v.replace(chr(34), chr(92)+chr(34))}",')  
+    return "\n".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Collector setup + instance creation
-# ---------------------------------------------------------------------------
+def _stream_to_lua(stream) -> str:
+    """Serialise a Python stream list to a Lua array-of-arrays literal."""
+    rows = ",\n    ".join(
+        f"{{{ax}, {ay}, {az}, {t}}}"
+        for ax, ay, az, t in stream
+    )
+    return f"{{\n    {rows}\n  }}"
 
-def _new_with_collector(M, lua, **cfg):
+
+def _run_lua(lua, stream, **cfg):
     """
-    Declare Lua-side fired collector, build opts, create gesture instance.
-    Stores instance as global _test_G so Lua-side helpers can call it.
-    Returns fired_ref (Lua table proxy) for _collect().
+    Execute one complete gesture-classifier run inside Lua.
+    Returns [(name, confidence), ...] for every gesture that fired.
     """
-    lua.execute("""
-        _test_fired = {}
-        _test_on_gesture = function(name, confidence)
-            _test_fired[#_test_fired + 1] = {name, confidence}
+    cfg_fields  = _cfg_to_lua(cfg)
+    stream_lit  = _stream_to_lua(stream)
+
+    script = f"""
+      do
+        -- fresh module each call
+        package.loaded['app.imu_gesture'] = nil
+        local M = require('app.imu_gesture')
+
+        local fired = {{}}
+        local opts = {{
+{cfg_fields}
+          on_gesture = function(name, conf)
+            fired[#fired + 1] = {{name, conf}}
+          end,
+        }}
+
+        local G = M.new(opts)
+        local stream = {stream_lit}
+        for _, v in ipairs(stream) do
+          G:feed(v[1], v[2], v[3], v[4])
         end
-    """)
-    opts = _build_lua_opts(lua, **cfg)
-    lua.execute("")          # flush
-    # M.new returns a Lua table; store it as a Lua global so Lua can call methods
-    lua.globals()._test_M = M
-    lua.globals()._test_opts = opts
-    lua.execute("_test_G = _test_M.new(_test_opts)")
-    return lua.eval("_test_fired")
+
+        -- store results where Python can read them
+        _last_fired = fired
+      end
+    """
+    lua.execute(script)
+    return _collect_fired(lua)
 
 
-def _collect(lua, fired_ref):
-    """Convert the Lua-side fired list to Python [(name, confidence), ...]."""
+def _collect_fired(lua):
+    """Read _last_fired Lua global into Python [(name, conf), ...]."""
+    fired_ref = lua.eval("_last_fired")
     results = []
     i = 1
     while True:
@@ -138,40 +149,8 @@ def _collect(lua, fired_ref):
     return results
 
 
-# ---------------------------------------------------------------------------
-# Lua-side feed runner
-#
-# Builds a Lua stream table from Python tuples, then calls G:feed() for
-# each sample entirely in Lua, avoiding the __index-from-Python problem.
-# ---------------------------------------------------------------------------
-
-def _run_lua_stream(lua, stream):
-    """Feed stream into _test_G using a Lua-side loop."""
-    # Build Lua stream table literal
-    rows = ", ".join(
-        f"{{{ax}, {ay}, {az}, {t}}}"
-        for ax, ay, az, t in stream
-    )
-    lua.execute(f"""
-        do
-            local s = {{{rows}}}
-            for _, v in ipairs(s) do
-                _test_G:feed(v[1], v[2], v[3], v[4])
-            end
-        end
-    """)
-
-
-def _lua_reset(lua):
-    """Call _test_G:reset() from Lua."""
-    lua.execute("_test_G:reset()")
-
-
-def _run(M, lua, stream, **cfg):
-    """One-shot: create instance, feed stream, return [(name, conf), ...]."""
-    fired_ref = _new_with_collector(M, lua, **cfg)
-    _run_lua_stream(lua, stream)
-    return _collect(lua, fired_ref)
+def _names(fired):
+    return [f[0] for f in fired]
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +166,7 @@ def _samples(ax=0.0, ay=0.0, az=0.0, count=1, start_ms=0):
 
 
 # NOD  (Y-axis: +peak → -peak → rest)
-# alpha=0.35 from 0: sample 4 EMA = 28.9 > threshold 28. 5 samples is safe.
+# EMA alpha=0.35: 5 samples at 35 → EMA ~28.9 > threshold 28 on sample 4.
 def _nod_stream(start_ms=0, strength=35.0):
     t = start_ms
     s  = _samples(0,  strength, 0, 5, t);  t += 5 * DT_MS
@@ -196,7 +175,7 @@ def _nod_stream(start_ms=0, strength=35.0):
     return s
 
 
-# DOUBLE NOD: 4 crossings within gesture_window_ms=600 ms
+# DOUBLE NOD: + - + - within gesture_window_ms=600 ms
 # 4 legs × 5 × 20 ms = 400 ms < 600 ms
 def _double_nod_stream(start_ms=0, strength=35.0):
     t = start_ms
@@ -218,10 +197,10 @@ def _shake_stream(start_ms=0, strength=32.0):
     return s
 
 
-# GLANCE  (Z-axis: brief +crossing then return within peek_max_ms=350)
+# GLANCE  (Z-axis: brief +crossing then return within peek_max_ms=350 ms)
 def _glance_stream(start_ms=0, strength=25.0, duration_ms=120):
     t    = start_ms
-    rise = 4
+    rise = 4   # samples for EMA to cross threshold_tilt=20 at strength=25
     n    = max(1, duration_ms // DT_MS)
     s  = _samples(0, 0, strength, rise + n, t);  t += (rise + n) * DT_MS
     s += _samples(0, 0, 0,                3, t)
@@ -237,35 +216,31 @@ def _tilt_stream(start_ms=0, strength=-25.0, duration_ms=500):
     return s
 
 
-def _names(fired):
-    return [f[0] for f in fired]
-
-
 # ---------------------------------------------------------------------------
 # Tests: NOD_SAVE
 # ---------------------------------------------------------------------------
 
 @requires_lupa
 class TestNodSave:
-    def test_single_nod_fires(self, lua, gesture_module):
-        assert "NOD_SAVE" in _names(_run(gesture_module, lua, _nod_stream()))
+    def test_single_nod_fires(self, lua, gesture_module=None):
+        assert "NOD_SAVE" in _names(_run_lua(lua, _nod_stream()))
 
-    def test_nod_confidence_above_threshold(self, lua, gesture_module):
-        for name, conf in _run(gesture_module, lua, _nod_stream()):
+    def test_nod_confidence_above_threshold(self, lua, gesture_module=None):
+        for name, conf in _run_lua(lua, _nod_stream()):
             if name == "NOD_SAVE":
                 assert conf >= 0.70
 
-    def test_weak_nod_below_threshold_ignored(self, lua, gesture_module):
-        assert "NOD_SAVE" not in _names(_run(gesture_module, lua, _nod_stream(strength=5.0)))
+    def test_weak_nod_below_threshold_ignored(self, lua, gesture_module=None):
+        assert "NOD_SAVE" not in _names(_run_lua(lua, _nod_stream(strength=5.0)))
 
-    def test_nod_cooldown_prevents_double_fire(self, lua, gesture_module):
+    def test_nod_cooldown_prevents_double_fire(self, lua, gesture_module=None):
         s = _nod_stream(0) + _nod_stream(200)
-        fired = _run(gesture_module, lua, s)
+        fired = _run_lua(lua, s)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 1
 
-    def test_nod_fires_again_after_cooldown(self, lua, gesture_module):
+    def test_nod_fires_again_after_cooldown(self, lua, gesture_module=None):
         s = _nod_stream(0) + _nod_stream(2000)
-        fired = _run(gesture_module, lua, s)
+        fired = _run_lua(lua, s)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 2
 
 
@@ -275,14 +250,14 @@ class TestNodSave:
 
 @requires_lupa
 class TestDoubleNod:
-    def test_double_nod_fires(self, lua, gesture_module):
-        assert "DOUBLE_NOD" in _names(_run(gesture_module, lua, _double_nod_stream()))
+    def test_double_nod_fires(self, lua, gesture_module=None):
+        assert "DOUBLE_NOD" in _names(_run_lua(lua, _double_nod_stream()))
 
-    def test_double_nod_not_shadowed_by_single_nod(self, lua, gesture_module):
-        assert "DOUBLE_NOD" in _names(_run(gesture_module, lua, _double_nod_stream()))
+    def test_double_nod_not_shadowed_by_single_nod(self, lua, gesture_module=None):
+        assert "DOUBLE_NOD" in _names(_run_lua(lua, _double_nod_stream()))
 
-    def test_single_nod_does_not_fire_double_nod(self, lua, gesture_module):
-        assert "DOUBLE_NOD" not in _names(_run(gesture_module, lua, _nod_stream()))
+    def test_single_nod_does_not_fire_double_nod(self, lua, gesture_module=None):
+        assert "DOUBLE_NOD" not in _names(_run_lua(lua, _nod_stream()))
 
 
 # ---------------------------------------------------------------------------
@@ -291,20 +266,20 @@ class TestDoubleNod:
 
 @requires_lupa
 class TestShakeDismiss:
-    def test_shake_fires(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" in _names(_run(gesture_module, lua, _shake_stream()))
+    def test_shake_fires(self, lua, gesture_module=None):
+        assert "SHAKE_DISMISS" in _names(_run_lua(lua, _shake_stream()))
 
-    def test_shake_confidence_above_threshold(self, lua, gesture_module):
-        for name, conf in _run(gesture_module, lua, _shake_stream()):
+    def test_shake_confidence_above_threshold(self, lua, gesture_module=None):
+        for name, conf in _run_lua(lua, _shake_stream()):
             if name == "SHAKE_DISMISS":
                 assert conf >= 0.70
 
-    def test_weak_shake_ignored(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" not in _names(_run(gesture_module, lua, _shake_stream(strength=5.0)))
+    def test_weak_shake_ignored(self, lua, gesture_module=None):
+        assert "SHAKE_DISMISS" not in _names(_run_lua(lua, _shake_stream(strength=5.0)))
 
-    def test_shake_cooldown(self, lua, gesture_module):
+    def test_shake_cooldown(self, lua, gesture_module=None):
         s = _shake_stream(0) + _shake_stream(300)
-        fired = _run(gesture_module, lua, s)
+        fired = _run_lua(lua, s)
         assert len([f for f in fired if f[0] == "SHAKE_DISMISS"]) == 1
 
 
@@ -314,11 +289,11 @@ class TestShakeDismiss:
 
 @requires_lupa
 class TestGlancePeek:
-    def test_glance_fires(self, lua, gesture_module):
-        assert "GLANCE_PEEK" in _names(_run(gesture_module, lua, _glance_stream()))
+    def test_glance_fires(self, lua, gesture_module=None):
+        assert "GLANCE_PEEK" in _names(_run_lua(lua, _glance_stream()))
 
-    def test_long_tilt_not_glance(self, lua, gesture_module):
-        assert "GLANCE_PEEK" not in _names(_run(gesture_module, lua, _glance_stream(duration_ms=600)))
+    def test_long_tilt_not_glance(self, lua, gesture_module=None):
+        assert "GLANCE_PEEK" not in _names(_run_lua(lua, _glance_stream(duration_ms=600)))
 
 
 # ---------------------------------------------------------------------------
@@ -327,11 +302,11 @@ class TestGlancePeek:
 
 @requires_lupa
 class TestTiltReveal:
-    def test_tilt_fires_when_held(self, lua, gesture_module):
-        assert "TILT_REVEAL" in _names(_run(gesture_module, lua, _tilt_stream(duration_ms=500)))
+    def test_tilt_fires_when_held(self, lua, gesture_module=None):
+        assert "TILT_REVEAL" in _names(_run_lua(lua, _tilt_stream(duration_ms=500)))
 
-    def test_brief_tilt_does_not_fire(self, lua, gesture_module):
-        assert "TILT_REVEAL" not in _names(_run(gesture_module, lua, _tilt_stream(duration_ms=200)))
+    def test_brief_tilt_does_not_fire(self, lua, gesture_module=None):
+        assert "TILT_REVEAL" not in _names(_run_lua(lua, _tilt_stream(duration_ms=200)))
 
 
 # ---------------------------------------------------------------------------
@@ -340,23 +315,34 @@ class TestTiltReveal:
 
 @requires_lupa
 class TestNoiseImmunity:
-    def test_flat_zero_fires_nothing(self, lua, gesture_module):
-        assert _run(gesture_module, lua, _samples(0, 0, 0, 100, 0)) == []
+    def test_flat_zero_fires_nothing(self, lua, gesture_module=None):
+        assert _run_lua(lua, _samples(0, 0, 0, 100, 0)) == []
 
-    def test_low_noise_fires_nothing(self, lua, gesture_module):
+    def test_low_noise_fires_nothing(self, lua, gesture_module=None):
         import random
         rng = random.Random(42)
         stream = [(rng.uniform(-8, 8), rng.uniform(-8, 8), rng.uniform(-8, 8), i * DT_MS)
                   for i in range(150)]
-        assert _run(gesture_module, lua, stream) == []
+        assert _run_lua(lua, stream) == []
 
-    def test_reset_clears_state(self, lua, gesture_module):
-        # Feed partial nod (+peak only), reset, feed -peak: should NOT fire
-        fired_ref = _new_with_collector(gesture_module, lua)
-        _run_lua_stream(lua, _samples(0, 35.0, 0, 5, 0))
-        _lua_reset(lua)
-        _run_lua_stream(lua, _samples(0, -35.0, 0, 5, 400))
-        assert "NOD_SAVE" not in _names(_collect(lua, fired_ref))
+    def test_reset_clears_state(self, lua, gesture_module=None):
+        # Feed +peak (no -peak yet), reset, then feed -peak only: NOD needs + then -
+        script = f"""
+          do
+            package.loaded['app.imu_gesture'] = nil
+            local M = require('app.imu_gesture')
+            local fired = {{}}
+            local G = M.new({{on_gesture = function(n,c) fired[#fired+1]={{n,c}} end}})
+            -- partial nod: only +peak, no -peak
+            for i = 0, 4 do G:feed(0, 35, 0, i*20) end
+            G:reset()
+            -- after reset, feed -peak only: should not produce a NOD_SAVE
+            for i = 0, 4 do G:feed(0, -35, 0, 400 + i*20) end
+            _last_fired = fired
+          end
+        """
+        lua.execute(script)
+        assert "NOD_SAVE" not in _names(_collect_fired(lua))
 
 
 # ---------------------------------------------------------------------------
@@ -365,16 +351,16 @@ class TestNoiseImmunity:
 
 @requires_lupa
 class TestMultiGesture:
-    def test_nod_does_not_trigger_shake(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" not in _names(_run(gesture_module, lua, _nod_stream()))
+    def test_nod_does_not_trigger_shake(self, lua, gesture_module=None):
+        assert "SHAKE_DISMISS" not in _names(_run_lua(lua, _nod_stream()))
 
-    def test_shake_does_not_trigger_nod(self, lua, gesture_module):
-        assert "NOD_SAVE" not in _names(_run(gesture_module, lua, _shake_stream()))
+    def test_shake_does_not_trigger_nod(self, lua, gesture_module=None):
+        assert "NOD_SAVE" not in _names(_run_lua(lua, _shake_stream()))
 
-    def test_sequential_nod_then_shake(self, lua, gesture_module):
+    def test_sequential_nod_then_shake(self, lua, gesture_module=None):
         nod   = _nod_stream(0)
         shake = _shake_stream(nod[-1][3] + 1000)
-        fired = _run(gesture_module, lua, nod + shake)
+        fired = _run_lua(lua, nod + shake)
         names = _names(fired)
         assert "NOD_SAVE"      in names
         assert "SHAKE_DISMISS" in names
@@ -386,17 +372,17 @@ class TestMultiGesture:
 
 @requires_lupa
 class TestCustomConfig:
-    def test_higher_threshold_ignores_normal_nod(self, lua, gesture_module):
-        # threshold_nod=60 > EMA peak ~28.9 → no crossing
-        fired = _run(gesture_module, lua, _nod_stream(strength=35.0), threshold_nod=60)
+    def test_higher_threshold_ignores_normal_nod(self, lua, gesture_module=None):
+        # threshold_nod=60 > EMA peak ~28.9 at strength=35 → no crossing
+        fired = _run_lua(lua, _nod_stream(strength=35.0), threshold_nod=60)
         assert "NOD_SAVE" not in _names(fired)
 
-    def test_wider_cooldown_prevents_second_gesture(self, lua, gesture_module):
-        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(2000), cooldown_ms=5000)
+    def test_wider_cooldown_prevents_second_gesture(self, lua, gesture_module=None):
+        fired = _run_lua(lua, _nod_stream(0) + _nod_stream(2000), cooldown_ms=5000)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 1
 
-    def test_shorter_cooldown_allows_rapid_fire(self, lua, gesture_module):
-        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(400), cooldown_ms=100)
+    def test_shorter_cooldown_allows_rapid_fire(self, lua, gesture_module=None):
+        fired = _run_lua(lua, _nod_stream(0) + _nod_stream(400), cooldown_ms=100)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) >= 2
 
 
