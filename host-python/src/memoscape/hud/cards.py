@@ -174,11 +174,6 @@ def low_confidence() -> dict:
 # ------------------------------------------------------------------ privacy cards
 
 def forget_last_card(label: str = "") -> dict:
-    """ForgetLastCard — confirm + wipe the most recently saved memory.
-
-    Shown after user triggers a forget gesture or voice command.
-    dismiss_ms=0 so it stays until the user explicitly confirms or cancels.
-    """
     display_label = label if label else "last memory"
     return {
         "type":        "ForgetLastCard",
@@ -201,12 +196,6 @@ def forget_last_card(label: str = "") -> dict:
 
 
 def private_zone_card(zone: str = "this area") -> dict:
-    """PrivateZoneCard — location-triggered privacy notice.
-
-    Surfaced when GPS / BLE beacon puts the user inside a marked private zone
-    (home, medical, legal, etc.).  Memory capture is suspended automatically;
-    this card confirms that to the user.
-    """
     return {
         "type":        "PrivateZoneCard",
         "dismiss_ms":  0,
@@ -228,11 +217,6 @@ def private_zone_card(zone: str = "this area") -> dict:
 
 
 def consent_required_card(context: str = "") -> dict:
-    """ConsentRequiredCard — explicit opt-in gate before a sensitive operation.
-
-    Shown before Memoscape accesses a new data source (calendar, contacts, etc.)
-    or when a third party would receive memory data.  Requires affirmative hold.
-    """
     ctx_line = context if context else "a new data source"
     return {
         "type":        "ConsentRequiredCard",
@@ -254,8 +238,6 @@ def consent_required_card(context: str = "") -> dict:
     }
 
 
-# ------------------------------------------------------------------ Puente bridge
-
 def live_caption_card(
     original: str = "",
     translation: str = "",
@@ -264,12 +246,6 @@ def live_caption_card(
     confidence: float | None = None,
     speaker: str | None = None,
 ) -> dict:
-    """LiveCaptionCard — real-time Puente caption with translation overlay.
-
-    Bridges Memoscape's display pipeline to Puente's Spanish-English
-    live caption feed.  The original utterance shows as the footer;
-    the translation is the hero element.
-    """
     eyebrow_parts = [src_lang.upper(), "\u2192", dst_lang.upper()]
     if speaker:
         eyebrow_parts = [speaker.split()[0]] + eyebrow_parts
@@ -307,7 +283,93 @@ def live_caption_card(
     }
 
 
-# ------------------------------------------------------------------ existing cards (unchanged)
+# ------------------------------------------------------------------ dream cards
+
+def world_anchor_card(
+    summary: str = "",
+    place: str = "",
+    ts_label: str = "",
+    confidence: float | None = None,
+) -> dict:
+    """WorldAnchorCard — ghost echo of a memory at the current location.
+
+    Shown automatically in Dream Mode when the user is at a place with
+    memory anchors.  Low opacity, long dismiss, never intrusive.
+    dismiss_ms=8000 so it fades after 8 seconds.
+    """
+    detail = f"{place}  \u2022  {ts_label}" if place and ts_label else (place or ts_label)
+    return {
+        "type":        "WorldAnchorCard",
+        "dismiss_ms":  8000,
+        "summary":     summary,
+        "place":       place,
+        "ts_label":    ts_label,
+        "primary":     summary,
+        "eyebrow":     "MEMORY ECHO",
+        "detail":      detail,
+        "footer":      ts_label,
+        "confidence":  confidence,
+        "conf_color":  T.conf_color(confidence),
+        "opacity":     0.20,   # hint to renderer: render at 20% opacity
+        "lines":       ["MEMORY ECHO", summary, detail],
+        "layout": {
+            "eyebrow":   {"x": 128, "y": 200, "size": "sm",   "color": T.TEXT_GHOST,    "tracking": 3},
+            "primary":   {"x": 128, "y": 220, "size": "sm",   "color": T.TEXT_GHOST},
+            "detail":    {"x": 128, "y": 236, "size": "sm",   "color": T.TEXT_GHOST},
+        },
+    }
+
+
+def synesthesia_card(
+    description: str = "",
+    confidence: float | None = None,
+) -> dict:
+    """SynesthesiaCard — VLM 6-word poetic scene description.
+
+    Rendered as hero text in the current dream palette color.
+    Updates every ~4 seconds as the scene changes.
+    dismiss_ms=4000 so it fades and is replaced by the next description.
+    """
+    # Trim to a sensible display length
+    display = description[:72] if len(description) > 72 else description
+    return {
+        "type":        "SynesthesiaCard",
+        "dismiss_ms":  4000,
+        "description": description,
+        "primary":     display,
+        "eyebrow":     "DREAM",
+        "confidence":  confidence,
+        "lines":       ["DREAM", display],
+        "layout": {
+            "eyebrow":   {"x": 128, "y": 88,  "size": "sm",   "color": T.ACCENT_MEMORY, "tracking": 4},
+            "separator": {"x1": 64, "x2": 192, "y": 104},
+            "primary":   {"x": 128, "y": 140, "size": "md",   "color": T.TEXT_PRIMARY},
+        },
+    }
+
+
+def palette_shift_card(
+    colors: list[dict] | None = None,
+    duration_ms: int = 2000,
+    mood: str = "neutral",
+) -> dict:
+    """PaletteShiftCard — ambient palette animation command.
+
+    Not a traditional display card — it carries palette shift data
+    consumed by the Lua palette_shader and never renders UI elements.
+    dismiss_ms=0 because it's consumed immediately by the renderer.
+    """
+    return {
+        "type":        "PaletteShiftCard",
+        "dismiss_ms":  0,
+        "mood":        mood,
+        "colors":      colors or [],
+        "duration_ms": duration_ms,
+        "lines":       [],
+    }
+
+
+# ------------------------------------------------------------------ existing new cards (unchanged)
 
 def commitment_drift(
     data,
@@ -318,7 +380,6 @@ def commitment_drift(
     due: str = "",
     confidence: float | None = None,
 ) -> dict:
-    """Card for an aging commitment with physics decay state."""
     if isinstance(data, dict):
         task        = _d(data, "task", ("summary", "primary"), task)
         person      = _d(data, "person", default=person)
@@ -369,7 +430,6 @@ def time_scrub_node(
     total: int = 1,
     confidence: float | None = None,
 ) -> dict:
-    """Card for a single node in the Time-Scrub Halo timeline."""
     return {
         "type":       "TimeScrubNodeCard",
         "dismiss_ms": 0,
@@ -398,7 +458,6 @@ def deviation_alert(
     prior_confidence: float = 0.0,
     new_confidence: float = 0.0,
 ) -> dict:
-    """Card surfaced by TellEngine when a transcript contradicts a promise baseline."""
     return {
         "type":             "DeviationAlertCard",
         "dismiss_ms":       5000,
@@ -474,7 +533,6 @@ ALL_SAMPLES: dict[str, dict] = {
         prior_confidence=0.80,
         new_confidence=0.85,
     ),
-    # --- new ---
     "forget_last":         forget_last_card("House keys"),
     "private_zone":        private_zone_card("Home office"),
     "consent_required":    consent_required_card("Calendar access"),
@@ -485,5 +543,19 @@ ALL_SAMPLES: dict[str, dict] = {
         dst_lang="en",
         confidence=0.92,
         speaker="Jordan",
+    ),
+    # --- dream mode ---
+    "world_anchor":        world_anchor_card(
+        summary="Keys at kitchen counter",
+        place="Kitchen",
+        ts_label="09:42",
+        confidence=0.88,
+    ),
+    "synesthesia":         synesthesia_card(
+        description="soft amber ritual familiar warmth",
+    ),
+    "palette_shift":       palette_shift_card(
+        colors=[{"idx": 1, "y": 420, "cb": 560, "cr": 450}],
+        mood="voice",
     ),
 }
