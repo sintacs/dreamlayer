@@ -7,6 +7,7 @@ from ..memory.privacy import PrivacyGate
 from ..memory.embeddings import MockEmbeddingProvider, OpenAIEmbeddingProvider
 from ..pipelines import vision, speech
 from ..pipelines.ingest import IngestPipeline
+from ..pipelines.extraction import extract_commitments
 from ..config import CONFIG
 from . import intents, answer_builder
 from ..hud import cards
@@ -64,31 +65,29 @@ class Orchestrator:
     def ingest_conversation(self, conv, place_id=None, context=None):
         """Ingest a conversation via the three-tier NLP pipeline.
 
-        Parameters
-        ----------
-        conv : dict | str
-            Structured conversation dict (legacy) or raw transcript string.
-        place_id : int | None
-            Optional place FK to attach to the conversation memory.
-        context : dict | None
-            Optional IngestPipeline context: location, people, timestamp.
+        Accepts both raw transcript strings and legacy structured dicts
+        (the old {participants, turns, summary} fixture format).
 
-        Returns
-        -------
-        list[int]  db_ids of all written memory rows
+        For structured dicts, commitment rows are written via
+        extract_commitments() so that db.commitments() lookups continue
+        to work. The full transcript is also run through IngestPipeline
+        for object/person/task events.
         """
         if not self.privacy.allow_capture():
             return []
 
-        # Accept both raw transcript strings and legacy structured dicts
+        db_ids = []
+
         if isinstance(conv, str):
             transcript = conv
         else:
+            # Structured fixture dict — extract the summary as the transcript
             parsed     = speech.extract_conversation(conv)
             transcript = parsed.get("summary", "")
-            # Also store the high-level conversation summary for backward compat
+
+            # Store the top-level conversation memory
             emb = self.embedder.embed(transcript)
-            self.db.add_memory(
+            conv_mid = self.db.add_memory(
                 "conversation",
                 transcript,
                 embedding=emb,
@@ -97,22 +96,29 @@ class Orchestrator:
                 meta={"person": parsed["participants"][-1]
                       if parsed.get("participants") else None},
             )
+            db_ids.append(conv_mid)
 
+            # Write commitment rows from structured turns (legacy path)
+            for c in extract_commitments(conv):
+                cid = self.db.add_commitment(
+                    c["person"], c["task"], c["due"], conv_mid, c["confidence"]
+                )
+                db_ids.append(cid)
+
+        # Run IngestPipeline on the transcript for object/person/task events
         events = self.pipeline.ingest(transcript, context=context)
-
-        # Embed and update each event with a real embedding vector
+        import json as _json
         for ev in events:
             emb = self.embedder.embed(ev.summary)
-            # Update the embedding column directly
-            import json as _json
             self.db.conn.execute(
                 "UPDATE memories SET embedding=? WHERE id=?",
                 (_json.dumps(emb), ev.db_id),
             )
+            db_ids.append(ev.db_id)
         self.db.conn.commit()
 
         self.bridge.send_card(cards.saved_memory(""), event="memory_saved")
-        return [ev.db_id for ev in events]
+        return db_ids
 
     def ask(self, query):
         self.bridge.send_command("ask")
