@@ -19,21 +19,17 @@ def test_object_recall_payload():
         "confidence": 0.86,
     })
     assert c["type"] == "ObjectRecallCard"
-    # primary = the object name (what you're looking for)
     assert c["primary"] == "Keys"
-    # place is the location answer; in its own key and in lines[]
     assert c["place"] == "Kitchen table"
     assert "Kitchen table" in c["lines"]
-    # detail truncated: 17 chars + ellipsis = 18 total
     assert c["detail"] == "Beside blue noteb\u2026"
-    assert c["footer"] == "7:42 PM"           # alias of last_seen
+    assert c["footer"] == "7:42 PM"
     assert c["confidence"] == 0.86
     assert "layout" in c
     assert c["layout"]["primary"]["size"] == "hero"
 
 
 def test_object_recall_positional():
-    """Positional calling convention must produce same type and primary."""
     c = cards.object_recall("Keys", place="Bedroom", confidence=0.9)
     assert c["type"] == "ObjectRecallCard"
     assert c["primary"] == "Keys"
@@ -129,6 +125,7 @@ def test_low_confidence_payload():
 # ---------------------------------------------------------------------------
 
 def test_all_samples_have_type():
-    assert len(cards.ALL_SAMPLES) == 11
+    # 11 original + 3 new (commitment_drift, time_scrub_node, deviation_alert)
+    assert len(cards.ALL_SAMPLES) == 14
     for name, payload in cards.ALL_SAMPLES.items():
         assert "type" in payload, f"ALL_SAMPLES['{name}'] missing 'type' key"

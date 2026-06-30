@@ -54,7 +54,7 @@ class TellEngine:
         *,
         lookback_limit: int = 20,
         deviation_threshold: float = 0.55,
-        min_prior_confidence: float = 0.50,
+        min_prior_confidence: float = 0.10,  # low floor: don't discard weak priors
     ):
         self.ring = ring
         self.lookback_limit = lookback_limit
@@ -69,11 +69,10 @@ class TellEngine:
     def check(self, transcript: str, confidence: float = 0.80) -> DeviationResult:
         """Score transcript against the promise baseline.
 
-        Deviation is defined as: low overlap (same topic but different claim)
-        AND the new confidence is meaningfully different from the prior.
+        Deviation is defined as: moderate topic overlap (same topic) AND
+        a large confidence delta between prior and new claim.
 
-        Returns a DeviationResult; .fired is True when the score exceeds
-        self.deviation_threshold.
+        Returns a DeviationResult; .fired is True when score >= deviation_threshold.
         """
         baseline = self._baseline()
         if not baseline:
@@ -89,7 +88,6 @@ class TellEngine:
         for bucket in baseline:
             prior_text = bucket.event.summary
             overlap = _overlap(prior_text, transcript)
-            # Partial topic overlap + confidence divergence = likely contradiction
             conf_delta = abs(confidence - bucket.event.confidence)
             # Score peaks when overlap is moderate (same topic) but conf differs
             score = overlap * conf_delta * 2.0  # scale to ~0-1
@@ -132,23 +130,23 @@ def _deviation_alert_card(
 ) -> dict:
     from ..hud import themes as T
     return {
-        "type":            "DeviationAlertCard",
-        "dismiss_ms":      5000,
-        "score":           round(score, 3),
-        "prior_summary":   prior_summary,
-        "prior_confidence":prior_confidence,
-        "new_summary":     new_summary,
-        "new_confidence":  new_confidence,
-        "primary":         new_summary,
-        "eyebrow":         "Sounds different…",
-        "footer":          prior_summary,
-        "lines":           ["Sounds different…", new_summary, prior_summary],
+        "type":             "DeviationAlertCard",
+        "dismiss_ms":       5000,
+        "score":            round(score, 3),
+        "prior_summary":    prior_summary,
+        "prior_confidence": prior_confidence,
+        "new_summary":      new_summary,
+        "new_confidence":   new_confidence,
+        "primary":          new_summary,
+        "eyebrow":          "Sounds different\u2026",
+        "footer":           prior_summary,
+        "lines":            ["Sounds different\u2026", new_summary, prior_summary],
         "layout": {
             "eyebrow":   {"x": 128, "y": 64,  "size": "sm",   "color": T.WARNING_AMBER, "tracking": 2},
             "separator": {"x1": 48, "x2": 208, "y": 80},
             "primary":   {"x": 128, "y": 108, "size": "md",   "color": T.TEXT_PRIMARY},
             "divider":   {"x1": 80, "x2": 176, "y": 132},
             "footer":    {"x": 128, "y": 156, "size": "sm",   "color": T.TEXT_GHOST},
-            "score_dot": {"x": 128, "y": 178, "r": 4, "color": T.ACCENT_ATTENTION},
+            "score_dot": {"x": 128, "y": 178, "r": 4,         "color": T.ACCENT_ATTENTION},
         },
     }
