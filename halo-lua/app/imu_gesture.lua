@@ -27,7 +27,14 @@
 ---
 --- Tuning
 --- ------
----   All thresholds live in GestureConfig so you can tune without touching logic.
+---   All thresholds live in DEFAULTS so you can tune without touching logic.
+---
+--- EMA seeding (for tests / replay)
+--- ---------------------------------
+---   Pass seed_ema_x, seed_ema_y, seed_ema_z in the opts table to start
+---   each axis EMA pre-settled at a given value.  This lets test fixtures
+---   deliver a gesture stream without a priming phase, avoiding spurious
+---   threshold crossings before the gesture begins.
 
 local M = {}
 
@@ -59,7 +66,11 @@ local DEFAULTS = {
 -- EMA smoother
 -- ---------------------------------------------------------------------------
 
-local function new_ema(alpha)
+local function new_ema(alpha, seed)
+  -- seed: optional starting value (EMA is pre-settled, seeded=true)
+  if seed ~= nil then
+    return { alpha = alpha, value = seed, seeded = true }
+  end
   return { alpha = alpha, value = 0.0, seeded = false }
 end
 
@@ -74,8 +85,15 @@ end
 -- +/- threshold in opposite direction from last crossing.
 -- ---------------------------------------------------------------------------
 
-local function new_peaks(threshold)
-  return { threshold = threshold, last_sign = 0, crossings = {}, _t = {} }
+local function new_peaks(threshold, seed_sign)
+  -- seed_sign: optional, pre-set last_sign so the first real crossing is
+  -- recorded immediately (used together with EMA seeding).
+  return {
+    threshold = threshold,
+    last_sign = seed_sign or 0,
+    crossings = {},
+    _t        = {},
+  }
 end
 
 local function peaks_feed(p, value, now_ms)
@@ -170,21 +188,32 @@ function M.new(opts)
   local cfg = {}
   for k, v in pairs(DEFAULTS) do cfg[k] = opts[k] or v end
 
+  -- Optional EMA seeds: start axes pre-settled to avoid spurious crossings
+  -- in test/replay scenarios.  seed_ema_y > threshold means peaks_y already
+  -- has last_sign = +1 so the first genuine negative crossing is captured.
+  local sy = opts.seed_ema_y
+  local sx = opts.seed_ema_x
+  local sz = opts.seed_ema_z
+
   local self = {
     cfg         = cfg,
     on_gesture  = opts.on_gesture or function() end,
-    _ema_x      = new_ema(cfg.ema_alpha),
-    _ema_y      = new_ema(cfg.ema_alpha),
-    _ema_z      = new_ema(cfg.ema_alpha),
-    _peaks_x    = new_peaks(cfg.threshold_shake),
-    _peaks_y    = new_peaks(cfg.threshold_nod),
-    _peaks_z    = new_peaks(cfg.threshold_tilt),
+    _ema_x      = new_ema(cfg.ema_alpha, sx),
+    _ema_y      = new_ema(cfg.ema_alpha, sy),
+    _ema_z      = new_ema(cfg.ema_alpha, sz),
+    -- pre-set last_sign to match seed so the first crossing direction is correct
+    _peaks_x    = new_peaks(cfg.threshold_shake,
+                    sx and (sx > cfg.threshold_shake and 1 or (sx < -cfg.threshold_shake and -1 or 0)) or 0),
+    _peaks_y    = new_peaks(cfg.threshold_nod,
+                    sy and (sy > cfg.threshold_nod   and 1 or (sy < -cfg.threshold_nod   and -1 or 0)) or 0),
+    _peaks_z    = new_peaks(cfg.threshold_tilt,
+                    sz and (sz > cfg.threshold_tilt  and 1 or (sz < -cfg.threshold_tilt  and -1 or 0)) or 0),
     _cooldowns  = {},   -- gesture_name -> last_fired_ms
     -- tilt-hold tracking
-    _tilt_start = nil,
+    _tilt_start  = nil,
     _tilt_active = false,
     -- glance tracking
-    _glance_start = nil,
+    _glance_start  = nil,
     _glance_active = false,
   }
   setmetatable(self, { __index = M })
@@ -297,8 +326,8 @@ function M:reset()
   self._peaks_x  = new_peaks(self.cfg.threshold_shake)
   self._peaks_y  = new_peaks(self.cfg.threshold_nod)
   self._peaks_z  = new_peaks(self.cfg.threshold_tilt)
-  self._cooldowns   = {}
-  self._tilt_active = false
+  self._cooldowns    = {}
+  self._tilt_active  = false
   self._glance_active = false
 end
 
