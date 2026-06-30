@@ -12,9 +12,9 @@ Lupa notes
 ----------
 * lua55 always returns require() as (table, path) — _lua_require unwraps it.
 * Lua colon-methods need explicit self from Python: G.feed(G, ...).
-* Python functions cannot be reliably written into Lua table fields after
-  construction via attribute assignment.  Instead we inject a Lua-side
-  collector table at new() time and read it back from Python after feeding.
+* lupa silently drops Python kwargs whose names contain underscores when
+  building Lua tables via lua.table(**kw).  All opts tables are therefore
+  constructed as Lua literals via rt.execute() and read back as globals.
 
 EMA seeding
 -----------
@@ -27,6 +27,7 @@ genuine direction change is captured immediately.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -46,12 +47,10 @@ requires_lupa = pytest.mark.skipif(
     reason="lupa not installed — run: uv add lupa",
 )
 
-# Default seed values: EMA starts settled at peak so the first sample
-# heading toward the opposite pole immediately generates a crossing.
-_NOD_SEED   =  35.0   # Y-axis starts at +peak for nod streams
-_SHAKE_SEED = -32.0   # X-axis starts at -peak for shake streams
-_TILT_SEED  = -25.0   # Z-axis starts at -peak for tilt streams
-_GLANCE_SEED =  25.0  # Z-axis starts at +peak for glance streams
+# Default EMA seed values — axes start settled at peak amplitude.
+_NOD_SEED    =  35.0   # Y-axis: nod streams start at +peak
+_SHAKE_SEED  = -32.0   # X-axis: shake streams start at -peak
+_TILT_SEED   = -25.0   # Z-axis: tilt streams start at -peak
 
 
 # ---------------------------------------------------------------------------
@@ -82,14 +81,45 @@ def gesture_module(lua):
 
 
 # ---------------------------------------------------------------------------
+# Lua opts builder
+#
+# lupa drops underscore kwargs in lua.table(**kw).  We work around this by
+# serialising numeric/bool cfg values into a Lua table literal executed
+# via rt.execute(), then reading back the global _test_opts.
+# on_gesture is always wired from the pre-declared _test_on_gesture global.
+# ---------------------------------------------------------------------------
+
+def _build_lua_opts(lua, **cfg):
+    """
+    Build a Lua opts table whose keys survive Python→Lua intact.
+    Numeric and boolean values are serialised directly; string values are
+    quoted.  on_gesture must NOT be in cfg — it is wired separately.
+    Returns the Lua table object.
+    """
+    parts = []
+    for k, v in cfg.items():
+        if isinstance(v, bool):
+            parts.append(f"  {k} = {'true' if v else 'false'}")
+        elif isinstance(v, (int, float)):
+            parts.append(f"  {k} = {v}")
+        elif isinstance(v, str):
+            escaped = v.replace('"', '\\"')
+            parts.append(f'  {k} = "{escaped}"')
+        # skip anything else (e.g. callables — on_gesture handled separately)
+    body = ",\n".join(parts)
+    lua.execute(f"_test_opts = {{\n{body}\n}}")
+    lua.execute("_test_opts.on_gesture = _test_on_gesture")
+    return lua.eval("_test_opts")
+
+
+# ---------------------------------------------------------------------------
 # _new_with_collector
 # ---------------------------------------------------------------------------
 
 def _new_with_collector(M, lua, **cfg):
     """
-    Injects a Lua-side on_gesture collector into the instance so Python
-    can read results without needing to assign a Python callable after the
-    fact (which lupa/lua55 does not support reliably).
+    Declare Lua-side collector, build opts table safely, create instance.
+    Returns (G, fired_ref).
     """
     lua.execute("""
         _test_fired = {}
@@ -97,10 +127,9 @@ def _new_with_collector(M, lua, **cfg):
             _test_fired[#_test_fired + 1] = {name, confidence}
         end
     """)
-    cfg["on_gesture"] = lua.eval("_test_on_gesture")
-    G = M.new(lua.table(**cfg))
-    fired_ref = lua.eval("_test_fired")
-    return G, fired_ref
+    opts = _build_lua_opts(lua, **cfg)
+    G = M.new(opts)
+    return G, lua.eval("_test_fired")
 
 
 def _collect(lua, fired_ref):
@@ -141,96 +170,74 @@ def _samples(ax=0.0, ay=0.0, az=0.0, count=1, start_ms=0):
     return [(ax, ay, az, start_ms + i * DT_MS) for i in range(count)]
 
 
-# ---------------------------------------------------------------------------
-# NOD stream  (Y-axis: + → - → rest)
+# NOD  (Y-axis: +peak → -peak → rest)
+# seed_ema_y=+35 ⇒ EMA starts above +threshold, last_sign=+1
+# First -peak sample records crossing -1 ⇒ crossings=[+1(seed sign),−] NO—
+# last_sign=+1 means peaks_feed skips the +35 samples (same sign),
+# then records −1 on the first −35 sample.  match_nod needs [+, −]:
+# we need ONE +1 crossing first.  So the stream starts at +peak to
+# confirm last_sign=+1 is already set, then flips to −peak.
+# peaks_feed: sign==+1, last_sign==+1 ⇒ skip. Then sign==-1 ⇒ record.
+# crossings = [-1] only — not enough for match_nod!
 #
-# With seed_ema_y=+peak the EMA is already above +threshold, last_sign=+1.
-# The stream moves Y to -peak immediately → first sample crossing to -1
-# is recorded.  Pattern [+1, -1] satisfies match_nod.
-# ---------------------------------------------------------------------------
+# Correct approach: seed last_sign=0 (no seed), let stream produce +1
+# crossing organically then -1.  Use enough samples for EMA to cross.
+# With alpha=0.35 from 0: sample 1 ⇒ 12.25, s2 ⇒ 23.6, s3 ⇒ 30.1 > 28.
+# So 3 samples at 35 crosses +threshold.  Then 3 samples at -35 crosses.
+# NO EMA seed needed for nod — 3+3 samples is sufficient.
 
 def _nod_stream(start_ms=0, strength=35.0):
+    """Y-axis nod: enough samples to organically cross +/- threshold."""
     t = start_ms
-    s  = _samples(0,  strength, 0, 4, t);  t += 4 * DT_MS   # confirm +peak
-    s += _samples(0, -strength, 0, 6, t);  t += 6 * DT_MS   # cross to -peak
+    s  = _samples(0,  strength, 0, 5, t);  t += 5 * DT_MS   # EMA crosses +28
+    s += _samples(0, -strength, 0, 5, t);  t += 5 * DT_MS   # EMA crosses -28
     s += _samples(0,  0,        0, 3, t)                     # return to rest
     return s
 
 
-# ---------------------------------------------------------------------------
-# DOUBLE NOD stream  (Y-axis: + → - → + → - within gesture_window_ms=600)
-#
-# Inter-nod gap must be small so all 4 crossings land within 600 ms.
-# Total: 4+4+4+4 = 16 samples × 20 ms = 320 ms < 600 ms.
-# ---------------------------------------------------------------------------
-
+# DOUBLE NOD: 4 crossings within gesture_window_ms=600 ms
+# 4 legs × 5 samples × 20 ms = 400 ms < 600 ms.
 def _double_nod_stream(start_ms=0, strength=35.0):
+    """Two nods tight enough to fit inside gesture_window_ms=600 ms."""
     t = start_ms
-    s  = _samples(0,  strength, 0, 4, t);  t += 4 * DT_MS
-    s += _samples(0, -strength, 0, 4, t);  t += 4 * DT_MS
-    s += _samples(0,  strength, 0, 4, t);  t += 4 * DT_MS
-    s += _samples(0, -strength, 0, 4, t);  t += 4 * DT_MS
+    s  = _samples(0,  strength, 0, 5, t);  t += 5 * DT_MS
+    s += _samples(0, -strength, 0, 5, t);  t += 5 * DT_MS
+    s += _samples(0,  strength, 0, 5, t);  t += 5 * DT_MS
+    s += _samples(0, -strength, 0, 5, t);  t += 5 * DT_MS
     s += _samples(0,  0,        0, 3, t)
     return s
 
 
-# ---------------------------------------------------------------------------
-# SHAKE stream  (X-axis: - → + → - → rest, 3 alternating crossings)
-#
-# With seed_ema_x=-peak, last_sign=-1.  Stream moves to +peak (crossing
-# +1), back to -peak (crossing -1), then to +peak (-→ third crossing +1)
-# giving [-1(seed), +1, -1, +1] — match_shake sees 3 alternating entries.
-# Wait: last_sign is pre-seeded to -1 but no crossing is stored yet.
-# The first sample at +peak records crossing +1, then -peak records -1,
-# then +peak records +1 → crossings = [+1,-1,+1] → match_shake passes.
-# ---------------------------------------------------------------------------
-
+# SHAKE  (X-axis: 3 alternating crossings)
+# alpha=0.35 from 0: 3 samples at 32 ⇒ EMA crosses 28.
 def _shake_stream(start_ms=0, strength=32.0):
+    """X-axis shake: alternating crossings ±threshold."""
     t = start_ms
-    s  = _samples( strength, 0, 0, 5, t);  t += 5 * DT_MS   # cross +
-    s += _samples(-strength, 0, 0, 5, t);  t += 5 * DT_MS   # cross -
+    s  = _samples(-strength, 0, 0, 5, t);  t += 5 * DT_MS   # cross -
     s += _samples( strength, 0, 0, 5, t);  t += 5 * DT_MS   # cross +
+    s += _samples(-strength, 0, 0, 5, t);  t += 5 * DT_MS   # cross -
     s += _samples( 0,        0, 0, 3, t)                     # rest
     return s
 
 
-# ---------------------------------------------------------------------------
-# GLANCE stream  (Z-axis: +peak briefly then rest)
-#
-# With seed_ema_z=+peak, last_sign=+1, crossings=[].  The stream holds
-# +peak for duration_ms then returns to 0.  While at +peak, match_glance
-# returns nil (crossings is empty — no NEW crossing has been recorded).
-# When Z drops to 0, the EMA falls below +threshold: next peaks_feed call
-# does NOT record a crossing (sign becomes 0, not -1).  _glance_active was
-# set... wait — match_glance only fires when crossings==[+1].  We need the
-# initial rise to register.
-#
-# Strategy: start seed at 0 (not pre-seeded), deliver +peak samples so the
-# EMA crosses +threshold organically, then drop back to 0.  The EMA with
-# alpha=0.35 needs ~6 samples to cross 20 from 0:
-#   after 1: 8.75  after 2: 14.2  after 3: 17.7  after 4: 20.0 ← crosses!
-# So 4 samples at 25.0 is sufficient to cross threshold_tilt=20.
-# ---------------------------------------------------------------------------
-
+# GLANCE  (Z-axis: single +crossing then return within peek_max_ms=350)
+# alpha=0.35 from 0: sample 4 ⇒ EMA = 20.0 ≥ threshold_tilt=20 → crosses.
+# Hold for duration_ms then drop to 0; glance_active turns off ⇒ fires.
 def _glance_stream(start_ms=0, strength=25.0, duration_ms=120):
-    t  = start_ms
-    # Organic rise — no seed — so crossing is recorded naturally
-    rise = 4   # samples needed for EMA to cross threshold_tilt=20 at strength=25
+    """Z-axis brief upward glance."""
+    t    = start_ms
+    rise = 4
     n    = max(1, duration_ms // DT_MS)
     s  = _samples(0, 0, strength, rise + n, t);  t += (rise + n) * DT_MS
     s += _samples(0, 0, 0,                3, t)
     return s
 
 
-# ---------------------------------------------------------------------------
-# TILT stream  (Z-axis: sustained -peak for duration_ms)
-#
-# TILT_REVEAL uses sustained-value logic (no crossing needed), just
-# sz < -threshold for hold_tilt_ms=400 ms.  With seed_ema_z=-peak the
-# EMA is already below -threshold on sample 1.
-# ---------------------------------------------------------------------------
-
+# TILT  (Z-axis: sustained negative, no crossing needed)
+# alpha=0.35 from 0: sample 4 ⇒ EMA = -20.0 at strength=-25 → crosses -20.
+# hold_tilt_ms=400, so need 400/20=20 samples below threshold after crossing.
 def _tilt_stream(start_ms=0, strength=-25.0, duration_ms=500):
+    """Z-axis sustained downward tilt."""
     t  = start_ms
     n  = max(1, duration_ms // DT_MS)
     s  = _samples(0, 0, strength, n, t);  t += n * DT_MS
@@ -249,29 +256,26 @@ def _names(fired):
 @requires_lupa
 class TestNodSave:
     def test_single_nod_fires(self, lua, gesture_module):
-        assert "NOD_SAVE" in _names(
-            _run(gesture_module, lua, _nod_stream(), seed_ema_y=_NOD_SEED))
+        assert "NOD_SAVE" in _names(_run(gesture_module, lua, _nod_stream()))
 
     def test_nod_confidence_above_threshold(self, lua, gesture_module):
-        for name, conf in _run(gesture_module, lua, _nod_stream(), seed_ema_y=_NOD_SEED):
+        for name, conf in _run(gesture_module, lua, _nod_stream()):
             if name == "NOD_SAVE":
                 assert conf >= 0.70
 
     def test_weak_nod_below_threshold_ignored(self, lua, gesture_module):
-        # strength=5 < threshold=28; seed at 5 so last_sign stays 0
-        assert "NOD_SAVE" not in _names(
-            _run(gesture_module, lua, _nod_stream(strength=5.0), seed_ema_y=5.0))
+        assert "NOD_SAVE" not in _names(_run(gesture_module, lua, _nod_stream(strength=5.0)))
 
     def test_nod_cooldown_prevents_double_fire(self, lua, gesture_module):
-        # Second nod starts 200 ms after first — within cooldown_ms=900
+        # second nod at t=200 ms, within cooldown_ms=900
         s = _nod_stream(0) + _nod_stream(200)
-        fired = _run(gesture_module, lua, s, seed_ema_y=_NOD_SEED)
+        fired = _run(gesture_module, lua, s)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 1
 
     def test_nod_fires_again_after_cooldown(self, lua, gesture_module):
-        # Second nod at t=2000 ms — well past cooldown_ms=900
+        # second nod at t=2000 ms, past cooldown_ms=900
         s = _nod_stream(0) + _nod_stream(2000)
-        fired = _run(gesture_module, lua, s, seed_ema_y=_NOD_SEED)
+        fired = _run(gesture_module, lua, s)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 2
 
 
@@ -282,16 +286,13 @@ class TestNodSave:
 @requires_lupa
 class TestDoubleNod:
     def test_double_nod_fires(self, lua, gesture_module):
-        assert "DOUBLE_NOD" in _names(
-            _run(gesture_module, lua, _double_nod_stream(), seed_ema_y=_NOD_SEED))
+        assert "DOUBLE_NOD" in _names(_run(gesture_module, lua, _double_nod_stream()))
 
     def test_double_nod_not_shadowed_by_single_nod(self, lua, gesture_module):
-        assert "DOUBLE_NOD" in _names(
-            _run(gesture_module, lua, _double_nod_stream(), seed_ema_y=_NOD_SEED))
+        assert "DOUBLE_NOD" in _names(_run(gesture_module, lua, _double_nod_stream()))
 
     def test_single_nod_does_not_fire_double_nod(self, lua, gesture_module):
-        assert "DOUBLE_NOD" not in _names(
-            _run(gesture_module, lua, _nod_stream(), seed_ema_y=_NOD_SEED))
+        assert "DOUBLE_NOD" not in _names(_run(gesture_module, lua, _nod_stream()))
 
 
 # ---------------------------------------------------------------------------
@@ -301,22 +302,20 @@ class TestDoubleNod:
 @requires_lupa
 class TestShakeDismiss:
     def test_shake_fires(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" in _names(
-            _run(gesture_module, lua, _shake_stream(), seed_ema_x=_SHAKE_SEED))
+        assert "SHAKE_DISMISS" in _names(_run(gesture_module, lua, _shake_stream()))
 
     def test_shake_confidence_above_threshold(self, lua, gesture_module):
-        for name, conf in _run(gesture_module, lua, _shake_stream(), seed_ema_x=_SHAKE_SEED):
+        for name, conf in _run(gesture_module, lua, _shake_stream()):
             if name == "SHAKE_DISMISS":
                 assert conf >= 0.70
 
     def test_weak_shake_ignored(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" not in _names(
-            _run(gesture_module, lua, _shake_stream(strength=5.0), seed_ema_x=-5.0))
+        assert "SHAKE_DISMISS" not in _names(_run(gesture_module, lua, _shake_stream(strength=5.0)))
 
     def test_shake_cooldown(self, lua, gesture_module):
-        # Second shake at t=300 ms — within cooldown_ms=900
+        # second shake at t=300 ms, within cooldown_ms=900
         s = _shake_stream(0) + _shake_stream(300)
-        fired = _run(gesture_module, lua, s, seed_ema_x=_SHAKE_SEED)
+        fired = _run(gesture_module, lua, s)
         assert len([f for f in fired if f[0] == "SHAKE_DISMISS"]) == 1
 
 
@@ -327,14 +326,11 @@ class TestShakeDismiss:
 @requires_lupa
 class TestGlancePeek:
     def test_glance_fires(self, lua, gesture_module):
-        # No seed — organic EMA rise so crossing is recorded
-        assert "GLANCE_PEEK" in _names(
-            _run(gesture_module, lua, _glance_stream()))
+        assert "GLANCE_PEEK" in _names(_run(gesture_module, lua, _glance_stream()))
 
     def test_long_tilt_not_glance(self, lua, gesture_module):
-        # duration_ms=600 > peek_max_ms=350 → should NOT fire GLANCE_PEEK
-        assert "GLANCE_PEEK" not in _names(
-            _run(gesture_module, lua, _glance_stream(duration_ms=600)))
+        # duration_ms=600 > peek_max_ms=350
+        assert "GLANCE_PEEK" not in _names(_run(gesture_module, lua, _glance_stream(duration_ms=600)))
 
 
 # ---------------------------------------------------------------------------
@@ -344,13 +340,11 @@ class TestGlancePeek:
 @requires_lupa
 class TestTiltReveal:
     def test_tilt_fires_when_held(self, lua, gesture_module):
-        assert "TILT_REVEAL" in _names(
-            _run(gesture_module, lua, _tilt_stream(duration_ms=500), seed_ema_z=_TILT_SEED))
+        assert "TILT_REVEAL" in _names(_run(gesture_module, lua, _tilt_stream(duration_ms=500)))
 
     def test_brief_tilt_does_not_fire(self, lua, gesture_module):
-        # duration_ms=200 < hold_tilt_ms=400 → should NOT fire
-        assert "TILT_REVEAL" not in _names(
-            _run(gesture_module, lua, _tilt_stream(duration_ms=200), seed_ema_z=_TILT_SEED))
+        # duration_ms=200 < hold_tilt_ms=400
+        assert "TILT_REVEAL" not in _names(_run(gesture_module, lua, _tilt_stream(duration_ms=200)))
 
 
 # ---------------------------------------------------------------------------
@@ -384,19 +378,15 @@ class TestNoiseImmunity:
 @requires_lupa
 class TestMultiGesture:
     def test_nod_does_not_trigger_shake(self, lua, gesture_module):
-        assert "SHAKE_DISMISS" not in _names(
-            _run(gesture_module, lua, _nod_stream(), seed_ema_y=_NOD_SEED))
+        assert "SHAKE_DISMISS" not in _names(_run(gesture_module, lua, _nod_stream()))
 
     def test_shake_does_not_trigger_nod(self, lua, gesture_module):
-        assert "NOD_SAVE" not in _names(
-            _run(gesture_module, lua, _shake_stream(), seed_ema_x=_SHAKE_SEED))
+        assert "NOD_SAVE" not in _names(_run(gesture_module, lua, _shake_stream()))
 
     def test_sequential_nod_then_shake(self, lua, gesture_module):
         nod   = _nod_stream(0)
-        # Shake starts well after nod cooldown (900 ms) expires
-        shake = _shake_stream(nod[-1][3] + 1000)
-        fired = _run(gesture_module, lua, nod + shake,
-                     seed_ema_y=_NOD_SEED, seed_ema_x=_SHAKE_SEED)
+        shake = _shake_stream(nod[-1][3] + 1000)  # well past cooldown_ms=900
+        fired = _run(gesture_module, lua, nod + shake)
         names = _names(fired)
         assert "NOD_SAVE"      in names
         assert "SHAKE_DISMISS" in names
@@ -409,21 +399,18 @@ class TestMultiGesture:
 @requires_lupa
 class TestCustomConfig:
     def test_higher_threshold_ignores_normal_nod(self, lua, gesture_module):
-        # threshold_nod=60 > strength=35 → EMA never crosses, no NOD_SAVE
-        fired = _run(gesture_module, lua, _nod_stream(strength=35.0),
-                     seed_ema_y=35.0, threshold_nod=60)
+        # threshold_nod=60 > EMA peak (~33 after 5 samples at 35) → no crossing
+        fired = _run(gesture_module, lua, _nod_stream(strength=35.0), threshold_nod=60)
         assert "NOD_SAVE" not in _names(fired)
 
     def test_wider_cooldown_prevents_second_gesture(self, lua, gesture_module):
         # cooldown_ms=5000, second nod at t=2000 → blocked
-        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(2000),
-                     seed_ema_y=_NOD_SEED, cooldown_ms=5000)
+        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(2000), cooldown_ms=5000)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) == 1
 
     def test_shorter_cooldown_allows_rapid_fire(self, lua, gesture_module):
         # cooldown_ms=100, second nod at t=400 → allowed
-        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(400),
-                     seed_ema_y=_NOD_SEED, cooldown_ms=100)
+        fired = _run(gesture_module, lua, _nod_stream(0) + _nod_stream(400), cooldown_ms=100)
         assert len([f for f in fired if f[0] == "NOD_SAVE"]) >= 2
 
 
