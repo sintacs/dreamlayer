@@ -20,12 +20,17 @@ class Config:
 
     # LLM tier-3 extraction
     llm_model:                  str   = "gpt-4o-mini"
-    llm_confidence_threshold:   float = 0.60   # trigger if any event below this
-    llm_word_threshold:         int   = 40      # trigger if transcript > N words
+    llm_confidence_threshold:   float = 0.60
+    llm_word_threshold:         int   = 40
     llm_timeout_s:              float = 4.0
     openai_api_key:             str   = field(
         default_factory=lambda: os.environ.get("OPENAI_API_KEY", "")
     )
+
+    # Passive recall primitives
+    passive_ring_capacity:      int   = 64
+    passive_min_confidence:     float = 0.55
+    passive_tick_interval_ms:   int   = 250
 
 
 CONFIG = Config()
