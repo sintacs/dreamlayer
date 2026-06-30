@@ -1,4 +1,3 @@
-
 """cards.py — Python card payload constructors."""
 from __future__ import annotations
 from . import themes as T
@@ -172,6 +171,121 @@ def low_confidence() -> dict:
     }
 
 
+# ------------------------------------------------------------------ new cards
+
+def commitment_drift(
+    data,
+    task: str = "",
+    person: str = "",
+    drift_state: str = "healthy",
+    decay: float = 0.0,
+    due: str = "",
+    confidence: float | None = None,
+) -> dict:
+    """Card for an aging commitment with physics decay state."""
+    if isinstance(data, dict):
+        task        = _d(data, "task", ("summary", "primary"), task)
+        person      = _d(data, "person", default=person)
+        drift_state = data.get("drift_state", drift_state)
+        decay       = data.get("decay", decay)
+        due         = _d(data, "due", ("footer",), due)
+        confidence  = data.get("confidence", confidence)
+
+    _STATE_COLORS = {
+        "blooming":  T.ACCENT_SUCCESS,
+        "healthy":   T.ACCENT_MEMORY,
+        "drifting":  T.CONFIDENCE_MED,
+        "cracking":  T.WARNING_AMBER,
+        "shattered": T.ACCENT_ERROR,
+    }
+    state_color = _STATE_COLORS.get(drift_state, T.TEXT_SECONDARY)
+
+    return {
+        "type":        "CommitmentDriftCard",
+        "dismiss_ms":  4500,
+        "task":        task,
+        "person":      person,
+        "drift_state": drift_state,
+        "decay":       round(decay, 3),
+        "due":         due,
+        "primary":     task,
+        "eyebrow":     drift_state.upper(),
+        "footer":      due,
+        "confidence":  confidence,
+        "conf_color":  T.conf_color(confidence),
+        "state_color": state_color,
+        "lines":       [drift_state.upper(), task, due],
+        "layout": {
+            "eyebrow":    {"x": 128, "y": 64,  "size": "sm",   "color": state_color, "tracking": 3},
+            "separator":  {"x1": 48, "x2": 208, "y": 80},
+            "primary":    {"x": 128, "y": 112, "size": "hero", "color": T.TEXT_PRIMARY},
+            "decay_bar":  {"x": 128, "y": 148, "fill": round(decay, 3), "color": state_color},
+            "footer":     {"x": 128, "y": 168, "size": "sm",   "color": T.TEXT_GHOST},
+        },
+    }
+
+
+def time_scrub_node(
+    summary: str = "",
+    kind: str = "object",
+    ts_label: str = "",
+    index: int = 0,
+    total: int = 1,
+    confidence: float | None = None,
+) -> dict:
+    """Card for a single node in the Time-Scrub Halo timeline."""
+    return {
+        "type":       "TimeScrubNodeCard",
+        "dismiss_ms": 0,
+        "index":      index,
+        "total":      total,
+        "kind":       kind,
+        "summary":    summary,
+        "primary":    summary,
+        "ts_label":   ts_label,
+        "footer":     ts_label,
+        "confidence": confidence,
+        "lines":      [summary, ts_label],
+        "layout": {
+            "progress": {"value": index / max(total - 1, 1)},
+            "eyebrow":  {"x": 128, "y": 56,  "size": "sm",   "color": T.ACCENT_MEMORY, "tracking": 2},
+            "primary":  {"x": 128, "y": 100, "size": "hero", "color": T.TEXT_PRIMARY},
+            "footer":   {"x": 128, "y": 148, "size": "sm",   "color": T.TEXT_GHOST},
+        },
+    }
+
+
+def deviation_alert(
+    prior_summary: str = "",
+    new_summary: str = "",
+    score: float = 0.0,
+    prior_confidence: float = 0.0,
+    new_confidence: float = 0.0,
+) -> dict:
+    """Card surfaced by TellEngine when a transcript contradicts a promise baseline."""
+    return {
+        "type":             "DeviationAlertCard",
+        "dismiss_ms":       5000,
+        "score":            round(score, 3),
+        "prior_summary":    prior_summary,
+        "prior_confidence": prior_confidence,
+        "new_summary":      new_summary,
+        "new_confidence":   new_confidence,
+        "primary":          new_summary,
+        "eyebrow":          "Sounds different\u2026",
+        "footer":           prior_summary,
+        "lines":            ["Sounds different\u2026", new_summary, prior_summary],
+        "layout": {
+            "eyebrow":   {"x": 128, "y": 64,  "size": "sm",   "color": T.WARNING_AMBER, "tracking": 2},
+            "separator": {"x1": 48, "x2": 208, "y": 80},
+            "primary":   {"x": 128, "y": 108, "size": "md",   "color": T.TEXT_PRIMARY},
+            "divider":   {"x1": 80, "x2": 176, "y": 132},
+            "footer":    {"x": 128, "y": 156, "size": "sm",   "color": T.TEXT_GHOST},
+            "score_dot": {"x": 128, "y": 178, "r": 4,         "color": T.ACCENT_ATTENTION},
+        },
+    }
+
+
 ALL_SAMPLES: dict[str, dict] = {
     "ready":             ready(),
     "saved_memory":      saved_memory("House keys"),
@@ -201,4 +315,27 @@ ALL_SAMPLES: dict[str, dict] = {
     "privacy_paused":    privacy_paused(),
     "error":             error_card("BLE timeout"),
     "low_confidence":    low_confidence(),
+    "commitment_drift":  commitment_drift({
+        "task":        "Send invoice",
+        "person":      "Jordan",
+        "drift_state": "cracking",
+        "decay":       0.82,
+        "due":         "Tomorrow before noon",
+        "confidence":  0.78,
+    }),
+    "time_scrub_node":   time_scrub_node(
+        summary="Keys at kitchen counter",
+        kind="object",
+        ts_label="09:42",
+        index=2,
+        total=7,
+        confidence=0.91,
+    ),
+    "deviation_alert":   deviation_alert(
+        prior_summary="I'll send the invoice tomorrow",
+        new_summary="I never said I'd send anything",
+        score=0.71,
+        prior_confidence=0.80,
+        new_confidence=0.85,
+    ),
 }

@@ -12,6 +12,9 @@ from ..pipelines.extraction import extract_commitments
 from ..config import CONFIG
 from .passive_capture import SilentCapture
 from .passive_injector import PassiveEventInjector
+from .commitment_drift import CommitmentDriftEngine
+from .time_scrub import TimeScrubSession
+from .tell import TellEngine
 from . import intents, answer_builder
 from ..hud import cards
 
@@ -42,6 +45,11 @@ class Orchestrator:
         self.silent_capture = SilentCapture(self, self.ring, self.privacy, cfg.capture_min_interval_ms)
         self.passive = PassiveEventInjector(self.bridge, self.ring, cfg.passive_min_confidence)
 
+        # Drift / scrub / tell engines
+        self.drift_engine = CommitmentDriftEngine(self.ring)
+        self._scrub_session: TimeScrubSession | None = None
+        self.tell_engine = TellEngine(self.ring)
+
         bridge.on_event(self._on_event)
 
     def boot(self, lua_root):
@@ -66,12 +74,7 @@ class Orchestrator:
         return mid
 
     def ingest_conversation(self, conv, place_id=None, context=None):
-        """Ingest a conversation via the three-tier NLP pipeline.
-
-        Accepts both raw transcript strings and legacy structured dicts.
-        For structured dicts, commitment rows are written via extract_commitments()
-        so db.commitments() lookups continue to work.
-        """
+        """Ingest a conversation via the three-tier NLP pipeline."""
         if not self.privacy.allow_capture():
             return []
         db_ids = []
@@ -106,16 +109,65 @@ class Orchestrator:
     # --- Passive entrypoints ---
 
     def on_scene_frame(self, scene: dict, *, now_ms: int | None = None):
-        """Passive scene ingestion — rate-limited, privacy-gated."""
         return self.silent_capture.capture_scene(scene, now_ms=now_ms)
 
     def on_audio_frame(self, transcript: str, *, context: dict | None = None, now_ms: int | None = None):
-        """Passive audio ingestion — rate-limited, privacy-gated."""
         return self.silent_capture.capture_transcript(transcript, context=context, now_ms=now_ms)
 
     def tick(self) -> dict | None:
-        """Drive passive event injection. Call from main loop at ~4 Hz."""
+        """Drive passive event injection (~4 Hz)."""
         return self.passive.tick()
+
+    # --- Commitment Drift ---
+
+    def tick_drift(self, now: float | None = None) -> list[dict]:
+        """Recompute decay for all ring commitments. Returns HUD cards for new alerts."""
+        alert_records = self.drift_engine.tick(now=now)
+        hud_cards = []
+        for rec in alert_records:
+            meta = rec.event.meta or {}
+            card = cards.commitment_drift({
+                "task":        rec.event.summary,
+                "person":      meta.get("person", ""),
+                "drift_state": rec.state,
+                "decay":       rec.decay,
+                "due":         meta.get("due", ""),
+                "confidence":  rec.event.confidence,
+            })
+            self.bridge.send_card(card, event="drift_alert")
+            hud_cards.append(card)
+        return hud_cards
+
+    # --- Time-Scrub Halo ---
+
+    def start_scrub(self, lookback_s: float = 3600.0, now: float | None = None) -> dict | None:
+        """Begin a time-scrub session, positioned at most-recent node."""
+        self._scrub_session = TimeScrubSession(self.ring, lookback_s=lookback_s, now=now)
+        return self._scrub_session.current()
+
+    def scrub(self, direction: str) -> dict | None:
+        """Move cursor: direction='forward' or 'back'."""
+        if self._scrub_session is None:
+            return None
+        if direction == "forward":
+            return self._scrub_session.forward()
+        return self._scrub_session.back()
+
+    def scrub_select(self, index: int) -> dict | None:
+        """Jump to specific scrub node index."""
+        if self._scrub_session is None:
+            return None
+        return self._scrub_session.select(index)
+
+    # --- Tell ---
+
+    def tell_check(self, transcript: str, confidence: float = 0.80) -> dict | None:
+        """Score transcript against promise baseline. Returns DeviationAlertCard or None."""
+        result = self.tell_engine.check(transcript, confidence=confidence)
+        if result.fired and result.card:
+            self.bridge.send_card(result.card, event="deviation_alert")
+            return result.card
+        return None
 
     # --- Active recall ---
 
