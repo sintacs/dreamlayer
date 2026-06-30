@@ -13,6 +13,10 @@ class BufferedEvent:
     source: str   = "passive"
 
 
+# Alias — time_scrub.py and commitment_drift.py import RingBucket
+RingBucket = BufferedEvent
+
+
 class SemanticRingBuffer:
     """Fixed-capacity in-memory timeline of semantic events.
 
