@@ -58,6 +58,21 @@ def _make_app_no_autoload(**kwargs) -> MemoscapeApp:
     return _make_app(on_loading=None, **kwargs)
 
 
+def _mock_device(address: str, device_name: str, rssi: int) -> MagicMock:
+    """
+    Build a fake BLE device mock.
+
+    IMPORTANT: MagicMock(name=...) sets the *mock's internal label*, not the
+    .name attribute.  Always create the mock first, then assign .name and
+    .address as plain attributes so the name-filter in _scan_for_halo works.
+    """
+    d = MagicMock()
+    d.name    = device_name   # plain string attribute — filter reads this
+    d.address = address
+    d.rssi    = rssi
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Frame encoding / decoding
 # ---------------------------------------------------------------------------
@@ -319,20 +334,21 @@ class TestBackoff:
 
 
 # ---------------------------------------------------------------------------
-# Scan helper — patch at module level (memoscape.app.BleakScanner)
+# Scan helper
 #
-# BleakScanner is now a module-level name in app.py so patch() binds correctly.
-# The name filter (d.name.startswith("Frame")) runs inside _scan_for_halo;
-# mock devices must carry real string .name attributes.
+# BleakScanner is module-level in app.py — patch it directly.
+#
+# GOTCHA: MagicMock(name="Frame v1") sets the mock's *internal label*, not
+# the .name attribute.  Use _mock_device() which sets .name after construction.
 # ---------------------------------------------------------------------------
 
 class TestScanForHalo:
     @pytest.mark.asyncio
     async def test_returns_highest_rssi_halo(self):
         """Two Frame devices + one non-Frame; highest RSSI Frame wins."""
-        d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Frame v1", rssi=-60)
-        d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="Frame v2", rssi=-45)
-        d3 = MagicMock(address="AA:BB:CC:DD:EE:03", name="Phone",    rssi=-30)
+        d1 = _mock_device("AA:BB:CC:DD:EE:01", "Frame v1", rssi=-60)
+        d2 = _mock_device("AA:BB:CC:DD:EE:02", "Frame v2", rssi=-45)
+        d3 = _mock_device("AA:BB:CC:DD:EE:03", "Phone",    rssi=-30)
 
         mock_scanner = MagicMock()
         mock_scanner.discover = AsyncMock(return_value=[d1, d2, d3])
@@ -340,14 +356,14 @@ class TestScanForHalo:
         with patch("memoscape.app.BleakScanner", mock_scanner):
             result = await _scan_for_halo(5.0)
 
-        # d3 "Phone" filtered out; d2 RSSI=-45 > d1 RSSI=-60
+        # "Phone" filtered; d2 RSSI=-45 beats d1 RSSI=-60
         assert result == "AA:BB:CC:DD:EE:02"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_halos(self):
         """No Frame-prefixed devices → returns None."""
-        d1 = MagicMock(address="AA:BB:CC:DD:EE:01", name="Phone",   rssi=-30)
-        d2 = MagicMock(address="AA:BB:CC:DD:EE:02", name="AirPods", rssi=-50)
+        d1 = _mock_device("AA:BB:CC:DD:EE:01", "Phone",   rssi=-30)
+        d2 = _mock_device("AA:BB:CC:DD:EE:02", "AirPods", rssi=-50)
 
         mock_scanner = MagicMock()
         mock_scanner.discover = AsyncMock(return_value=[d1, d2])
@@ -359,7 +375,7 @@ class TestScanForHalo:
 
     @pytest.mark.asyncio
     async def test_single_halo_returned(self):
-        d = MagicMock(address="AA:BB:CC:DD:EE:FF", name="Frame glasses", rssi=-55)
+        d = _mock_device("AA:BB:CC:DD:EE:FF", "Frame glasses", rssi=-55)
         mock_scanner = MagicMock()
         mock_scanner.discover = AsyncMock(return_value=[d])
 
