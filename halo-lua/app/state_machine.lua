@@ -26,21 +26,22 @@
 --                   -> host_disconnected -> ready
 --
 -- Public API:
---   M.init(renderer, scheduler, on_transition)
+--   M.init(renderer, scheduler, on_transition, on_show_card)
 --   M.dispatch(event, payload)
 --   M.state()
---   M.set_card(card)   -- called by main.lua when a card BLE message arrives
+--   M.set_card(card)    -- called by main.lua when a card BLE message arrives
 --   M.set_command(kind) -- called by main.lua when a command BLE message arrives
 
 local E = require("app.events")
 
 local M = {}
 
-local _state        = "boot"
-local _renderer     = nil
+local _state         = "boot"
+local _renderer      = nil
 local _on_transition = nil
-local _current_card = nil
-local _cards        = nil   -- lazily required to avoid circular deps
+local _on_show_card  = nil   -- injected by main.lua; routes cards through CardQueue
+local _current_card  = nil
+local _cards         = nil
 
 local function cards()
   if not _cards then _cards = require("display.cards") end
@@ -55,16 +56,19 @@ local function transition(new_state)
   end
 end
 
+-- show() routes through the injected queue hook when available,
+-- falling back to direct renderer.show_card() for backward compat.
 local function show(card)
   _current_card = card
-  if _renderer then
+  if _on_show_card then
+    pcall(_on_show_card, card)
+  elseif _renderer then
     pcall(_renderer.show_card, card)
   end
 end
 
 -- ---------------------------------------------------------------------------
 -- State transition table
--- Each entry: [state][event] = function(payload)
 -- ---------------------------------------------------------------------------
 local TRANSITIONS = {}
 
@@ -130,7 +134,6 @@ TRANSITIONS["connected"] = {
 
 TRANSITIONS["showing_card"] = {
   [E.EVENTS.card_received] = function(payload)
-    -- replace card, stay in showing_card
     show(payload)
   end,
   [E.EVENTS.single_click] = function(_)
@@ -145,6 +148,10 @@ TRANSITIONS["showing_card"] = {
     transition("privacy_paused")
     show(cards().privacy_paused())
   end,
+  [E.EVENTS.imu_tap] = function(_)
+    transition("connected")
+    -- queue:dismiss() already called in main.lua before this dispatch
+  end,
   [E.EVENTS.host_disconnected] = function(_)
     transition("ready")
     show(cards().ready())
@@ -157,7 +164,6 @@ TRANSITIONS["query_listening"] = {
     show(payload)
   end,
   [E.EVENTS.single_click] = function(_)
-    -- cancel query, back to connected/ready
     transition("connected")
     show(cards().ready())
   end,
@@ -173,7 +179,6 @@ TRANSITIONS["query_listening"] = {
 
 TRANSITIONS["privacy_paused"] = {
   [E.EVENTS.long_press] = function(_)
-    -- long press again = resume
     transition("connected")
     show(cards().ready())
   end,
@@ -194,11 +199,18 @@ TRANSITIONS["privacy_paused"] = {
 -- Public API
 -- ---------------------------------------------------------------------------
 
-function M.init(renderer, scheduler, on_transition)
+--- @param renderer      table    display.renderer
+--- @param scheduler     any      unused, reserved
+--- @param on_transition function called on every state change
+--- @param on_show_card  function optional; injected by main.lua to route cards
+---                                through CardQueue instead of direct render
+function M.init(renderer, scheduler, on_transition, on_show_card)
   _renderer      = renderer
   _on_transition = on_transition
+  _on_show_card  = on_show_card
   _state         = "boot"
   _current_card  = nil
+  _cards         = nil
 end
 
 function M.dispatch(event, payload)
@@ -217,8 +229,6 @@ function M.state()
   return _state
 end
 
--- Called by main.lua when a {t="card", payload={...}} BLE message arrives.
--- Builds the right card from the payload and dispatches card_received.
 function M.set_card(msg_payload)
   local C   = cards()
   local t   = msg_payload and msg_payload.type
@@ -249,7 +259,6 @@ function M.set_card(msg_payload)
   M.dispatch(E.EVENTS.card_received, card)
 end
 
--- Called by main.lua when a {t="command", kind="...", ...} BLE message arrives.
 function M.set_command(msg)
   M.dispatch(E.EVENTS.command_received, msg)
 end
