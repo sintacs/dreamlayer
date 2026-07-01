@@ -1,86 +1,156 @@
 """lie_lens/fusion.py — Multi-signal z-score fusion engine.
 
-Combines AU z-score, prosody z-score, and linguistic z-score into a
-single CredibilityVector using recency-weighted signal averaging.
+Maps to the Phi-3-mini-4k LoRA fusion stage.
+Computes z-scores for each channel against the per-contact baseline,
+then combines them into a CredibilityVector.
 
-In production, a Phi-3-mini-4k LoRA INT4 model on the Alif NPU provides
-richer contextual fusion; this implementation provides the host-side
-equivalent using the same signal inputs and output schema.
+Two modes
+---------
+  Known contact  : z-scores vs personal baseline → higher accuracy
+  Stranger        : conservative absolute thresholds (no baseline)
 """
 from __future__ import annotations
-from .schema import CredibilityVector
 
-# How many signal dimensions we have
-_N_SIGNALS = 3
+from typing import Optional
 
-# Per-signal weights (must sum to 1.0)
-_WEIGHTS = {
-    "micro_exp":       0.35,   # facial AUs — hardest to fake
-    "voice_stress":    0.40,   # prosody — most continuous signal
-    "linguistic_hedge":0.25,   # linguistic — easiest to fake
+from .schema import (
+    AUFrame, ProsodyFrame, LinguisticFrame,
+    ContactBaseline, CredibilityVector,
+)
+from .au_detector import AUDetector
+
+# Stranger mode: only flag if ALL channels exceed this z-score
+STRANGER_Z_THRESHOLD = 3.0
+
+# Known-contact weights for final deception_prob
+CHANNEL_WEIGHTS = {
+    "micro_expression": 0.35,
+    "voice_stress":     0.35,
+    "linguistic":       0.30,
 }
 
-# Z-score normalisation: map z=3 → p≈0.85, z=0 → p≈0.0
-_Z_SCALE = 3.0
 
+class FusionEngine:
+    """Combines AU, prosody, and linguistic signals into a CredibilityVector."""
 
-def _z_to_prob(z: float) -> float:
-    """Map a z-score to a 0-1 probability using a simple sigmoid."""
-    return 1.0 / (1.0 + 2.718 ** -(z - 1.5))
+    def __init__(self):
+        self._au_detector = AUDetector()
 
+    def fuse(
+        self,
+        au: Optional[AUFrame],
+        prosody: Optional[ProsodyFrame],
+        linguistic: Optional[LinguisticFrame],
+        baseline: Optional[ContactBaseline],
+    ) -> CredibilityVector:
+        """Produce a CredibilityVector from available signals."""
+        is_stranger = baseline is None or not baseline.is_calibrated
 
-def fuse(
-    micro_exp_z: float,
-    voice_stress_z: float,
-    linguistic_hedge_z: float,
-    is_stranger: bool = False,
-    window_count: int = 1,
-) -> CredibilityVector:
-    """Fuse three z-scores into a CredibilityVector.
+        if is_stranger:
+            return self._stranger_fuse(au, prosody, linguistic)
+        return self._known_fuse(au, prosody, linguistic, baseline)
 
-    Parameters
-    ----------
-    micro_exp_z : float
-        AU deviation z-score vs contact baseline.
-    voice_stress_z : float
-        Prosody deviation z-score vs contact baseline.
-    linguistic_hedge_z : float
-        Linguistic feature z-score vs contact baseline.
-    is_stranger : bool
-        True if no baseline available; applies conservative threshold.
-    window_count : int
-        Number of analysis windows processed (drives confidence).
+    # ------------------------------------------------------------------
+    # Known-contact fusion
+    # ------------------------------------------------------------------
 
-    Returns
-    -------
-    CredibilityVector
-    """
-    probs = {
-        "micro_exp":        _z_to_prob(micro_exp_z),
-        "voice_stress":     _z_to_prob(voice_stress_z),
-        "linguistic_hedge": _z_to_prob(linguistic_hedge_z),
-    }
+    def _known_fuse(
+        self,
+        au: Optional[AUFrame],
+        prosody: Optional[ProsodyFrame],
+        linguistic: Optional[LinguisticFrame],
+        baseline: ContactBaseline,
+    ) -> CredibilityVector:
+        scores = {}
+        z_scores = {}
 
-    weighted = sum(probs[k] * _WEIGHTS[k] for k in probs)
+        # AU channel
+        if au is not None:
+            z_list = self._au_detector.compute_au_zscores(
+                au, baseline.au_mean, baseline.au_std
+            )
+            z_au = sum(abs(z) for z in z_list) / max(len(z_list), 1)
+            z_scores["micro_expression"] = z_au
+            scores["micro_expression"] = min(z_au / 4.0, 1.0)
+        else:
+            z_scores["micro_expression"] = 0.0
+            scores["micro_expression"] = 0.0
 
-    # Stranger penalty: require all three signals to be high
-    if is_stranger:
-        all_high = all(z > 2.5 for z in
-                       [micro_exp_z, voice_stress_z, linguistic_hedge_z])
-        if not all_high:
-            weighted = min(weighted, 0.45)
+        # Prosody channel
+        if prosody is not None:
+            z_prosody = prosody.stress_score() * 4.0   # map 0-1 to 0-4 z-scale
+            z_scores["voice_stress"] = z_prosody
+            scores["voice_stress"] = prosody.stress_score()
+        else:
+            z_scores["voice_stress"] = 0.0
+            scores["voice_stress"] = 0.0
 
-    # Confidence: rises with window count, saturates at 10
-    confidence = min(window_count / 10.0, 1.0)
+        # Linguistic channel
+        if linguistic is not None:
+            z_ling = linguistic.deception_score() * 4.0
+            z_scores["linguistic"] = z_ling
+            scores["linguistic"] = linguistic.deception_score()
+        else:
+            z_scores["linguistic"] = 0.0
+            scores["linguistic"] = 0.0
 
-    dominant = max(probs, key=probs.get)
+        # Weighted deception probability
+        deception_prob = sum(
+            scores[ch] * CHANNEL_WEIGHTS[ch] for ch in CHANNEL_WEIGHTS
+        )
 
-    return CredibilityVector(
-        deception_prob=round(min(weighted, 1.0), 3),
-        confidence=round(confidence, 3),
-        micro_exp_z=round(micro_exp_z, 3),
-        voice_stress_z=round(voice_stress_z, 3),
-        linguistic_hedge_z=round(linguistic_hedge_z, 3),
-        dominant_signal=dominant,
-        is_stranger=is_stranger,
-    )
+        # Confidence: how many channels contributed + baseline calibration
+        active = sum(1 for ch in [au, prosody, linguistic] if ch is not None)
+        confidence = (active / 3.0) * min(baseline.sample_count / 20.0, 1.0)
+
+        dominant = max(scores, key=scores.get)
+
+        return CredibilityVector(
+            deception_prob=round(deception_prob, 3),
+            confidence=round(confidence, 3),
+            micro_expression_z=round(z_scores["micro_expression"], 3),
+            voice_stress_z=round(z_scores["voice_stress"], 3),
+            linguistic_z=round(z_scores["linguistic"], 3),
+            dominant_channel=dominant,
+            is_stranger=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Stranger fusion (conservative — no baseline)
+    # ------------------------------------------------------------------
+
+    def _stranger_fuse(
+        self,
+        au: Optional[AUFrame],
+        prosody: Optional[ProsodyFrame],
+        linguistic: Optional[LinguisticFrame],
+    ) -> CredibilityVector:
+        au_score = (self._au_detector.micro_expression_score(au)
+                    if au else 0.0)
+        prosody_score = prosody.stress_score() if prosody else 0.0
+        ling_score = linguistic.deception_score() if linguistic else 0.0
+
+        # Only alert if ALL channels are elevated (conservative)
+        all_high = all(s > 0.75 for s in [au_score, prosody_score, ling_score]
+                       if s > 0)
+
+        deception_prob = (
+            (au_score * 0.35 + prosody_score * 0.35 + ling_score * 0.30)
+            if all_high else
+            max(au_score, prosody_score, ling_score) * 0.3  # dampened
+        )
+
+        scores = {"micro_expression": au_score,
+                  "voice_stress": prosody_score,
+                  "linguistic": ling_score}
+        dominant = max(scores, key=scores.get)
+
+        return CredibilityVector(
+            deception_prob=round(deception_prob, 3),
+            confidence=0.2,         # always low confidence for strangers
+            micro_expression_z=au_score * 4.0,
+            voice_stress_z=prosody_score * 4.0,
+            linguistic_z=ling_score * 4.0,
+            dominant_channel=dominant,
+            is_stranger=True,
+        )

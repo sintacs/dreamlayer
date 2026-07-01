@@ -1,141 +1,111 @@
 """lie_lens/narrative_store.py — Per-contact baseline storage + anomaly log.
 
-In production this wraps the Halo Narrative agentic memory system.
-In the host-Python layer it provides an in-process dict-based store
-with the same interface, so all other modules can be tested without
-hardware.
+Maps to the Narrative (agentic memory system) integration in the Lua spec.
+In production this reads/writes to the existing Memoscape memory layer.
+In test/standalone mode it uses an in-memory dict store.
 """
 from __future__ import annotations
-import time
+
 from typing import Optional
+
 from .schema import (
-    ContactBaseline, AnomalyLog, CredibilityVector,
-    ActionUnits, ProsodyFeatures, LinguisticFeatures,
+    ContactBaseline, AUFrame, ProsodyFrame, LinguisticFrame,
 )
 
 
 class NarrativeStore:
-    """In-process narrative memory store.
+    """Stores per-contact baselines and anomaly logs.
 
-    Stores per-contact baselines and anomaly logs. Provides incremental
-    Bayesian update of means and standard deviations from new observations.
+    Designed to wrap the existing Memoscape memory layer:
+      narrative.get / narrative.set / narrative.push
+    Defaults to an in-memory dict for test/standalone use.
     """
 
-    def __init__(self):
-        self._baselines: dict[str, ContactBaseline] = {}
-        self._anomalies: dict[str, list[AnomalyLog]] = {}
-        self._contact_embeddings: dict = {}
+    def __init__(self, memory_backend=None):
+        """
+        Parameters
+        ----------
+        memory_backend : object, optional
+            An object with get(key), set(key, value), push(key, value).
+            Defaults to a simple in-memory dict store.
+        """
+        self._backend = memory_backend or _DictStore()
 
     # ------------------------------------------------------------------
-    # Contact embeddings
-    # ------------------------------------------------------------------
-
-    def set_contact_embeddings(self, embeddings: dict) -> None:
-        """Load contact_id → 512-d embedding dict."""
-        self._contact_embeddings = embeddings
-
-    def get_contact_embeddings(self) -> dict:
-        return self._contact_embeddings
-
-    # ------------------------------------------------------------------
-    # Baseline
+    # Baseline API
     # ------------------------------------------------------------------
 
     def get_baseline(self, contact_id: str) -> Optional[ContactBaseline]:
-        return self._baselines.get(contact_id)
+        """Load the baseline for a contact, or None if not yet calibrated."""
+        return self._backend.get(f"lie_lens_baseline_{contact_id}")
+
+    def save_baseline(self, baseline: ContactBaseline) -> None:
+        self._backend.set(
+            f"lie_lens_baseline_{baseline.contact_id}", baseline
+        )
 
     def update_baseline(
         self,
         contact_id: str,
-        aus: Optional[ActionUnits] = None,
-        prosody: Optional[ProsodyFeatures] = None,
-        linguistic: Optional[LinguisticFeatures] = None,
+        au: Optional[AUFrame],
+        prosody: Optional[ProsodyFrame],
+        linguistic: Optional[LinguisticFrame],
     ) -> ContactBaseline:
-        """Incrementally update the baseline for a contact."""
-        bl = self._baselines.get(contact_id) or ContactBaseline(
-            contact_id=contact_id
-        )
-        n = bl.sample_count
+        """Incrementally update baseline with new data. Creates if absent."""
+        baseline = self.get_baseline(contact_id)
+        if baseline is None:
+            baseline = ContactBaseline(contact_id=contact_id)
 
-        if aus is not None:
-            vec = aus.as_vector()
-            if n == 0:
-                bl.au_mean = list(vec)
-                bl.au_std  = [0.1] * 17
-            else:
-                bl.au_mean = [
-                    (bl.au_mean[i] * n + vec[i]) / (n + 1)
-                    for i in range(17)
-                ]
-                bl.au_std = [
-                    max(
-                        ((bl.au_std[i] ** 2 * n +
-                          (vec[i] - bl.au_mean[i]) ** 2) / (n + 1)) ** 0.5,
-                        0.01,
-                    )
-                    for i in range(17)
-                ]
+        if au is not None and prosody is not None and linguistic is not None:
+            baseline.update(au, prosody, linguistic)
+            self.save_baseline(baseline)
 
-        if prosody is not None:
-            self._update_dict_stats(
-                bl.prosody_mean, bl.prosody_std, n,
-                {
-                    "pitch_variance": prosody.pitch_variance,
-                    "jitter_pct":     prosody.jitter_pct,
-                    "shimmer_pct":    prosody.shimmer_pct,
-                    "hesitation_rate":prosody.hesitation_rate,
-                    "speech_rate_norm":prosody.speech_rate_norm,
-                },
-            )
-
-        if linguistic is not None:
-            self._update_dict_stats(
-                bl.linguistic_mean, bl.linguistic_std, n,
-                {
-                    "hedging_rate":      linguistic.hedging_rate,
-                    "first_person_rate": linguistic.first_person_rate,
-                    "negation_rate":     linguistic.negation_rate,
-                    "qualifier_rate":    linguistic.qualifier_rate,
-                },
-            )
-
-        bl.sample_count = n + 1
-        self._baselines[contact_id] = bl
-        return bl
-
-    @staticmethod
-    def _update_dict_stats(
-        mean_dict: dict, std_dict: dict, n: int, new_vals: dict
-    ) -> None:
-        for key, val in new_vals.items():
-            old_mean = mean_dict.get(key, 0.0)
-            old_std  = std_dict.get(key, 1.0)
-            new_mean = (old_mean * n + val) / (n + 1)
-            new_std  = max(
-                ((old_std ** 2 * n + (val - new_mean) ** 2) / (n + 1)) ** 0.5,
-                0.01,
-            )
-            mean_dict[key] = new_mean
-            std_dict[key]  = new_std
+        return baseline
 
     # ------------------------------------------------------------------
-    # Anomaly log
+    # Anomaly log API
     # ------------------------------------------------------------------
 
     def log_anomaly(
         self,
         contact_id: str,
-        credibility: CredibilityVector,
+        deception_prob: float,
+        dominant_channel: str,
         user_label: Optional[str] = None,
-    ) -> AnomalyLog:
-        entry = AnomalyLog(
-            contact_id=contact_id,
-            timestamp=time.monotonic(),
-            credibility=credibility,
-            user_label=user_label,
-        )
-        self._anomalies.setdefault(contact_id, []).append(entry)
-        return entry
+    ) -> None:
+        """Append an anomaly event to the contact's log."""
+        import time
+        entry = {
+            "timestamp": time.time(),
+            "deception_prob": deception_prob,
+            "dominant_channel": dominant_channel,
+            "user_label": user_label,
+        }
+        self._backend.push(f"lie_lens_anomaly_{contact_id}", entry)
 
-    def get_anomalies(self, contact_id: str) -> list[AnomalyLog]:
-        return self._anomalies.get(contact_id, [])
+    def get_anomaly_log(self, contact_id: str) -> list:
+        return self._backend.get(f"lie_lens_anomaly_{contact_id}") or []
+
+    def contact_count(self) -> int:
+        return self._backend.count()
+
+
+class _DictStore:
+    """Simple in-memory backend (for tests and standalone use)."""
+
+    def __init__(self):
+        self._data: dict = {}
+
+    def get(self, key: str):
+        return self._data.get(key)
+
+    def set(self, key: str, value) -> None:
+        self._data[key] = value
+
+    def push(self, key: str, value) -> None:
+        if key not in self._data:
+            self._data[key] = []
+        self._data[key].append(value)
+
+    def count(self) -> int:
+        return len([k for k in self._data if k.startswith("lie_lens_baseline_")])

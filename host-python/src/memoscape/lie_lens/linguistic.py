@@ -1,109 +1,70 @@
 """lie_lens/linguistic.py — Linguistic deception marker extractor.
 
-Extracts hedging, pronoun use, complexity, negation, and qualifier
-rates from a plain-text utterance. Zero ML dependency — rule-based,
-running entirely on the phone in O(n) time.
+Maps to the BERT-tiny distilled NLU stage of the Lie Lens pipeline.
+Extracts hedging rate, first-person pronoun rate, sentence complexity,
+and negation rate from raw transcript text.
 
-In production, a distilled BERT-tiny INT8 model running on the Alif
-NPU provides richer semantic features; these rule-based features serve
-as the fallback / host-side implementation.
+No ML model required: pure token-frequency heuristics that match
+the distilled BERT-tiny feature set used on the Halo NPU.
 """
 from __future__ import annotations
+
 import re
 from typing import Optional
-from .schema import LinguisticFeatures, ContactBaseline
 
-_HEDGE_WORDS = frozenset([
-    "maybe", "perhaps", "possibly", "probably", "might", "could",
-    "i think", "i believe", "i feel like", "sort of", "kind of",
-    "i guess", "i suppose", "not sure", "uncertain", "roughly",
-])
-_NEGATIONS = frozenset([
-    "not", "never", "no", "nobody", "nothing", "neither",
-    "nor", "none", "cannot", "can't", "won't", "don't",
-    "didn't", "isn't", "wasn't", "aren't", "weren't",
-])
-_QUALIFIERS = frozenset([
-    "very", "really", "actually", "honestly", "literally",
-    "absolutely", "definitely", "certainly", "clearly", "obviously",
-    "frankly", "truthfully", "to be honest", "believe me",
-])
+from .schema import LinguisticFrame
 
+# Token sets
+HEDGE_WORDS = {
+    "maybe", "perhaps", "possibly", "probably", "might", "could", "should",
+    "seem", "seems", "appeared", "appears", "think", "thought", "believe",
+    "guess", "suppose", "kinda", "sorta", "somewhat", "around", "approximately",
+    "kind of", "sort of", "i guess", "i think", "i mean", "you know",
+    "like", "basically", "literally", "honestly", "honestly speaking",
+}
 
-def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
+FIRST_PERSON = {"i", "i'm", "i've", "i'd", "i'll", "me", "my", "mine", "myself"}
 
-
-def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z']+", text.lower())
+NEGATION_WORDS = {
+    "no", "not", "never", "none", "nothing", "nobody", "nowhere",
+    "neither", "nor", "don't", "doesn't", "didn't", "won't", "wouldn't",
+    "can't", "cannot", "couldn't", "shouldn't", "isn't", "aren't",
+    "wasn't", "weren't", "haven't", "hasn't", "hadn't",
+}
 
 
-def extract_linguistic(utterance: str) -> LinguisticFeatures:
-    """Extract linguistic deception markers from a plain-text utterance."""
-    text_lower = utterance.lower()
-    sentences = _sentences(text_lower)
-    words = _words(text_lower)
-    n_sentences = max(len(sentences), 1)
-    n_words = max(len(words), 1)
+class LinguisticAnalyzer:
+    """Extracts linguistic deception markers from transcript text."""
 
-    # Hedging rate (per sentence)
-    hedge_hits = sum(
-        1 for phrase in _HEDGE_WORDS
-        if phrase in text_lower
-    )
-    hedging_rate = hedge_hits / n_sentences
+    def analyse(self, text: Optional[str]) -> Optional[LinguisticFrame]:
+        """Return LinguisticFrame for text, or None if text is empty."""
+        if not text or not text.strip():
+            return None
 
-    # First-person pronoun rate (lower = distancing)
-    first_person = sum(1 for w in words if w in ("i", "me", "my", "mine", "myself"))
-    first_person_rate = first_person / n_words
+        tokens = self._tokenize(text)
+        if not tokens:
+            return None
 
-    # Complexity (avg words per sentence)
-    complexity_score = n_words / n_sentences
+        n = len(tokens)
+        hedges = sum(1 for t in tokens if t in HEDGE_WORDS)
+        first_p = sum(1 for t in tokens if t in FIRST_PERSON)
+        negations = sum(1 for t in tokens if t in NEGATION_WORDS)
 
-    # Negation rate
-    negation_hits = sum(1 for w in words if w in _NEGATIONS)
-    negation_rate = negation_hits / n_sentences
+        # Complexity: average sentence length (longer = more complex)
+        sentences = re.split(r'[.!?]+', text.strip())
+        sentences = [s.strip() for s in sentences if s.strip()]
+        avg_sent_len = (sum(len(s.split()) for s in sentences) /
+                        max(len(sentences), 1))
+        # Normalize: 0 = simple (5 words/sentence), 1 = complex (25+ words)
+        complexity = min(max((avg_sent_len - 5) / 20, 0.0), 1.0)
 
-    # Qualifier rate ("honestly", "believe me" = over-assertion)
-    qualifier_hits = sum(
-        1 for phrase in _QUALIFIERS
-        if phrase in text_lower
-    )
-    qualifier_rate = qualifier_hits / n_sentences
+        return LinguisticFrame(
+            hedging_rate=round(hedges / n, 4),
+            first_person_rate=round(first_p / n, 4),
+            complexity_score=round(complexity, 4),
+            negation_rate=round(negations / n, 4),
+            word_count=n,
+        )
 
-    return LinguisticFeatures(
-        hedging_rate=round(hedging_rate, 3),
-        first_person_rate=round(first_person_rate, 3),
-        complexity_score=round(complexity_score, 2),
-        negation_rate=round(negation_rate, 3),
-        qualifier_rate=round(qualifier_rate, 3),
-        utterance=utterance,
-    )
-
-
-def compute_linguistic_z_score(
-    lf: LinguisticFeatures,
-    baseline: Optional[ContactBaseline],
-) -> float:
-    """Return scalar z-score of linguistic features vs per-contact baseline."""
-    if baseline is None or not baseline.is_calibrated():
-        # No baseline — heuristic: high hedging + low first-person + high qualifier
-        score = 0.0
-        score += min(lf.hedging_rate * 2.0, 0.4)
-        score += min((0.05 - lf.first_person_rate) * 10, 0.3) if lf.first_person_rate < 0.05 else 0.0
-        score += min(lf.qualifier_rate * 3.0, 0.3)
-        return score * 3.0
-
-    dims = [
-        ("hedging_rate",      lf.hedging_rate),
-        ("first_person_rate", lf.first_person_rate),
-        ("negation_rate",     lf.negation_rate),
-        ("qualifier_rate",    lf.qualifier_rate),
-    ]
-    z_scores = []
-    for key, val in dims:
-        mean = baseline.linguistic_mean.get(key, 0.0)
-        std  = baseline.linguistic_std.get(key, 1.0)
-        if std > 0:
-            z_scores.append(abs(val - mean) / std)
-    return sum(z_scores) / len(z_scores) if z_scores else 0.0
+    def _tokenize(self, text: str) -> list[str]:
+        return re.findall(r"[a-z']+", text.lower())

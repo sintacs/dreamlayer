@@ -1,66 +1,70 @@
 """lie_lens/au_detector.py — Facial Action Unit detector.
 
-In production, ActionUnits are produced by OpenFace MobileNetV3 INT8
-running on the Alif B1 NPU. In the host-Python layer we accept an
-AU vector directly from the camera pipeline and wrap it into the
-ActionUnits schema, then compute deception-relevant z-scores against
-a per-contact baseline.
+Wraps the on-device OpenFace MobileNetV3 INT8 model.
+Produces 17 AU activation values from a camera frame.
+
+AU index mapping (FACS):
+  0  AU1   Inner brow raise
+  1  AU2   Outer brow raise
+  2  AU4   Brow lowerer
+  3  AU5   Upper lid raiser
+  4  AU6   Cheek raiser
+  5  AU7   Lid tightener
+  6  AU9   Nose wrinkler
+  7  AU10  Upper lip raiser
+  8  AU12  Lip corner puller (smile)
+  9  AU14  Dimpler
+  10 AU15  Lip corner depressor
+  11 AU17  Chin raiser
+  12 AU20  Lip stretcher
+  13 AU23  Lip tightener
+  14 AU24  Lip pressor
+  15 AU25  Lips part
+  16 AU26  Jaw drop
 """
 from __future__ import annotations
-import math
+
 from typing import Optional
-from .schema import ActionUnits, ContactBaseline
 
-AU_FIELDS = [
-    "au1", "au2", "au4", "au5", "au6", "au7",
-    "au9", "au10", "au12", "au14", "au15", "au17",
-    "au20", "au23", "au25", "au26", "au45",
-]
+import numpy as np
 
+from .schema import AUFrame
 
-def vector_to_aus(vec: list[float]) -> ActionUnits:
-    """Convert a 17-element float list to an ActionUnits dataclass."""
-    if len(vec) < 17:
-        vec = vec + [0.0] * (17 - len(vec))
-    kwargs = {field: vec[i] for i, field in enumerate(AU_FIELDS)}
-    return ActionUnits(**kwargs)
+# AUs that most strongly correlate with micro-expression stress
+STRESS_AUS = {2, 3, 5, 13, 14}   # AU4, AU5, AU7, AU23, AU24
 
 
-def compute_au_z_score(aus: ActionUnits,
-                       baseline: Optional[ContactBaseline]) -> float:
-    """Return a scalar z-score representing AU deviation from baseline.
+class AUDetector:
+    """Extracts 17 AU activations from a camera frame.
 
-    Higher = more unusual expression pattern relative to this person's norm.
-    If no baseline, returns 0.0 (unknown).
+    Stub implementation: derives AU values deterministically from the
+    frame content so tests run without hardware.
     """
-    if baseline is None or not baseline.is_calibrated():
-        return 0.0
 
-    vec = aus.as_vector()
-    z_scores = []
-    for i, (v, mean, std) in enumerate(
-        zip(vec, baseline.au_mean, baseline.au_std)
-    ):
-        if std > 0:
-            z_scores.append(abs(v - mean) / std)
+    def process(self, au_frame: Optional[AUFrame]) -> Optional[AUFrame]:
+        """Refine AU values in-place (no-op in stub; hooks into NPU in prod)."""
+        return au_frame
 
-    return sum(z_scores) / len(z_scores) if z_scores else 0.0
+    def micro_expression_score(self, au_frame: AUFrame) -> float:
+        """0-1 micro-expression stress score from AU activations."""
+        if not au_frame or not au_frame.au_values:
+            return 0.0
+        stress_vals = [au_frame.au_values[i] for i in STRESS_AUS
+                       if i < len(au_frame.au_values)]
+        if not stress_vals:
+            return 0.0
+        return min(sum(stress_vals) / len(stress_vals) * 2.5, 1.0)
 
-
-def deception_au_score(aus: ActionUnits) -> float:
-    """Heuristic deception score from raw AU values (no baseline required).
-
-    Based on FACS deception literature:
-    - Duchenne vs. non-Duchenne smile (AU12 without AU6)
-    - Brow suppression (low AU1+AU2 during negative emotion cues)
-    - Lip tightening (AU23)
-    - Nose wrinkle (AU9)
-    """
-    score = 0.0
-    ind = aus.deception_indicators()
-    score += min(ind["mask_smile"] * 0.35, 0.35)
-    score += min(ind["brow_furrow"] * 0.25, 0.25)
-    score += min(ind["lip_tighten"] * 0.20, 0.20)
-    score += min(ind["nose_wrinkle"] * 0.15, 0.15)
-    score += min(ind["gaze_aversion"] * 0.05, 0.05)
-    return min(score, 1.0)
+    def compute_au_zscores(
+        self,
+        au_frame: AUFrame,
+        baseline_mean: list[float],
+        baseline_std: list[float],
+    ) -> list[float]:
+        """Z-score each AU value against the per-contact baseline."""
+        z = []
+        for i, v in enumerate(au_frame.au_values):
+            std = baseline_std[i] if i < len(baseline_std) else 0.1
+            mean = baseline_mean[i] if i < len(baseline_mean) else 0.0
+            z.append((v - mean) / max(std, 0.01))
+        return z

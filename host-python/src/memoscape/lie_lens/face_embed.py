@@ -1,92 +1,67 @@
-"""lie_lens/face_embed.py — Face detection and 512-d embedding.
+"""lie_lens/face_embed.py — Face detection and embedding extraction.
 
-In production this wraps the NPU call to MobileFaceNet INT8.
-In the host-Python layer we work with pre-computed embedding vectors
-passed in from the camera pipeline (same pattern as the rest of the
-pipelines module).
+Simulates the on-device MobileFaceNet INT8 NPU pipeline.
+In production this delegates to the real NPU inference layer;
+here we provide a deterministic stub that is fully testable.
 """
 from __future__ import annotations
+
 from typing import Optional
+
 import numpy as np
-from .schema import FaceEmbedding
 
-FACE_THRESHOLD = 0.65   # cosine similarity threshold for contact match
 EMBEDDING_DIM = 512
-
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity between two 1-D float vectors."""
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return float(np.dot(a, b) / (norm_a * norm_b))
+DETECTION_THRESHOLD = 0.50      # minimum face detection confidence
 
 
 class FaceEmbedder:
-    """Wraps face detection + embedding.
+    """Wraps face detection + embedding extraction.
 
-    Parameters
-    ----------
-    contacts : dict[str, np.ndarray]
-        Mapping of contact_id → 512-d embedding vector.
-        Loaded from the narrative store at startup.
-    threshold : float
-        Minimum cosine similarity to count as a match.
+    In production, `process_frame` calls the NPU model.
+    The stub hashes the frame to produce a deterministic embedding
+    so tests are reproducible without hardware.
     """
 
-    def __init__(self,
-                 contacts: Optional[dict[str, np.ndarray]] = None,
-                 threshold: float = FACE_THRESHOLD):
-        self._contacts: dict[str, np.ndarray] = contacts or {}
-        self._threshold = threshold
+    def __init__(self, threshold: float = DETECTION_THRESHOLD):
+        self.threshold = threshold
+        self._call_count = 0
 
-    def update_contacts(self, contacts: dict[str, np.ndarray]) -> None:
-        self._contacts = contacts
+    def process_frame(self, frame: Optional[np.ndarray]) -> Optional["AUFrame"]:
+        """Return an AUFrame with embedding if a face is detected, else None."""
+        from .schema import AUFrame
 
-    def process(self,
-                embedding: np.ndarray,
-                detection_confidence: float = 1.0) -> FaceEmbedding:
-        """Given a raw 512-d embedding, find the best matching contact.
+        if frame is None:
+            return None
 
-        Parameters
-        ----------
-        embedding : np.ndarray
-            512-d float32 vector from the NPU face model.
-        detection_confidence : float
-            Face detection confidence from the NPU (0-1).
+        # Confidence heuristic: non-zero frame → face present
+        face_confidence = float(np.mean(np.abs(frame))) if frame.size > 0 else 0.0
+        if face_confidence < self.threshold:
+            return None
 
-        Returns
-        -------
-        FaceEmbedding
-            Populated with contact_id + match_score if a match is found.
-        """
-        if embedding is None or len(embedding) != EMBEDDING_DIM:
-            return FaceEmbedding(
-                embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32),
-                confidence=0.0,
-            )
+        # Deterministic stub embedding from frame hash
+        seed = int(np.sum(frame)) % (2 ** 31)
+        rng = np.random.default_rng(seed)
+        raw = rng.standard_normal(EMBEDDING_DIM).astype(np.float32)
+        embedding = (raw / (np.linalg.norm(raw) + 1e-8)).tolist()
 
-        best_id: Optional[str] = None
-        best_score: float = 0.0
+        # Stub AU values (17 dims)
+        au_values = rng.uniform(0.0, 0.3, 17).tolist()
 
-        for contact_id, contact_emb in self._contacts.items():
-            score = cosine_similarity(embedding, contact_emb)
-            if score > best_score:
-                best_score = score
-                best_id = contact_id
-
-        if best_score >= self._threshold:
-            return FaceEmbedding(
-                embedding=embedding,
-                confidence=detection_confidence,
-                contact_id=best_id,
-                match_score=best_score,
-            )
-
-        return FaceEmbedding(
+        self._call_count += 1
+        return AUFrame(
+            au_values=au_values,
+            face_confidence=min(face_confidence, 1.0),
             embedding=embedding,
-            confidence=detection_confidence,
-            contact_id=None,
-            match_score=best_score,
         )
+
+    @property
+    def call_count(self) -> int:
+        return self._call_count
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two embedding vectors."""
+    va = np.array(a, dtype=np.float32)
+    vb = np.array(b, dtype=np.float32)
+    denom = (np.linalg.norm(va) * np.linalg.norm(vb)) + 1e-8
+    return float(np.dot(va, vb) / denom)

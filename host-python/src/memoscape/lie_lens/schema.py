@@ -1,82 +1,110 @@
-"""lie_lens/schema.py — All dataclasses for Lie Lens."""
+"""lie_lens/schema.py — All data structures for the Lie Lens pipeline."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
-import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Stage outputs
+# Per-frame sensor payloads
 # ---------------------------------------------------------------------------
 
 @dataclass
-class FaceEmbedding:
-    embedding: np.ndarray       # 512-d float32 vector
-    confidence: float           # face detection confidence 0-1
-    contact_id: Optional[str] = None  # matched contact, if any
-    match_score: float = 0.0
+class AUFrame:
+    """17 facial Action Unit activations from one camera frame.
+
+    AU indices follow the Facial Action Coding System (FACS).
+    Values are 0.0 (absent) → 1.0 (maximum activation).
+    """
+    au_values: list[float]          # length 17
+    face_confidence: float          # detection confidence 0-1
+    embedding: Optional[list[float]] = None  # 512-d face embedding
+
+    def __post_init__(self):
+        if len(self.au_values) != 17:
+            raise ValueError(f"au_values must have 17 elements, got {len(self.au_values)}")
 
 
 @dataclass
-class ActionUnits:
-    """17 facial action unit activations (0-1 each)."""
-    au1:  float = 0.0   # inner brow raise
-    au2:  float = 0.0   # outer brow raise
-    au4:  float = 0.0   # brow lowerer
-    au5:  float = 0.0   # upper lid raiser
-    au6:  float = 0.0   # cheek raiser
-    au7:  float = 0.0   # lid tightener
-    au9:  float = 0.0   # nose wrinkler
-    au10: float = 0.0   # upper lip raiser
-    au12: float = 0.0   # lip corner puller
-    au14: float = 0.0   # dimpler
-    au15: float = 0.0   # lip corner depressor
-    au17: float = 0.0   # chin raiser
-    au20: float = 0.0   # lip stretcher
-    au23: float = 0.0   # lip tightener
-    au25: float = 0.0   # lips part
-    au26: float = 0.0   # jaw drop
-    au45: float = 0.0   # blink
-
-    def as_vector(self) -> list[float]:
-        return [
-            self.au1, self.au2, self.au4, self.au5, self.au6,
-            self.au7, self.au9, self.au10, self.au12, self.au14,
-            self.au15, self.au17, self.au20, self.au23, self.au25,
-            self.au26, self.au45,
-        ]
-
-    def deception_indicators(self) -> dict[str, float]:
-        """AUs associated with deception / masking in FACS literature."""
-        return {
-            "mask_smile":    self.au12 * (1 - self.au6),  # lip smile without eye
-            "brow_furrow":   self.au4,
-            "lip_tighten":   self.au23,
-            "gaze_aversion": self.au5 * self.au7,         # lid raise + tighten
-            "nose_wrinkle":  self.au9,
-        }
-
-
-@dataclass
-class ProsodyFeatures:
+class ProsodyFrame:
+    """Acoustic stress features extracted from one audio window."""
     pitch_mean_hz: float
     pitch_variance: float
     jitter_pct: float
     shimmer_pct: float
-    hesitation_rate: float   # pauses per second
-    speech_rate_norm: float  # relative to speaker baseline
+    hesitation_rate: float          # filled pauses per second (um, uh)
+    pause_ratio: float              # fraction of window that is silence
+    speech_rate_norm: float         # 1.0 = baseline, >1 fast, <1 slow
     energy_db: float
-    window_ms: int
+
+    def stress_score(self) -> float:
+        """Heuristic 0-1 stress score for this window."""
+        score = 0.0
+        score += min(self.pitch_variance / 500.0, 0.20)
+        score += min(self.jitter_pct / 5.0, 0.20)
+        score += min(self.shimmer_pct / 8.0, 0.20)
+        score += min(self.hesitation_rate / 3.0, 0.20)
+        score += min(abs(self.pause_ratio - 0.25) / 0.25, 0.10)
+        score += min(abs(self.speech_rate_norm - 1.0) / 0.5, 0.10)
+        return min(score, 1.0)
 
 
 @dataclass
-class LinguisticFeatures:
-    hedging_rate: float      # "maybe", "I think", "sort of" per sentence
-    first_person_rate: float # "I" usage (distancing = less "I")
-    complexity_score: float  # avg words per clause
-    negation_rate: float     # "not", "never", "no" per sentence
-    qualifier_rate: float    # "very", "actually", "honestly" per sentence
-    utterance: str = ""
+class LinguisticFrame:
+    """Linguistic deception markers from one utterance."""
+    hedging_rate: float             # hedge words / total words
+    first_person_rate: float        # 1st-person pronouns / total words
+    complexity_score: float         # 0=simple, 1=complex (avg sentence length)
+    negation_rate: float            # negation words / total words
+    word_count: int
+
+    def deception_score(self) -> float:
+        """Heuristic 0-1 deception score from linguistic features."""
+        score = 0.0
+        # High hedging = uncertainty / distancing
+        score += min(self.hedging_rate / 0.15, 0.30)
+        # Low first-person = distancing from statements
+        first_person_dev = max(0.0, 0.08 - self.first_person_rate)
+        score += min(first_person_dev / 0.08, 0.25)
+        # High complexity = over-qualification
+        score += min(self.complexity_score, 0.25) * 0.8
+        # High negation = defensive language
+        score += min(self.negation_rate / 0.10, 0.20)
+        return min(score, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Per-contact memory
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ContactBaseline:
+    """Learned baseline for a known contact (normal, non-stressed state)."""
+    contact_id: str
+    au_mean: list[float] = field(default_factory=lambda: [0.0] * 17)
+    au_std: list[float] = field(default_factory=lambda: [0.1] * 17)
+    prosody_mean: dict = field(default_factory=dict)
+    prosody_std: dict = field(default_factory=dict)
+    linguistic_mean: dict = field(default_factory=dict)
+    linguistic_std: dict = field(default_factory=dict)
+    sample_count: int = 0
+    is_calibrated: bool = False     # True after MIN_CALIBRATION_SAMPLES
+
+    MIN_CALIBRATION_SAMPLES: int = field(default=10, init=False, repr=False)
+
+    def update(self, au: AUFrame, prosody: ProsodyFrame,
+               linguistic: LinguisticFrame) -> None:
+        """Incremental mean/std update (Welford's online algorithm)."""
+        self.sample_count += 1
+        n = self.sample_count
+        # AU update
+        for i, v in enumerate(au.au_values):
+            delta = v - self.au_mean[i]
+            self.au_mean[i] += delta / n
+            delta2 = v - self.au_mean[i]
+            # Approximate std (simplified)
+            self.au_std[i] = max(0.01, abs(delta * delta2) ** 0.5 if n > 1 else 0.1)
+        # Mark calibrated
+        self.is_calibrated = n >= self.MIN_CALIBRATION_SAMPLES
 
 
 # ---------------------------------------------------------------------------
@@ -85,30 +113,30 @@ class LinguisticFeatures:
 
 @dataclass
 class CredibilityVector:
-    """Output of the fusion engine — one per analysis cycle."""
-    deception_prob: float        # 0.0 = very credible, 1.0 = high deception signal
-    confidence: float            # data quality / quantity 0-1
-    micro_exp_z: float           # AU z-score vs baseline
-    voice_stress_z: float        # prosody z-score vs baseline
-    linguistic_hedge_z: float    # linguistic z-score vs baseline
-    dominant_signal: str         # which dimension is driving the score
-    is_stranger: bool = False    # no baseline available
+    """Multi-dimensional deception likelihood output from the fusion engine."""
+    deception_prob: float           # 0.0 (credible) → 1.0 (deceptive)
+    confidence: float               # 0.0 (no data) → 1.0 (fully calibrated)
+    micro_expression_z: float       # z-score vs baseline
+    voice_stress_z: float           # z-score vs baseline
+    linguistic_z: float             # z-score vs baseline
+    dominant_channel: str           # which channel is driving the score
+    is_stranger: bool = False       # True if no baseline available
 
     @property
     def label(self) -> str:
         if self.confidence < 0.3:
-            return "READING"
+            return "CALIBRATING"
         if self.deception_prob < 0.40:
             return "CREDIBLE"
         if self.deception_prob < 0.65:
             return "UNCERTAIN"
         if self.deception_prob < 0.85:
             return "ELEVATED"
-        return "HIGH SIGNAL"
+        return "HIGH ALERT"
 
     @property
     def hud_color(self) -> int:
-        """Halo RGB565 color."""
+        """Halo RGB565 color for HUD overlay."""
         if self.confidence < 0.3:
             return 0x7BEF   # grey
         if self.deception_prob < 0.40:
@@ -121,76 +149,53 @@ class CredibilityVector:
 
 
 # ---------------------------------------------------------------------------
-# Narrative memory
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ContactBaseline:
-    contact_id: str
-    au_mean: list[float] = field(default_factory=lambda: [0.0] * 17)
-    au_std:  list[float] = field(default_factory=lambda: [0.1] * 17)
-    prosody_mean: dict = field(default_factory=dict)
-    prosody_std:  dict = field(default_factory=dict)
-    linguistic_mean: dict = field(default_factory=dict)
-    linguistic_std:  dict = field(default_factory=dict)
-    sample_count: int = 0
-
-    def is_calibrated(self) -> bool:
-        return self.sample_count >= 10
-
-
-@dataclass
-class AnomalyLog:
-    contact_id: str
-    timestamp: float
-    credibility: CredibilityVector
-    user_label: Optional[str] = None   # "false_positive", "confirmed", etc.
-
-
-# ---------------------------------------------------------------------------
 # Top-level result
 # ---------------------------------------------------------------------------
 
 @dataclass
 class LieLensResult:
+    """Complete output from one LieLens analysis cycle."""
     credibility: CredibilityVector
-    face: Optional[FaceEmbedding] = None
-    aus: Optional[ActionUnits] = None
-    prosody: Optional[ProsodyFeatures] = None
-    linguistic: Optional[LinguisticFeatures] = None
+    contact_id: Optional[str] = None
+    contact_name: Optional[str] = None
+    au_frame: Optional[AUFrame] = None
+    prosody_frame: Optional[ProsodyFrame] = None
+    linguistic_frame: Optional[LinguisticFrame] = None
 
     def to_hud_card(self) -> dict:
+        """Render as a Halo HUD card dict."""
         c = self.credibility
-        detail_parts = []
-        if self.prosody:
-            detail_parts.append(f"voice {round(self.prosody.jitter_pct, 1)}%j")
-        if self.aus:
-            ind = self.aus.deception_indicators()
-            top = max(ind, key=ind.get)
-            detail_parts.append(f"AU:{top}")
-        if self.linguistic:
-            detail_parts.append(f"hedge {round(self.linguistic.hedging_rate, 2)}")
-
+        name_line = self.contact_name or ("Stranger" if c.is_stranger else "Unknown")
         return {
             "type": "LieLensCard",
             "dismiss_ms": 5000,
-            "eyebrow": "LIE LENS" + (" · STRANGER" if c.is_stranger else ""),
-            "primary": c.label,
-            "detail": "  ·  ".join(detail_parts) if detail_parts else c.dominant_signal,
-            "footer": f"conf {round(c.confidence * 100)}%",
-            "score": round(c.deception_prob, 3),
-            "confidence": round(c.confidence, 3),
+            "label": c.label,
+            "deception_prob": round(c.deception_prob, 2),
+            "confidence": round(c.confidence, 2),
             "color": c.hud_color,
-            "dominant_signal": c.dominant_signal,
+            "eyebrow": "LIE LENS",
+            "primary": c.label,
+            "detail": f"{c.dominant_channel}  •  {round(c.deception_prob * 100)}%",
+            "footer": name_line,
             "opacity": 0.9 if c.confidence >= 0.3 else 0.4,
+            "is_stranger": c.is_stranger,
             "lines": ["LIE LENS", c.label,
-                      f"{round(c.deception_prob * 100)}% signal"],
+                      f"{round(c.deception_prob * 100)}% deception signal"],
             "layout": {
                 "eyebrow": {"x": 128, "y": 196, "size": "sm",
                             "color": c.hud_color, "tracking": 3},
-                "primary": {"x": 128, "y": 216, "size": "sm",
+                "primary": {"x": 128, "y": 214, "size": "sm",
                             "color": c.hud_color},
-                "detail":  {"x": 128, "y": 232, "size": "sm",
+                "detail":  {"x": 128, "y": 230, "size": "sm",
                             "color": 0x5EF7},
+                "footer":  {"x": 128, "y": 246, "size": "sm",
+                            "color": 0x39E7},
+            },
+            "renderer_hints": {
+                "chromatic_aberration": c.voice_stress_z > 2.0,
+                "particle_color": c.hud_color,
+                "bone_conduction_delay_ms": (
+                    int(c.linguistic_z * 5) if c.linguistic_z > 1.5 else 0
+                ),
             },
         }

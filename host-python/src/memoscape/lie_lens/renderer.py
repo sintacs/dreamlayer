@@ -1,68 +1,68 @@
 """lie_lens/renderer.py — HUD card renderer for Lie Lens.
 
-Converts a LieLensResult into a HUD card dict ready for the
-existing Halo display pipeline.
+Maps to Stage 7 (Sub-perceptual renderer) in the Lua spec:
+  - Chromatic aberration hint (voice stress z > 2.0)
+  - Particle system color (from CredibilityVector.hud_color)
+  - Bone conduction audio delay hint (linguistic z-score driven)
+  - LieLensCard dict output (sent to the existing HUD renderer)
 
-The sub-perceptual rendering described in the Lua spec
-(chromatic aberration shader, particle system, bone-conduction
-audio delay line) is defined here as structured metadata
-that the Lua bridge on the Halo side interprets.
+This module is pure data — it produces render instruction dicts
+that the hardware bridge translates into display commands.
 """
 from __future__ import annotations
+
+from typing import Optional
+
 from .schema import LieLensResult, CredibilityVector
 
-# Thresholds matching the Lua CONFIG
-DECEPTION_THRESHOLD = 0.65
-CONFIDENCE_THRESHOLD = 0.30
+# Minimum deception probability before any overlay is shown
+DISPLAY_THRESHOLD = 0.30
+
+# Minimum confidence before showing a non-grey card
+CONFIDENCE_THRESHOLD = 0.25
 
 
-def render(result: LieLensResult) -> dict:
-    """Return a complete HUD + sub-perceptual render payload.
+class LieLensRenderer:
+    """Converts a LieLensResult into HUD render instructions."""
 
-    The returned dict contains:
-    - 'card'            : LieLensCard for the HUD renderer
-    - 'sub_perceptual'  : chromatic/particle/audio metadata for Lua bridge
-    """
-    card = result.to_hud_card()
-    sub = _sub_perceptual(result.credibility)
-    return {"card": card, "sub_perceptual": sub}
+    def render(self, result: Optional[LieLensResult]) -> Optional[dict]:
+        """Return a HUD card dict, or None if nothing should be displayed."""
+        if result is None:
+            return None
 
+        c = result.credibility
 
-def _sub_perceptual(c: CredibilityVector) -> dict:
-    """Build sub-perceptual cue metadata.
+        # Suppress display if confidence is too low
+        if c.confidence < CONFIDENCE_THRESHOLD and not c.is_stranger:
+            return None
 
-    Sub-perceptual cues are rendered by the Lua layer on-device.
-    They are suppressed when confidence is below threshold or
-    deception probability is low.
-    """
-    active = (
-        c.deception_prob >= DECEPTION_THRESHOLD
-        and c.confidence >= CONFIDENCE_THRESHOLD
-    )
+        # Suppress display if score is below threshold
+        if c.deception_prob < DISPLAY_THRESHOLD:
+            return None
 
-    if not active:
-        return {"active": False}
+        card = result.to_hud_card()
 
-    # Chromatic aberration: stress → RGB fringe at face edges
-    stress_strength = c.voice_stress_z * 0.002
+        # Enrich renderer hints
+        card["renderer_hints"] = self._build_hints(c)
 
-    # Particle color: red if very high signal, amber if elevated
-    if c.deception_prob >= 0.85:
-        particle_color = 0xF800   # red
-    elif c.deception_prob >= 0.65:
-        particle_color = 0xFD20   # orange
-    else:
-        particle_color = 0x07E0   # green (reading / calm)
+        return card
 
-    # Bone conduction audio delay: hesitation → 10-15ms variable delay
-    # (Only meaningful if Halo bone conduction bridge is active)
-    delay_ms = min(c.linguistic_hedge_z * 5.0, 15.0)
-
-    return {
-        "active": True,
-        "chromatic_aberration": round(stress_strength, 4),
-        "particle_density": round(min(c.confidence * 0.8, 1.0), 2),
-        "particle_color": particle_color,
-        "bone_conduction_delay_ms": round(delay_ms, 1),
-        "dismiss_ms": 5000,
-    }
+    def _build_hints(self, c: CredibilityVector) -> dict:
+        return {
+            # Chromatic aberration on face edges (voice stress indicator)
+            "chromatic_aberration": c.voice_stress_z > 2.0,
+            "chromatic_strength": min(c.voice_stress_z / 10.0, 0.02)
+            if c.voice_stress_z > 2.0 else 0.0,
+            # Particle system
+            "particle_color": c.hud_color,
+            "particle_density": round(c.confidence * 0.5, 2),
+            "particle_origin": "temple",
+            # Bone conduction delay
+            "bone_conduction_delay_ms": (
+                int(c.linguistic_z * 5)
+                if c.linguistic_z > 1.5 else 0
+            ),
+            # Display behavior
+            "auto_dismiss_ms": 5000,
+            "opacity": 0.9 if c.confidence >= CONFIDENCE_THRESHOLD else 0.4,
+        }
