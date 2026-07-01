@@ -283,6 +283,39 @@ def live_caption_card(
     }
 
 
+# ------------------------------------------------------------------ lens cards
+
+def truth_gauge_card(
+    verdict: str = "UNCERTAIN",
+    stages: list[dict] | None = None,
+    confidence: float | None = None,
+    deception_prob: float = 0.0,
+    origin: dict | None = None,
+    footer: str = "",
+) -> dict:
+    """TruthLensCard — 9-ring gauge (Halo Cinema v1, Phase 4).
+
+    One ring per analysis stage (face, au, voice, prosody, linguistic,
+    narrative, fusion, aggregate, verdict). Each stage dict carries
+    {name, confidence, direction} where direction colors the ring:
+    truthful → accent_success, deceptive → accent_attention,
+    insufficient → text_ghost. Entry uses the Truth Ripple signature from
+    `origin` (eye landmark); reduce_motion draws all rings statically.
+    """
+    return {
+        "type":           "TruthLensCard",
+        "dismiss_ms":     5000,
+        "verdict":        verdict,
+        "primary":        verdict,
+        "confidence":     confidence,
+        "deception_prob": round(deception_prob, 3),
+        "stages":         stages or [],
+        "origin":         origin or {"x": 128, "y": 96},
+        "footer":         footer,
+        "lines":          ["TRUTH LENS", verdict],
+    }
+
+
 # ------------------------------------------------------------------ dream cards
 
 def world_anchor_card(
@@ -543,6 +576,34 @@ ALL_SAMPLES: dict[str, dict] = {
     "person_context":      person_context(
         "Jordan", headline="Sent invoice Wed", detail="Last seen today"
     ),
+    "truth_gauge":         truth_gauge_card(
+        verdict="ELEVATED",
+        confidence=0.74,
+        deception_prob=0.71,
+        footer="Jordan",
+        stages=[
+            {"name": "face",       "confidence": 0.92, "direction": "truthful"},
+            {"name": "au",         "confidence": 0.61, "direction": "deceptive"},
+            {"name": "voice",      "confidence": 0.55, "direction": "deceptive"},
+            {"name": "prosody",    "confidence": 0.48, "direction": "deceptive"},
+            {"name": "linguistic", "confidence": 0.35, "direction": "truthful"},
+            {"name": "narrative",  "confidence": 0.0,  "direction": "insufficient"},
+            {"name": "fusion",     "confidence": 0.74, "direction": "deceptive"},
+            {"name": "aggregate",  "confidence": 0.74, "direction": "deceptive"},
+            {"name": "verdict",    "confidence": 0.71, "direction": "deceptive"},
+        ],
+    ),
+    "person_context_v2": {
+        **person_context(
+            "Jordan", headline="Studio Atlas  •  Producer",
+            detail="Met 2026-06-24",
+        ),
+        "why":        "Jordan asked about the invoice deadline",
+        "confidence": 0.88,
+        "conf_color": T.conf_color(0.88),
+        "has_avatar": True,
+        "contact_id": "c-jordan-001",
+    },
     "privacy_paused":      privacy_paused(),
     "error":               error_card("BLE timeout"),
     "low_confidence":      low_confidence(),

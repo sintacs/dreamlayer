@@ -199,3 +199,78 @@ class LieLensResult:
                 ),
             },
         }
+
+    # ------------------------------------------------------------------
+    # Halo Cinema v1: 9-ring gauge card (docs/HALO_CINEMA_V1.md Phase 4)
+    # ------------------------------------------------------------------
+
+    # Ordered gauge stages: 7 analysis rings + aggregate + verdict
+    GAUGE_STAGES = (
+        "face", "au", "voice", "prosody", "linguistic",
+        "narrative", "fusion", "aggregate", "verdict",
+    )
+
+    def gauge_stages(self) -> list[dict]:
+        """Per-stage {name, confidence, direction} for the 9-ring gauge.
+
+        direction: "truthful" | "deceptive" | "insufficient" — a stage with
+        no data reads insufficient (slate ring), matching the design rule
+        that absence of evidence is displayed, never hidden.
+        """
+        c = self.credibility
+
+        def z_stage(name: str, z: float, present: bool) -> dict:
+            if not present:
+                return {"name": name, "confidence": 0.0, "direction": "insufficient"}
+            strength = min(abs(z) / 3.0, 1.0)
+            direction = "deceptive" if z > 1.0 else "truthful"
+            return {"name": name, "confidence": round(max(strength, 0.15), 3),
+                    "direction": direction}
+
+        has_face  = self.au_frame is not None
+        has_voice = self.prosody_frame is not None
+        has_ling  = self.linguistic_frame is not None
+
+        face_conf = self.au_frame.face_confidence if has_face else 0.0
+        stages = [
+            {"name": "face", "confidence": round(face_conf, 3),
+             "direction": "truthful" if has_face else "insufficient"},
+            z_stage("au", c.micro_expression_z, has_face),
+            {"name": "voice",
+             "confidence": round(self.prosody_frame.stress_score(), 3) if has_voice else 0.0,
+             "direction": ("deceptive" if has_voice and c.voice_stress_z > 1.0
+                           else "truthful" if has_voice else "insufficient")},
+            z_stage("prosody", c.voice_stress_z, has_voice),
+            z_stage("linguistic", c.linguistic_z, has_ling),
+            {"name": "narrative", "confidence": 0.0, "direction": "insufficient"},
+            {"name": "fusion", "confidence": round(c.confidence, 3),
+             "direction": "deceptive" if c.deception_prob >= 0.5 else "truthful"},
+            {"name": "aggregate", "confidence": round(c.confidence, 3),
+             "direction": "deceptive" if c.deception_prob >= 0.5 else "truthful"},
+            {"name": "verdict", "confidence": round(c.deception_prob, 3),
+             "direction": "deceptive" if c.deception_prob >= 0.5 else "truthful"},
+        ]
+        return stages
+
+    def to_gauge_card(self, origin: Optional[dict] = None) -> dict:
+        """Render as a TruthLensCard 9-ring gauge payload.
+
+        origin: {"x", "y"} eye-landmark display coords for the Truth Ripple
+        entry signature; defaults to the upper face zone (128, 96).
+        """
+        c = self.credibility
+        stages = self.gauge_stages()
+        return {
+            "type": "TruthLensCard",
+            "dismiss_ms": 5000,
+            "verdict": c.label,
+            "primary": c.label,
+            "confidence": round(c.confidence, 2),
+            "deception_prob": round(c.deception_prob, 2),
+            "stages": stages,
+            "origin": origin or {"x": 128, "y": 96},
+            "is_stranger": c.is_stranger,
+            "footer": self.contact_name or ("Stranger" if c.is_stranger else "Unknown"),
+            "lines": ["TRUTH LENS", c.label,
+                      f"{round(c.deception_prob * 100)}% deception signal"],
+        }
