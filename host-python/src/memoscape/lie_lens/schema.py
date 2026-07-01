@@ -2,73 +2,81 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
+import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Per-frame signal snapshots
+# Stage outputs
 # ---------------------------------------------------------------------------
 
 @dataclass
-class AUFrame:
-    """One frame of facial action unit data (17 AUs, 0-1 activation each)."""
-    aus: list[float]          # 17-element list, AU indices match FACS standard
-    micro_exp_label: str      # e.g. 'contempt', 'fear', 'neutral'
-    micro_exp_confidence: float
-
-    # FACS AUs most associated with deception cues
-    DECEPTION_AUS = {6, 7, 10, 12, 14, 17, 20, 24}  # AU indices (1-based)
-
-    def deception_au_score(self) -> float:
-        """Mean activation of deception-relevant AUs (0-1)."""
-        if not self.aus:
-            return 0.0
-        relevant = [self.aus[i - 1] for i in self.DECEPTION_AUS
-                    if i - 1 < len(self.aus)]
-        return sum(relevant) / len(relevant) if relevant else 0.0
+class FaceEmbedding:
+    embedding: np.ndarray       # 512-d float32 vector
+    confidence: float           # face detection confidence 0-1
+    contact_id: Optional[str] = None  # matched contact, if any
+    match_score: float = 0.0
 
 
 @dataclass
-class ProsodyFrame:
-    """Voice prosody features from one 200ms audio window."""
+class ActionUnits:
+    """17 facial action unit activations (0-1 each)."""
+    au1:  float = 0.0   # inner brow raise
+    au2:  float = 0.0   # outer brow raise
+    au4:  float = 0.0   # brow lowerer
+    au5:  float = 0.0   # upper lid raiser
+    au6:  float = 0.0   # cheek raiser
+    au7:  float = 0.0   # lid tightener
+    au9:  float = 0.0   # nose wrinkler
+    au10: float = 0.0   # upper lip raiser
+    au12: float = 0.0   # lip corner puller
+    au14: float = 0.0   # dimpler
+    au15: float = 0.0   # lip corner depressor
+    au17: float = 0.0   # chin raiser
+    au20: float = 0.0   # lip stretcher
+    au23: float = 0.0   # lip tightener
+    au25: float = 0.0   # lips part
+    au26: float = 0.0   # jaw drop
+    au45: float = 0.0   # blink
+
+    def as_vector(self) -> list[float]:
+        return [
+            self.au1, self.au2, self.au4, self.au5, self.au6,
+            self.au7, self.au9, self.au10, self.au12, self.au14,
+            self.au15, self.au17, self.au20, self.au23, self.au25,
+            self.au26, self.au45,
+        ]
+
+    def deception_indicators(self) -> dict[str, float]:
+        """AUs associated with deception / masking in FACS literature."""
+        return {
+            "mask_smile":    self.au12 * (1 - self.au6),  # lip smile without eye
+            "brow_furrow":   self.au4,
+            "lip_tighten":   self.au23,
+            "gaze_aversion": self.au5 * self.au7,         # lid raise + tighten
+            "nose_wrinkle":  self.au9,
+        }
+
+
+@dataclass
+class ProsodyFeatures:
     pitch_mean_hz: float
     pitch_variance: float
     jitter_pct: float
     shimmer_pct: float
-    hesitation_rate: float    # pauses-per-second
+    hesitation_rate: float   # pauses per second
+    speech_rate_norm: float  # relative to speaker baseline
     energy_db: float
-    speech_rate_norm: float   # 1.0 = baseline
-
-    def stress_score(self) -> float:
-        """0-1 heuristic stress score for this window."""
-        s = 0.0
-        s += min(self.pitch_variance / 500.0, 0.25)
-        s += min(self.jitter_pct / 5.0, 0.20)
-        s += min(self.shimmer_pct / 8.0, 0.20)
-        s += min(self.hesitation_rate / 4.0, 0.20)
-        s += min(abs(self.speech_rate_norm - 1.0) / 0.5, 0.15)
-        return min(s, 1.0)
+    window_ms: int
 
 
 @dataclass
-class LinguisticFrame:
-    """Linguistic deception markers from one utterance."""
-    text: str
-    hedging_score: float      # 0-1: "maybe", "kind of", "I think" density
-    first_person_rate: float  # fraction of words that are I/me/my
-    complexity_score: float   # sentence complexity (lower = distancing)
-    negation_rate: float      # frequency of negations
-    specificity_score: float  # 0-1: high = very specific details
-
-    def deception_score(self) -> float:
-        """0-1 heuristic deception score from linguistic features."""
-        s = 0.0
-        s += self.hedging_score * 0.30
-        # Low first-person use is a known deception marker
-        s += (1.0 - min(self.first_person_rate / 0.15, 1.0)) * 0.25
-        s += (1.0 - self.complexity_score) * 0.20
-        s += self.negation_rate * 0.15
-        s += (1.0 - self.specificity_score) * 0.10
-        return min(s, 1.0)
+class LinguisticFeatures:
+    hedging_rate: float      # "maybe", "I think", "sort of" per sentence
+    first_person_rate: float # "I" usage (distancing = less "I")
+    complexity_score: float  # avg words per clause
+    negation_rate: float     # "not", "never", "no" per sentence
+    qualifier_rate: float    # "very", "actually", "honestly" per sentence
+    utterance: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -77,135 +85,112 @@ class LinguisticFrame:
 
 @dataclass
 class CredibilityVector:
-    """Output of the fusion engine — multi-dimensional credibility assessment."""
-    deception_prob: float       # 0-1 overall deception probability
-    confidence: float           # 0-1 confidence in the estimate
-    micro_exp_z: float          # z-score vs contact baseline
-    voice_stress_z: float
-    linguistic_z: float
-    dominant_signal: str        # which dimension is driving the score
-    is_stranger: bool           # True = no baseline, conservative mode
-    window_count: int
-
-    # Thresholds
-    DECEPTION_THRESHOLD = 0.72
-    CONFIDENCE_THRESHOLD = 0.60
-    STRANGER_DECEPTION_THRESHOLD = 0.92  # much higher for strangers
-
-    @property
-    def should_alert(self) -> bool:
-        threshold = (self.STRANGER_DECEPTION_THRESHOLD if self.is_stranger
-                     else self.DECEPTION_THRESHOLD)
-        return (self.deception_prob >= threshold
-                and self.confidence >= self.CONFIDENCE_THRESHOLD)
+    """Output of the fusion engine — one per analysis cycle."""
+    deception_prob: float        # 0.0 = very credible, 1.0 = high deception signal
+    confidence: float            # data quality / quantity 0-1
+    micro_exp_z: float           # AU z-score vs baseline
+    voice_stress_z: float        # prosody z-score vs baseline
+    linguistic_hedge_z: float    # linguistic z-score vs baseline
+    dominant_signal: str         # which dimension is driving the score
+    is_stranger: bool = False    # no baseline available
 
     @property
     def label(self) -> str:
         if self.confidence < 0.3:
             return "READING"
-        if self.is_stranger and self.deception_prob < self.STRANGER_DECEPTION_THRESHOLD:
-            return "STRANGER"
-        if self.deception_prob < 0.35:
+        if self.deception_prob < 0.40:
             return "CREDIBLE"
-        if self.deception_prob < 0.55:
+        if self.deception_prob < 0.65:
             return "UNCERTAIN"
-        if self.deception_prob < 0.72:
+        if self.deception_prob < 0.85:
             return "ELEVATED"
-        if self.deception_prob < 0.90:
-            return "DECEPTIVE"
-        return "HIGH DECEPTION"
+        return "HIGH SIGNAL"
 
     @property
     def hud_color(self) -> int:
         """Halo RGB565 color."""
         if self.confidence < 0.3:
             return 0x7BEF   # grey
-        if self.deception_prob < 0.35:
+        if self.deception_prob < 0.40:
             return 0x07E0   # green
-        if self.deception_prob < 0.55:
+        if self.deception_prob < 0.65:
             return 0xFFE0   # yellow
-        if self.deception_prob < 0.72:
+        if self.deception_prob < 0.85:
             return 0xFD20   # orange
         return 0xF800       # red
 
 
 # ---------------------------------------------------------------------------
-# Per-contact memory
+# Narrative memory
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ContactBaseline:
-    """Stored baseline for one known contact."""
     contact_id: str
-    au_mean: list[float]          # mean AU activations (17 values)
-    au_std: list[float]           # std dev per AU
-    prosody_pitch_mean: float
-    prosody_pitch_std: float
-    prosody_jitter_mean: float
-    prosody_shimmer_mean: float
-    linguistic_hedge_mean: float
-    linguistic_fp_mean: float     # first-person rate mean
-    sample_count: int             # frames used to build baseline
+    au_mean: list[float] = field(default_factory=lambda: [0.0] * 17)
+    au_std:  list[float] = field(default_factory=lambda: [0.1] * 17)
+    prosody_mean: dict = field(default_factory=dict)
+    prosody_std:  dict = field(default_factory=dict)
+    linguistic_mean: dict = field(default_factory=dict)
+    linguistic_std:  dict = field(default_factory=dict)
+    sample_count: int = 0
 
-    MIN_SAMPLES = 20              # minimum before baseline is trusted
-
-    @property
-    def is_reliable(self) -> bool:
-        return self.sample_count >= self.MIN_SAMPLES
+    def is_calibrated(self) -> bool:
+        return self.sample_count >= 10
 
 
 @dataclass
-class AnomalyRecord:
-    """One logged anomaly event for a contact."""
+class AnomalyLog:
     contact_id: str
     timestamp: float
-    deception_prob: float
-    dominant_signal: str
-    user_label: Optional[str] = None   # 'confirmed', 'false_positive', None
+    credibility: CredibilityVector
+    user_label: Optional[str] = None   # "false_positive", "confirmed", etc.
 
 
 # ---------------------------------------------------------------------------
-# Final output
+# Top-level result
 # ---------------------------------------------------------------------------
 
 @dataclass
 class LieLensResult:
-    """Output emitted by LieLens.tick() when a displayable result is ready."""
     credibility: CredibilityVector
-    contact_id: Optional[str] = None
-    contact_name: Optional[str] = None
-    au_frame: Optional[AUFrame] = None
-    prosody_frame: Optional[ProsodyFrame] = None
-    linguistic_frame: Optional[LinguisticFrame] = None
+    face: Optional[FaceEmbedding] = None
+    aus: Optional[ActionUnits] = None
+    prosody: Optional[ProsodyFeatures] = None
+    linguistic: Optional[LinguisticFeatures] = None
 
     def to_hud_card(self) -> dict:
         c = self.credibility
-        name_line = self.contact_name or ("Stranger" if c.is_stranger else "Unknown")
+        detail_parts = []
+        if self.prosody:
+            detail_parts.append(f"voice {round(self.prosody.jitter_pct, 1)}%j")
+        if self.aus:
+            ind = self.aus.deception_indicators()
+            top = max(ind, key=ind.get)
+            detail_parts.append(f"AU:{top}")
+        if self.linguistic:
+            detail_parts.append(f"hedge {round(self.linguistic.hedging_rate, 2)}")
+
         return {
             "type": "LieLensCard",
             "dismiss_ms": 5000,
-            "label": c.label,
-            "deception_prob": round(c.deception_prob, 2),
-            "confidence": round(c.confidence, 2),
-            "dominant_signal": c.dominant_signal,
-            "color": c.hud_color,
-            "should_alert": c.should_alert,
-            "is_stranger": c.is_stranger,
-            "eyebrow": "LIE LENS",
+            "eyebrow": "LIE LENS" + (" · STRANGER" if c.is_stranger else ""),
             "primary": c.label,
-            "name": name_line,
-            "detail": f"{c.dominant_signal}  •  {round(c.deception_prob * 100)}%",
-            "footer": f"{c.window_count} windows  •  conf {round(c.confidence * 100)}%",
-            "opacity": 0.9 if c.confidence >= 0.6 else 0.5,
-            "lines": ["LIE LENS", name_line, c.label,
-                      f"{round(c.deception_prob * 100)}% deception prob"],
+            "detail": "  ·  ".join(detail_parts) if detail_parts else c.dominant_signal,
+            "footer": f"conf {round(c.confidence * 100)}%",
+            "score": round(c.deception_prob, 3),
+            "confidence": round(c.confidence, 3),
+            "color": c.hud_color,
+            "dominant_signal": c.dominant_signal,
+            "opacity": 0.9 if c.confidence >= 0.3 else 0.4,
+            "lines": ["LIE LENS", c.label,
+                      f"{round(c.deception_prob * 100)}% signal"],
             "layout": {
                 "eyebrow": {"x": 128, "y": 196, "size": "sm",
                             "color": c.hud_color, "tracking": 3},
-                "primary": {"x": 128, "y": 214, "size": "sm", "color": c.hud_color},
-                "name":    {"x": 128, "y": 230, "size": "sm", "color": 0xFFFF},
-                "detail":  {"x": 128, "y": 246, "size": "sm", "color": 0x5EF7},
+                "primary": {"x": 128, "y": 216, "size": "sm",
+                            "color": c.hud_color},
+                "detail":  {"x": 128, "y": 232, "size": "sm",
+                            "color": 0x5EF7},
             },
-            "chromatic_aberration": c.voice_stress_z * 0.008 if c.should_alert else 0,
-            "particle_color": 0xF800 if c.deception_prob > 0.90 else 0x07E0,
         }

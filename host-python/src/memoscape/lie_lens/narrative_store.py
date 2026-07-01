@@ -1,149 +1,141 @@
 """lie_lens/narrative_store.py — Per-contact baseline storage + anomaly log.
 
 In production this wraps the Halo Narrative agentic memory system.
-In tests / offline mode it uses a simple in-process dict.
+In the host-Python layer it provides an in-process dict-based store
+with the same interface, so all other modules can be tested without
+hardware.
 """
 from __future__ import annotations
-
 import time
 from typing import Optional
-
-import numpy as np
-
-from .schema import ContactBaseline, AnomalyRecord, AUFrame, ProsodyFrame, LinguisticFrame
+from .schema import (
+    ContactBaseline, AnomalyLog, CredibilityVector,
+    ActionUnits, ProsodyFeatures, LinguisticFeatures,
+)
 
 
 class NarrativeStore:
-    """Stores and retrieves per-contact baselines and anomaly logs.
+    """In-process narrative memory store.
 
-    Parameters
-    ----------
-    backend : dict-like, optional
-        Storage backend. Defaults to in-process dict (suitable for tests).
-        In production, pass a Narrative-backed store.
+    Stores per-contact baselines and anomaly logs. Provides incremental
+    Bayesian update of means and standard deviations from new observations.
     """
 
-    def __init__(self, backend: Optional[dict] = None):
-        self._db: dict = backend if backend is not None else {}
+    def __init__(self):
+        self._baselines: dict[str, ContactBaseline] = {}
+        self._anomalies: dict[str, list[AnomalyLog]] = {}
+        self._contact_embeddings: dict = {}
 
     # ------------------------------------------------------------------
-    # Baseline management
+    # Contact embeddings
+    # ------------------------------------------------------------------
+
+    def set_contact_embeddings(self, embeddings: dict) -> None:
+        """Load contact_id → 512-d embedding dict."""
+        self._contact_embeddings = embeddings
+
+    def get_contact_embeddings(self) -> dict:
+        return self._contact_embeddings
+
+    # ------------------------------------------------------------------
+    # Baseline
     # ------------------------------------------------------------------
 
     def get_baseline(self, contact_id: str) -> Optional[ContactBaseline]:
-        return self._db.get(f"baseline:{contact_id}")
+        return self._baselines.get(contact_id)
 
-    def save_baseline(self, baseline: ContactBaseline) -> None:
-        self._db[f"baseline:{baseline.contact_id}"] = baseline
-
-    def update_baseline_incremental(
+    def update_baseline(
         self,
         contact_id: str,
-        au_frame: Optional[AUFrame],
-        prosody_frame: Optional[ProsodyFrame],
-        linguistic_frame: Optional[LinguisticFrame],
+        aus: Optional[ActionUnits] = None,
+        prosody: Optional[ProsodyFeatures] = None,
+        linguistic: Optional[LinguisticFeatures] = None,
     ) -> ContactBaseline:
-        """Online update of contact baseline using exponential moving average."""
-        existing = self.get_baseline(contact_id)
-        alpha = 0.05  # EMA weight for new sample
+        """Incrementally update the baseline for a contact."""
+        bl = self._baselines.get(contact_id) or ContactBaseline(
+            contact_id=contact_id
+        )
+        n = bl.sample_count
 
-        if existing is None:
-            # Initialise from first sample
-            au_mean = au_frame.aus if au_frame else [0.15] * 17
-            au_std = [0.1] * 17
-            p_pitch_mean = prosody_frame.pitch_mean_hz if prosody_frame else 180.0
-            p_pitch_std = 30.0
-            p_jitter = prosody_frame.jitter_pct if prosody_frame else 0.5
-            p_shimmer = prosody_frame.shimmer_pct if prosody_frame else 1.0
-            l_hedge = linguistic_frame.hedging_score if linguistic_frame else 0.1
-            l_fp = linguistic_frame.first_person_rate if linguistic_frame else 0.12
-            existing = ContactBaseline(
-                contact_id=contact_id,
-                au_mean=au_mean,
-                au_std=au_std,
-                prosody_pitch_mean=p_pitch_mean,
-                prosody_pitch_std=p_pitch_std,
-                prosody_jitter_mean=p_jitter,
-                prosody_shimmer_mean=p_shimmer,
-                linguistic_hedge_mean=l_hedge,
-                linguistic_fp_mean=l_fp,
-                sample_count=1,
-            )
-        else:
-            # EMA update
-            if au_frame:
-                existing.au_mean = [
-                    (1 - alpha) * m + alpha * v
-                    for m, v in zip(existing.au_mean, au_frame.aus)
+        if aus is not None:
+            vec = aus.as_vector()
+            if n == 0:
+                bl.au_mean = list(vec)
+                bl.au_std  = [0.1] * 17
+            else:
+                bl.au_mean = [
+                    (bl.au_mean[i] * n + vec[i]) / (n + 1)
+                    for i in range(17)
                 ]
-            if prosody_frame:
-                existing.prosody_pitch_mean = (
-                    (1 - alpha) * existing.prosody_pitch_mean
-                    + alpha * prosody_frame.pitch_mean_hz
-                )
-                existing.prosody_jitter_mean = (
-                    (1 - alpha) * existing.prosody_jitter_mean
-                    + alpha * prosody_frame.jitter_pct
-                )
-                existing.prosody_shimmer_mean = (
-                    (1 - alpha) * existing.prosody_shimmer_mean
-                    + alpha * prosody_frame.shimmer_pct
-                )
-            if linguistic_frame:
-                existing.linguistic_hedge_mean = (
-                    (1 - alpha) * existing.linguistic_hedge_mean
-                    + alpha * linguistic_frame.hedging_score
-                )
-                existing.linguistic_fp_mean = (
-                    (1 - alpha) * existing.linguistic_fp_mean
-                    + alpha * linguistic_frame.first_person_rate
-                )
-            existing.sample_count += 1
+                bl.au_std = [
+                    max(
+                        ((bl.au_std[i] ** 2 * n +
+                          (vec[i] - bl.au_mean[i]) ** 2) / (n + 1)) ** 0.5,
+                        0.01,
+                    )
+                    for i in range(17)
+                ]
 
-        self.save_baseline(existing)
-        return existing
+        if prosody is not None:
+            self._update_dict_stats(
+                bl.prosody_mean, bl.prosody_std, n,
+                {
+                    "pitch_variance": prosody.pitch_variance,
+                    "jitter_pct":     prosody.jitter_pct,
+                    "shimmer_pct":    prosody.shimmer_pct,
+                    "hesitation_rate":prosody.hesitation_rate,
+                    "speech_rate_norm":prosody.speech_rate_norm,
+                },
+            )
+
+        if linguistic is not None:
+            self._update_dict_stats(
+                bl.linguistic_mean, bl.linguistic_std, n,
+                {
+                    "hedging_rate":      linguistic.hedging_rate,
+                    "first_person_rate": linguistic.first_person_rate,
+                    "negation_rate":     linguistic.negation_rate,
+                    "qualifier_rate":    linguistic.qualifier_rate,
+                },
+            )
+
+        bl.sample_count = n + 1
+        self._baselines[contact_id] = bl
+        return bl
+
+    @staticmethod
+    def _update_dict_stats(
+        mean_dict: dict, std_dict: dict, n: int, new_vals: dict
+    ) -> None:
+        for key, val in new_vals.items():
+            old_mean = mean_dict.get(key, 0.0)
+            old_std  = std_dict.get(key, 1.0)
+            new_mean = (old_mean * n + val) / (n + 1)
+            new_std  = max(
+                ((old_std ** 2 * n + (val - new_mean) ** 2) / (n + 1)) ** 0.5,
+                0.01,
+            )
+            mean_dict[key] = new_mean
+            std_dict[key]  = new_std
 
     # ------------------------------------------------------------------
     # Anomaly log
     # ------------------------------------------------------------------
 
-    def log_anomaly(self, contact_id: str, deception_prob: float,
-                    dominant_signal: str,
-                    user_label: Optional[str] = None) -> AnomalyRecord:
-        record = AnomalyRecord(
+    def log_anomaly(
+        self,
+        contact_id: str,
+        credibility: CredibilityVector,
+        user_label: Optional[str] = None,
+    ) -> AnomalyLog:
+        entry = AnomalyLog(
             contact_id=contact_id,
-            timestamp=time.time(),
-            deception_prob=deception_prob,
-            dominant_signal=dominant_signal,
+            timestamp=time.monotonic(),
+            credibility=credibility,
             user_label=user_label,
         )
-        key = f"anomalies:{contact_id}"
-        log: list = self._db.get(key, [])
-        log.append(record)
-        # Keep last 100 anomalies per contact
-        self._db[key] = log[-100:]
-        return record
+        self._anomalies.setdefault(contact_id, []).append(entry)
+        return entry
 
-    def get_anomalies(self, contact_id: str) -> list[AnomalyRecord]:
-        return self._db.get(f"anomalies:{contact_id}", [])
-
-    # ------------------------------------------------------------------
-    # Contact registry
-    # ------------------------------------------------------------------
-
-    def register_contact(self, contact_id: str, name: str,
-                          embedding: np.ndarray) -> None:
-        self._db[f"contact:{contact_id}"] = {
-            "name": name, "embedding": embedding
-        }
-        # Keep master index
-        idx: dict = self._db.get("contact_index", {})
-        idx[contact_id] = embedding
-        self._db["contact_index"] = idx
-
-    def get_contact_name(self, contact_id: str) -> Optional[str]:
-        entry = self._db.get(f"contact:{contact_id}")
-        return entry["name"] if entry else None
-
-    def get_contact_embeddings(self) -> dict[str, np.ndarray]:
-        return dict(self._db.get("contact_index", {}))
+    def get_anomalies(self, contact_id: str) -> list[AnomalyLog]:
+        return self._anomalies.get(contact_id, [])

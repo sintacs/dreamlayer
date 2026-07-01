@@ -1,44 +1,31 @@
-"""lie_lens/analyzer.py — LieLens main orchestrator.
+"""lie_lens/analyzer.py — LieLens orchestrator.
 
-The LieLens class is the single entry point used by the orchestrator
-or Dream Engine. It wires together all 7 pipeline stages:
+This is the public entry point. The orchestrator or Dream Engine
+instantiates LieLens and calls:
 
-    1. Face detection + embedding   (face_embed.FaceEmbedder)
-    2. AU detection                  (au_detector.AUDetector)
-    3. Voice prosody                 (prosody.ProsodyAnalyzer)
-    4. Linguistic markers            (linguistic.extract_linguistic_features)
-    5. Fusion                        (fusion.fuse)
-    6. Narrative store               (narrative_store.NarrativeStore)
-    7. HUD renderer                  (renderer.render_lie_lens_card)
+    ll.feed_frame(embedding, au_vector, detection_confidence)
+    ll.feed_audio(mic_fft, mic_amplitude)
+    ll.feed_transcript(text, contact_id)
+    result = ll.tick()    # each display update cycle
 
-Calling pattern
----------------
-    ll = LieLens()
-    ll.feed_frame(camera_frame)           # each camera frame (~30fps)
-    ll.feed_audio(mic_fft, mic_amplitude) # each audio frame (~160fps)
-    ll.feed_transcript(text)              # each STT utterance
-    result = ll.tick()                    # each display tick (~10fps)
+When enough multimodal data has accumulated, tick() returns a
+LieLensResult ready for the HUD renderer.
 """
 from __future__ import annotations
-
 import time
 from typing import Optional
-
 import numpy as np
 
-from .au_detector import AUDetector
+from .schema import LieLensResult, FaceEmbedding, ActionUnits
 from .face_embed import FaceEmbedder
+from .au_detector import compute_au_z_score, vector_to_aus, deception_au_score
+from .prosody import ProsodyExtractor, compute_prosody_z_score
+from .linguistic import extract_linguistic, compute_linguistic_z_score
 from .fusion import fuse
-from .linguistic import extract_linguistic_features
 from .narrative_store import NarrativeStore
-from .prosody import ProsodyAnalyzer
-from .renderer import render_lie_lens_card
-from .schema import (
-    AUFrame, LieLensResult, LinguisticFrame, ProsodyFrame,
-)
+from .renderer import render
 
 EMIT_COOLDOWN_S = 3.0
-MAX_FRAME_HISTORY = 30
 
 
 class _AlwaysOn:
@@ -47,20 +34,16 @@ class _AlwaysOn:
 
 
 class LieLens:
-    """9-stage multimodal deception analysis orchestrator.
+    """9-stage multimodal deception analysis pipeline.
 
     Parameters
     ----------
-    store : NarrativeStore, optional
-        Memory backend. Defaults to in-process dict store.
+    store : NarrativeStore
+        Shared narrative memory store (baselines + anomaly log).
     cooldown_s : float
-        Minimum seconds between HUD emissions.
+        Minimum seconds between HUD card emissions.
     privacy : object
         Optional privacy controller with allow_capture() -> bool.
-    face_npu_fn : callable, optional
-        Override face NPU for testing.
-    au_npu_fn : callable, optional
-        Override AU NPU for testing.
     """
 
     def __init__(
@@ -68,158 +51,141 @@ class LieLens:
         store: Optional[NarrativeStore] = None,
         cooldown_s: float = EMIT_COOLDOWN_S,
         privacy=None,
-        face_npu_fn=None,
-        au_npu_fn=None,
     ):
         self._store = store or NarrativeStore()
+        self._embedder = FaceEmbedder(
+            self._store.get_contact_embeddings()
+        )
+        self._prosody = ProsodyExtractor()
         self._cooldown_s = cooldown_s
-        self._privacy = privacy or _AlwaysOn()
-        self._embedder = FaceEmbedder(npu_fn=face_npu_fn)
-        self._au = AUDetector(npu_fn=au_npu_fn)
-        self._prosody = ProsodyAnalyzer()
-
-        # Rolling frame history
-        self._au_frames: list[AUFrame] = []
-        self._prosody_frames: list[ProsodyFrame] = []
-        self._linguistic_frames: list[LinguisticFrame] = []
-
-        # Current session state
-        self._current_contact_id: Optional[str] = None
-        self._current_contact_name: Optional[str] = None
         self._last_emit: float = 0.0
+        self._privacy = privacy or _AlwaysOn()
         self._window_count: int = 0
 
+        # Latest signals
+        self._last_face: Optional[FaceEmbedding] = None
+        self._last_aus: Optional[ActionUnits] = None
+        self._latest_au_z: float = 0.0
+        self._latest_prosody_z: float = 0.0
+        self._latest_linguistic_z: float = 0.0
+        self._current_contact_id: Optional[str] = None
+
     # ------------------------------------------------------------------
-    # Feed methods (called by pipeline)
+    # Feed methods
     # ------------------------------------------------------------------
 
-    def feed_frame(self, frame: Optional[np.ndarray]) -> None:
-        """Ingest one camera frame — runs face detection + AU detection."""
-        if not self._privacy.allow_capture() or frame is None:
+    def feed_frame(
+        self,
+        embedding: Optional[np.ndarray],
+        au_vector: Optional[list[float]] = None,
+        detection_confidence: float = 1.0,
+    ) -> None:
+        """Ingest one camera frame (embedding + AU vector)."""
+        if embedding is None:
             return
+        face = self._embedder.process(embedding, detection_confidence)
+        self._last_face = face
+        if face.contact_id:
+            self._current_contact_id = face.contact_id
 
-        # Face detection + contact matching
-        detection = self._embedder.detect(frame)
-        if detection is not None:
-            contacts = self._store.get_contact_embeddings()
-            match = self._embedder.match_contacts(
-                detection.embedding, contacts
+        if au_vector:
+            aus = vector_to_aus(au_vector)
+            self._last_aus = aus
+            baseline = (
+                self._store.get_baseline(self._current_contact_id)
+                if self._current_contact_id else None
             )
-            if match:
-                cid, _ = match
-                self._current_contact_id = cid
-                self._current_contact_name = self._store.get_contact_name(cid)
+            self._latest_au_z = compute_au_z_score(aus, baseline)
 
-        # AU detection
-        au = self._au.detect(frame)
-        if au is not None:
-            self._au_frames.append(au)
-            if len(self._au_frames) > MAX_FRAME_HISTORY:
-                self._au_frames = self._au_frames[-MAX_FRAME_HISTORY:]
-
-    def feed_audio(self, mic_fft: Optional[np.ndarray],
-                   mic_amplitude: Optional[float]) -> None:
-        """Ingest one audio frame — runs prosody analysis."""
-        frame = self._prosody.feed(mic_fft, mic_amplitude)
-        if frame is not None:
-            self._prosody_frames.append(frame)
-            if len(self._prosody_frames) > MAX_FRAME_HISTORY:
-                self._prosody_frames = self._prosody_frames[-MAX_FRAME_HISTORY:]
+    def feed_audio(
+        self,
+        mic_fft: Optional[np.ndarray],
+        mic_amplitude: Optional[float],
+    ) -> None:
+        """Ingest one audio frame from the mic pipeline."""
+        amp = mic_amplitude or 0.0
+        prosody = self._prosody.feed(mic_fft, amp)
+        if prosody:
             self._window_count += 1
+            baseline = (
+                self._store.get_baseline(self._current_contact_id)
+                if self._current_contact_id else None
+            )
+            self._latest_prosody_z = compute_prosody_z_score(prosody, baseline)
+            # Update baseline (calibration)
+            if self._current_contact_id:
+                self._store.update_baseline(
+                    self._current_contact_id, prosody=prosody
+                )
 
-    def feed_transcript(self, text: str) -> None:
-        """Ingest one STT utterance — runs linguistic analysis."""
-        if not text or not text.strip():
+    def feed_transcript(
+        self,
+        text: str,
+        contact_id: Optional[str] = None,
+    ) -> None:
+        """Ingest a transcribed utterance."""
+        if not text.strip():
             return
-        lf = extract_linguistic_features(text)
-        self._linguistic_frames.append(lf)
-        if len(self._linguistic_frames) > MAX_FRAME_HISTORY:
-            self._linguistic_frames = self._linguistic_frames[-MAX_FRAME_HISTORY:]
-
-        # Update contact baseline incrementally
+        if contact_id:
+            self._current_contact_id = contact_id
+        lf = extract_linguistic(text)
+        baseline = (
+            self._store.get_baseline(self._current_contact_id)
+            if self._current_contact_id else None
+        )
+        self._latest_linguistic_z = compute_linguistic_z_score(lf, baseline)
         if self._current_contact_id:
-            self._store.update_baseline_incremental(
-                self._current_contact_id,
-                au_frame=self._au_frames[-1] if self._au_frames else None,
-                prosody_frame=self._prosody_frames[-1] if self._prosody_frames else None,
-                linguistic_frame=lf,
+            self._store.update_baseline(
+                self._current_contact_id, linguistic=lf
             )
 
     # ------------------------------------------------------------------
-    # Tick — called each display update
+    # Tick
     # ------------------------------------------------------------------
 
     def tick(self) -> Optional[LieLensResult]:
-        """Return LieLensResult if ready to emit, else None."""
+        """Return a LieLensResult if ready to emit, else None."""
         if not self._privacy.allow_capture():
             return None
         now = time.monotonic()
         if now - self._last_emit < self._cooldown_s:
             return None
-        if self._window_count < 2:
+        if self._window_count == 0:
             return None
 
-        baseline = (
-            self._store.get_baseline(self._current_contact_id)
-            if self._current_contact_id else None
-        )
-
-        credibility = fuse(
-            au_frames=self._au_frames,
-            prosody_frames=self._prosody_frames,
-            linguistic_frames=self._linguistic_frames,
-            baseline=baseline,
+        is_stranger = self._current_contact_id is None
+        cv = fuse(
+            micro_exp_z=self._latest_au_z,
+            voice_stress_z=self._latest_prosody_z,
+            linguistic_hedge_z=self._latest_linguistic_z,
+            is_stranger=is_stranger,
             window_count=self._window_count,
         )
 
-        if credibility.confidence < 0.15:
+        if cv.confidence < 0.15:
             return None
-
-        # Log anomaly if alert-worthy
-        if credibility.should_alert and self._current_contact_id:
-            self._store.log_anomaly(
-                self._current_contact_id,
-                credibility.deception_prob,
-                credibility.dominant_signal,
-            )
 
         self._last_emit = now
 
-        latest_prosody = self._prosody_frames[-1] if self._prosody_frames else None
-        latest_au = self._au_frames[-1] if self._au_frames else None
-        latest_ling = self._linguistic_frames[-1] if self._linguistic_frames else None
-
-        return LieLensResult(
-            credibility=credibility,
-            contact_id=self._current_contact_id,
-            contact_name=self._current_contact_name,
-            au_frame=latest_au,
-            prosody_frame=latest_prosody,
-            linguistic_frame=latest_ling,
+        result = LieLensResult(
+            credibility=cv,
+            face=self._last_face,
+            aus=self._last_aus,
         )
 
-    # ------------------------------------------------------------------
-    # Session management
-    # ------------------------------------------------------------------
+        # Log anomaly if elevated
+        if cv.deception_prob >= 0.65 and self._current_contact_id:
+            self._store.log_anomaly(self._current_contact_id, cv)
+
+        return result
 
     def reset(self) -> None:
-        """Clear all session state — call when conversation ends."""
-        self._au_frames.clear()
-        self._prosody_frames.clear()
-        self._linguistic_frames.clear()
-        self._current_contact_id = None
-        self._current_contact_name = None
-        self._last_emit = 0.0
+        """Clear session state (call when conversation ends)."""
         self._window_count = 0
-        self._prosody.clear()
-
-    def register_contact(self, contact_id: str, name: str,
-                          embedding: np.ndarray) -> None:
-        """Register a contact's face embedding for matching."""
-        self._store.register_contact(contact_id, name, embedding)
-
-    def label_last_anomaly(self, contact_id: str, label: str) -> None:
-        """Apply a user label ('confirmed'/'false_positive') to the latest anomaly."""
-        anomalies = self._store.get_anomalies(contact_id)
-        if anomalies:
-            anomalies[-1].user_label = label
+        self._last_emit = 0.0
+        self._latest_au_z = 0.0
+        self._latest_prosody_z = 0.0
+        self._latest_linguistic_z = 0.0
+        self._current_contact_id = None
+        self._last_face = None
+        self._last_aus = None
