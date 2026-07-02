@@ -32,6 +32,7 @@ import numpy as np
 from .embedder import FaceEmbedder, embed_frame
 from .index import ContactIndex
 from .enricher import ContactEnricher
+from .introduction import IntroductionCapture
 from .renderer import SocialLensRenderer
 from .schema import ContactRecord, SocialLensResult, MatchResult
 
@@ -67,6 +68,16 @@ class SocialLens:
         self._renderer = SocialLensRenderer()
 
         self._privacy = privacy or _AlwaysOn()
+
+        # Name-you-were-told capture shares this instance's index,
+        # enricher, embedder, and privacy gate, so a confirmed
+        # introduction is recallable by the very next identify().
+        self.introductions = IntroductionCapture(
+            index=self._index,
+            enricher=self._enricher,
+            privacy=self._privacy,
+            embedder=self._embedder,
+        )
 
         if contacts:
             self._load_contacts(contacts)
@@ -114,6 +125,23 @@ class SocialLens:
             match=enriched_match,
             frame_confidence=face_conf,
         )
+
+    def offer_introduction(self, utterance: str, frame=None,
+                           now=None) -> Optional[dict]:
+        """Hear a spoken self-introduction and offer to remember the name.
+
+        Returns an offer card when a name was recognised, else None.
+        Saves nothing — confirm_introduction() is the only path to memory.
+        """
+        return self.introductions.heard(utterance, frame=frame, now=now)
+
+    def confirm_introduction(self, **extra) -> Optional[ContactRecord]:
+        """Keep the currently offered name as your own contact."""
+        return self.introductions.confirm(**extra)
+
+    def dismiss_introduction(self) -> None:
+        """Let the current offer go, unremembered."""
+        self.introductions.dismiss()
 
     def add_contact(self, contact: ContactRecord) -> None:
         """Add or update a contact in the live index."""

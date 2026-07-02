@@ -20,13 +20,15 @@ DreamLayer is the software stack for [Brilliant Labs](https://brilliant.xyz/) Ha
 | Future ghosts | **Premonition** | Your rhythms shimmer ahead of the now-notch, precision-gated |
 | Your climate | **Inner Weather** | Your body churns the core; the room storms the rim |
 | Two wearers | **Confluence** | Bonded skies entangle: converge and they merge, drift and they split |
+| Living promises | **Commitment Drift** | Commitments are HUD physics objects — bloom, crack, and shatter by behavior and time |
+| Living light | **Palette Cycling** | The demoscene trick: the quiet sky flows like an aurora by recolouring slots, not redrawing pixels — zero-cost motion on-device |
 
 ## Precision Lenses
 
 | Lens | What it does |
 |---|---|
 | **Truth Lens** | 9-stage multimodal deception analysis: face → AU → voice → linguistic → fusion → HUD |
-| **Social Lens** | Contact face-binding, real-time labeling, per-contact baselines |
+| **Social Lens** | Contact face-binding, real-time labeling, per-contact baselines, and consent-first *name-you-were-told* capture |
 
 ## Module Map
 
@@ -64,8 +66,14 @@ if result:
 from dreamlayer.social_lens import SocialLens
 
 sl = SocialLens(contacts=my_contacts)
-result = sl.identify(camera_frame)  # on double-tap
+result = sl.identify(camera_frame)  # on double-tap — recall your own people
 card = result.to_hud_card()
+
+# Name-you-were-told capture — someone says "Hi, I'm Maya"
+offer = sl.offer_introduction("hi, I'm Maya", frame=camera_frame)
+if offer:                     # a name was heard; nothing saved yet
+    send_to_hud(offer)
+    sl.confirm_introduction()  # on a deliberate tap: Maya is now your contact
 
 # Lucid Recall — on-demand queries
 from dreamlayer.lucid_recall import LucidRecall
@@ -78,7 +86,12 @@ card = result.to_hud_card()
 ## Privacy
 
 - All processing on-device (phone). Nothing leaves the device by default.
-- No stranger identification. Social Lens only matches your personal contacts.
+- No stranger identification. Social Lens only matches — and only remembers —
+  people you were introduced to and chose to keep. No public database, no
+  face lookup against the open world. "I've met them before, remind me,"
+  never "identify this stranger." Name capture is voluntary (nothing saved
+  without an explicit confirm), spoken (a closed offline grammar of
+  self-introductions only), and silenced by the Privacy Veil.
 - Audio, video, and embeddings are never stored or transmitted.
 - Privacy gate (`allow_capture()`) respected across all lenses.
 

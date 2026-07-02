@@ -154,21 +154,65 @@ local function draw_person(mk, tier_drop)
   end
 end
 
-local function draw_promise(mk, stack)
-  local st = PROMISE_STATE[mk.state or 2] or PROMISE_STATE[2]
+-- A commitment is a physics object: it does not merely change colour
+-- between states, it *behaves*. Blooming breathes, cracking trembles,
+-- shattered throws shards that drift apart. reduce_motion freezes each to
+-- its still, information-preserving pose. Motion is driven by now_ms and
+-- the mark's own angle, so every promise animates on its own phase.
+local function draw_promise(mk, stack, now_ms, reduce_motion)
+  local state = mk.state or 2
+  local st = PROMISE_STATE[state] or PROMISE_STATE[2]
   local base_r = (st.r == "slip") and A.MER_PROMISE_SLIP_R or A.MER_PROMISE_R
   local r = base_r - (stack or 0) * A.MER_PROMISE_STACK_PX
-  if (mk.state or 2) == 5 then
-    -- shattered: the fractured tick — two segments, 3px gap
-    radial_tick(mk.deg, r - 7, r - 2, st.color, 2)
-    radial_tick(mk.deg, r + 1, r + 6, st.color, 2)
-  elseif HAS_FRAME then
-    local x, y = polar(r, mk.deg)
-    local dot = (stack or 0) > 0 and math.max(2, st.dot - 1) or st.dot
-    frame.display.circle(fl(x), fl(y), dot, st.color, true)
-    if st.stem > 0 then
-      radial_tick(mk.deg, r - st.stem - 3, r - 3, st.color)
+  now_ms = now_ms or 0
+  local seed = fl(mk.deg * 53)
+
+  if state == 5 then
+    -- shattered: a fractured tick whose two halves drift apart, plus two
+    -- shards thrown off the break. Still (reduce_motion) = a clean gap.
+    local spread = 0
+    if not reduce_motion then
+      local ph = ((now_ms + seed) % 2600) / 2600     -- slow, ~2.6s
+      spread = E.in_out_sine(ph) * 2                  -- 0..2px of separation
     end
+    radial_tick(mk.deg, r - 7 - spread, r - 2 - spread, st.color, 2)
+    radial_tick(mk.deg, r + 1 + spread, r + 6 + spread, st.color, 2)
+    if HAS_FRAME and not reduce_motion and spread > 0.8 then
+      local rad = math.rad(mk.deg)
+      local px, py = -math.sin(rad), math.cos(rad)
+      local sx, sy = polar(r + 8, mk.deg)
+      frame.display.circle(fl(sx + px * spread), fl(sy + py * spread), 1,
+                           st.color, true)
+      frame.display.circle(fl(sx - px * spread), fl(sy - py * spread), 1,
+                           st.color, true)
+    end
+    return
+  end
+
+  if not HAS_FRAME then return end
+  local dot = (stack or 0) > 0 and math.max(2, st.dot - 1) or st.dot
+  local deg = mk.deg
+  local rr = r
+
+  if state == 1 and not reduce_motion then
+    -- blooming: a gentle breath, the object drawing sap
+    local ph = ((now_ms + seed) % A.BREATHE_CYCLE_MS) / A.BREATHE_CYCLE_MS
+    local grow = E.in_out_sine((math.sin(ph * 2 * math.pi) + 1) / 2)
+    dot = dot + fl(grow * 1.5)                         -- 2 -> ~3.5px
+  elseif state == 4 and not reduce_motion then
+    -- cracking: a fast, small radial tremor — the object under stress
+    local ph = ((now_ms + seed) % 220) / 220
+    rr = r + (E.in_out_sine(ph) - 0.5) * 2            -- ±1px jitter
+  end
+
+  local x, y = polar(rr, deg)
+  frame.display.circle(fl(x), fl(y), dot, st.color, true)
+  if st.stem > 0 then
+    radial_tick(deg, rr - st.stem - 3, rr - 3, st.color)
+  end
+  -- cracking also grows a hairline fissure stem toward the rim
+  if state == 4 then
+    radial_tick(deg, rr + 3, rr + 6, st.color)
   end
 end
 
@@ -263,7 +307,7 @@ function M.draw(opts)
       local key = fl(mk.deg / A.MER_MARK_MERGE_DEG)
       local stack = promise_stack[key] or 0
       promise_stack[key] = stack + 1
-      draw_promise(mk, math.min(stack, 2))
+      draw_promise(mk, math.min(stack, 2), now, opts.reduce_motion)
     elseif mk.kind == KIND_PREMONITION then
       -- future ghosts stay in dream light too: probability is weather
       draw_premonition(mk, now, opts.reduce_motion)

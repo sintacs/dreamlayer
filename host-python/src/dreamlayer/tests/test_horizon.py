@@ -185,6 +185,72 @@ def test_notch_breathes_with_time_but_not_under_reduce_motion(hz):
 # Highlight / arrival pulse expire on their clocks
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Commitment Drift physics: promises bloom, crack, and shatter as objects,
+# each frozen to a still pose under reduce_motion.
+# ---------------------------------------------------------------------------
+
+def _promise_frame(state: int) -> str:
+    # code = kind(2)*100 + state*10 + luma(2); one promise at deg -60
+    return f"{{ t='horizon', seq=1, paused=0, v={{ -600, {200 + state * 10 + 2} }} }}"
+
+
+def _circles(rt, now, reduce=False):
+    rt.execute(
+        f"_calls = {{}}; _hz.draw({{ now_ms = {now}, "
+        f"reduce_motion = {'true' if reduce else 'false'} }})")
+    out = rt.eval("""
+      (function()
+        local out = {}
+        for _, c in ipairs(_calls) do
+          if c[1] == "circle" then out[#out+1] = { c[2], c[3], c[4] } end
+        end
+        return out
+      end)()
+    """)
+    return [tuple(int(v) for v in c.values()) for c in out.values()]
+
+
+def _samples(rt, state, reduce):
+    rt.eval(f"_hz.on_frame({_promise_frame(state)}, 0)")
+    cyc = int(rt.eval("_a.BREATHE_CYCLE_MS"))
+    return [_circles(rt, int(cyc * f), reduce) for f in (0.0, 0.2, 0.4, 0.6, 0.8)]
+
+
+def test_blooming_promise_breathes(hz):
+    radii = {tuple(c[2] for c in s) for s in _samples(hz, 1, False)}
+    assert len(radii) > 1                       # the dot draws breath
+    still = {tuple(c[2] for c in s) for s in _samples(hz, 1, True)}
+    assert len(still) == 1                       # reduce_motion: one radius
+
+
+def test_cracking_promise_trembles(hz):
+    centers = {tuple((c[0], c[1]) for c in s) for s in _samples(hz, 4, False)}
+    assert len(centers) > 1                      # the object jitters under stress
+    still = {tuple((c[0], c[1]) for c in s) for s in _samples(hz, 4, True)}
+    assert len(still) == 1                       # reduce_motion: fixed
+
+
+def test_shattered_promise_is_fractured_and_static_when_frozen(hz):
+    # the fractured tick is two radial segments (lines), not one dot
+    hz.eval(f"_hz.on_frame({_promise_frame(5)}, 0)")
+    hz.execute("_calls = {}; _hz.draw({ now_ms = 0 })")
+    n_circle_dots = hz.eval("""
+      (function()
+        local n = 0
+        for _, c in ipairs(_calls) do if c[1] == "circle" then n = n + 1 end end
+        return n
+      end)()
+    """)
+    # under reduce_motion the whole promise is frozen across time
+    a = _circles(hz, 0, True)
+    b = _circles(hz, 1500, True)
+    assert a == b
+    # in motion the shards throw off and drift → circle count varies
+    counts = {len(_circles(hz, int(2600 * f), False)) for f in (0.0, 0.25, 0.5)}
+    assert len(counts) > 1
+
+
 def test_highlight_and_pulse_expire(hz):
     hz.eval("_hz.on_frame({ t='horizon', seq=1, v={} }, 1000)")
     hz.execute("_hz.set_highlight(30, 1000)")

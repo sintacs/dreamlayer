@@ -21,6 +21,7 @@ local P    = require("display/primitives")
 local PAL  = require("display/palette")
 local TR   = require("display.transitions")
 local HZ   = require("display.horizon")
+local PaletteCycle = require("display.palette_cycle")
 local math = math
 
 local HAS_FRAME = (type(_G.frame) == "table")
@@ -186,6 +187,18 @@ PAL.reserve_dynamic("energy",  PAL.accent_memory,     2)
 PAL.reserve_dynamic("drift_a", PAL.border_subtle,     3)
 PAL.reserve_dynamic("drift_b", PAL.border_subtle,     4)
 
+-- Idle sky flow (display/palette_cycle.lua): when the mic reactor is quiet,
+-- the four sky slots gently cycle their own colours around the ring, so a
+-- still scene drifts like an aurora at zero redraw cost. The reactor owns
+-- these slots the moment it speaks; the flow yields for IDLE_HOLD_MS after
+-- any palette push and resumes only in the silence the reactor leaves.
+local _sky_cycle = PaletteCycle.new(
+  { "sky", "energy", "drift_a", "drift_b" }, nil,
+  { period_ms = 9000, smooth = true })
+local IDLE_HOLD_MS = 1200
+local _reactor_until = 0
+local _last_now_ms   = 0
+
 -- ---------------------------------------------------------------------------
 -- Constants
 -- ---------------------------------------------------------------------------
@@ -226,6 +239,8 @@ end
 function M.apply_palette_shift(colors)
   -- colors: list of {idx, y, cb, cr}
   if not HAS_FRAME then return end
+  -- the reactor is speaking: hold the idle flow off these slots for a beat
+  _reactor_until = _last_now_ms + IDLE_HOLD_MS
   for _, c in ipairs(colors) do
     frame.display.assign_color_ycbcr(
       c.idx,
@@ -429,8 +444,15 @@ end
 -- Full dream frame (called from main runloop in dream mode)
 -- ---------------------------------------------------------------------------
 
-function M.draw_frame(now_ms)
+function M.draw_frame(now_ms, reduce_motion)
   if not HAS_FRAME then return end
+  _last_now_ms = now_ms or 0
+  -- 0. Idle sky flow: recolour the sky slots when the reactor is quiet.
+  -- Pure palette cycling — no pixels drawn here, just a living palette
+  -- under everything that follows.
+  if _last_now_ms >= _reactor_until then
+    _sky_cycle:tick(now_ms, { reduce_motion = reduce_motion })
+  end
   -- Meridian: the dream is a change of light over the same terrain, not a
   -- scene cut (docs/cinema_v2/weather.md). Memory marks drop to floor
   -- tier, promises stay full (they don't sleep), the notch keeps

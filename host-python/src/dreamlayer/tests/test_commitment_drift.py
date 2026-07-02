@@ -88,3 +88,92 @@ class TestDriftEngine:
         engine = CommitmentDriftEngine(ring)
         alerts = engine.tick(now=base_ts + 49 * 3600)  # past 48 h → shattered
         assert any(a.state == "shattered" for a in alerts)
+
+
+class TestBehaviorDimension:
+    """The other half of 'behavior and time': progress heals, keep blooms,
+    break shatters, and neglect lets time pressure return."""
+
+    def _cracking(self, base=1000.0):
+        ring = _ring_with_task(summary="call dentist", due="2h", ts=base)
+        eng = CommitmentDriftEngine(ring)
+        eng.tick(now=base + 0.80 * 2 * 3600)     # decay 0.80 → cracking
+        return ring, eng, base
+
+    def test_nudge_heals_toward_bloom(self):
+        _, eng, base = self._cracking()
+        now = base + 0.80 * 2 * 3600
+        eng.nudge("dentist", credit=0.5, now=now)
+        eng.tick(now=now)
+        rec = eng.all_records()[0]
+        assert rec.decay == pytest.approx(0.30, abs=1e-6)   # 0.80 - 0.50
+        assert rec.state == "healthy"                       # bloomed down
+
+    def test_keep_blooms_and_pins(self):
+        _, eng, base = self._cracking()
+        eng.keep("dentist", now=base + 0.80 * 2 * 3600)
+        # even far past the due date it stays kept, never shatters
+        eng.tick(now=base + 10 * 3600)
+        rec = eng.all_records()[0]
+        assert rec.resolved == "kept"
+        assert rec.state == "blooming" and rec.decay == 0.0
+
+    def test_break_shatters_and_pins(self):
+        _, eng, base = self._cracking()
+        eng.break_("dentist", now=base + 0.30 * 2 * 3600)
+        eng.tick(now=base + 0.31 * 2 * 3600)     # early, but broken is broken
+        rec = eng.all_records()[0]
+        assert rec.resolved == "broken" and rec.state == "shattered"
+
+    def test_neglected_heal_credit_relaxes(self):
+        """A nudge blooms it; stop tending and time pressure returns."""
+        ring = _ring_with_task(summary="call dentist", due="6h", ts=1000.0)
+        eng = CommitmentDriftEngine(ring)
+        t_nudge = 1000.0 + 0.5 * 6 * 3600          # halfway → decay 0.50
+        eng.nudge("dentist", credit=0.4, now=t_nudge)
+        eng.tick(now=t_nudge)
+        healed = eng.all_records()[0].decay        # 0.50 - 0.40 = 0.10
+        # one half-life later, credit ~halves and the clock has advanced
+        eng.tick(now=t_nudge + 6 * 3600)
+        slipped = eng.all_records()[0].decay
+        assert healed < 0.20                        # bloomed after the nudge
+        assert slipped > healed                     # momentum bled away
+
+    def test_re_alert_after_healing_then_slipping(self):
+        ring = _ring_with_task(summary="call dentist", due="4h", ts=1000.0)
+        eng = CommitmentDriftEngine(ring)
+        crack_t = 1000.0 + 0.80 * 4 * 3600
+        assert eng.tick(now=crack_t)                # first crack: alert fires
+        eng.nudge("dentist", credit=0.5, now=crack_t)
+        assert eng.tick(now=crack_t) == []          # healed out of alert
+        # credit relaxes over the half-life while the deadline passes → it
+        # slips back into an alert state and surfaces again
+        again = eng.tick(now=1000.0 + 10 * 3600)
+        assert any(a.state in ("cracking", "shattered") for a in again)
+
+    def test_ambient_progress_from_the_stream(self):
+        base = 1000.0
+        ring = _ring_with_task(summary="send Marcus the contract",
+                               due="2h", ts=base)
+        # living near the promise: an event that plainly refers to it
+        ring.append(MemoryEvent(kind="memory",
+                                summary="emailed Marcus about the contract",
+                                confidence=0.8),
+                    ts=base + 600)
+        eng = CommitmentDriftEngine(ring)
+        eng.tick(now=base + 0.80 * 2 * 3600)
+        rec = eng.all_records()[0]
+        assert rec.progress > 0.0                   # the stream tended it
+        assert rec.decay < 0.80                     # so it did not fully crack
+
+    def test_private_events_are_never_observed(self):
+        base = 1000.0
+        ring = _ring_with_task(summary="send Marcus the contract",
+                               due="2h", ts=base)
+        ring.append(MemoryEvent(kind="memory",
+                                summary="emailed Marcus about the contract",
+                                confidence=0.8, meta={"private": True}),
+                    ts=base + 600)
+        eng = CommitmentDriftEngine(ring)
+        eng.tick(now=base + 0.80 * 2 * 3600)
+        assert eng.all_records()[0].progress == 0.0  # privacy is silence
