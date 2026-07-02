@@ -12,11 +12,26 @@ RAW_FRAME_TYPES = frozenset({
     "sprite_avatar",  # 32x32 contact avatar sprite (contacts ONLY)
     "dream_enter",
     "dream_exit",
+    "horizon",        # Meridian day-ring: {seq, paused, v: [dd,code,…]}
 })
 
 # Raw frames still allowed while privacy-paused (mode control only; no
 # frame that could carry captured signal passes the pause gate).
 PAUSE_ALLOWED_RAW = frozenset({"dream_enter", "dream_exit"})
+
+
+def pause_allows_raw(obj: dict) -> bool:
+    """Gate for raw frames while privacy-paused. Mode control passes;
+    the EMPTY horizon pause frame passes too — the absence of marks must
+    be deliverable or the rim keeps showing pre-pause state
+    (docs/cinema_v2/horizon_frame.md). A horizon frame carrying marks is
+    captured signal and never passes."""
+    t = obj.get("t")
+    if t in PAUSE_ALLOWED_RAW:
+        return True
+    if t == "horizon" and not obj.get("v"):
+        return True
+    return False
 
 
 class BridgeBase(ABC):

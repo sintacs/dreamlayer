@@ -101,7 +101,9 @@ export function DreamCanvas({
     return () => clearInterval(id);
   }, [source]);
 
-  const halo = signatures.confidenceHalo;
+  // energy core rides the Focus landing radius (the halo orbit is gone —
+  // CINEMA_V2_DELTAS.md §3; same visual scale, honest source)
+  const coreR = signatures.focus.landRTo * 0.67;
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden" }}>
       <Svg width={size} height={size} viewBox={`0 0 ${SIZE} ${SIZE}`}>
@@ -119,7 +121,7 @@ export function DreamCanvas({
                 strokeOpacity={0.35 + tick.amplitude * 0.4} />
         ))}
         {/* energy core: breathes with amplitude on the halo period */}
-        <Circle cx={CX} cy={CY} r={halo.rBase * (0.6 + tick.amplitude * 0.5)}
+        <Circle cx={CX} cy={CY} r={coreR * (0.6 + tick.amplitude * 0.5)}
                 stroke={tick.energy} strokeOpacity={0.6} fill="none" />
         <Circle cx={CX} cy={CY} r={3} fill={tick.energy} />
         {/* pressure gauge tick at 12 o'clock */}

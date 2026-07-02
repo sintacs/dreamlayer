@@ -41,9 +41,16 @@ _SCATTER_COOLDOWN = 1.5    # seconds between scatter bursts
 
 # Line Field 2.0
 _N_VECTORS   = 12
-_RING_R      = 78.0        # anchor ring radius (px)
-_LEN_MIN     = 14.0        # vector half-length range (px)
-_LEN_MAX     = 34.0
+# Meridian re-seat (docs/cinema_v2/weather.md): vectors sample a
+# rim-tangent band r∈[62,90] with jittered angular spacing so the weather
+# flows AROUND the day — particles own the core, marks own the rim. Even
+# spacing at one radius read as a broken decagon in the Phase 3
+# prototypes; the variance is load-bearing, not decorative.
+_RING_R_MIN  = 62.0
+_RING_R_MAX  = 90.0
+_SPACING_JITTER = 0.45     # radians of per-vector angular jitter
+_LEN_MIN     = 12.0        # vector half-length range (px)
+_LEN_MAX     = 26.0
 _CX, _CY     = 128, 128
 _FIELD_R_MAX = 122         # vectors must stay inside the circular display
 _DAMPING     = 0.10        # damped_rate += (raw - damped) * _DAMPING per tick
@@ -95,11 +102,14 @@ class ImuReactor:
 
         flat: list[int] = []
         for i in range(_N_VECTORS):
-            a = self._phase + i * (2 * math.pi / _N_VECTORS)
-            ax = _CX + _RING_R * math.cos(a)
-            ay = _CY + _RING_R * math.sin(a)
-            # curl of a scalar noise field: rotate the gradient 90°
+            jit = _vnoise(i * 7.13 + self._phase * 0.9) * _SPACING_JITTER
+            a = self._phase + i * (2 * math.pi / _N_VECTORS) + jit
             n  = _vnoise(i * 3.7 + self._phase * 2.1 + pitch_bias)
+            r  = _RING_R_MIN + (n * 0.5 + 0.5) * (_RING_R_MAX - _RING_R_MIN)
+            ax = _CX + r * math.cos(a)
+            ay = _CY + r * math.sin(a)
+            # curl of a scalar noise field: rotate the gradient 90° —
+            # tangent-biased, so the flow bends around the rim
             dn = _vnoise(i * 3.7 + self._phase * 2.1 + pitch_bias + 0.5) - n
             ca = a + math.pi / 2 + dn * 1.8       # swirl direction
             ln = _LEN_MIN + (n * 0.5 + 0.5) * (_LEN_MAX - _LEN_MIN)

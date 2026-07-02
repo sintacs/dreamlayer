@@ -11,9 +11,15 @@ local HostComm   = require("ble.host_comm")   -- already wires DC via require
 local DreamRend  = require("display.dream_renderer")
 local PAL        = require("display.palette")
 local Figment    = require("app.figment_stage") -- Reality Compiler v2 stage
+local MT         = require("ble.message_types")
+local Horizon    = require("display.horizon")   -- Meridian day-ring
+local Renderer   = require("display.renderer")
 
 -- figment_put/swap/revoke/text arrive as BLE envelopes → stage handlers
 Figment.register(HostComm)
+
+-- Meridian: composed day-ring frames land in the horizon plotter
+HostComm.register(MT.HORIZON, function(msg) Horizon.on_frame(msg) end)
 
 -- ---------------------------------------------------------------------------
 -- Card priority table (existing + dream card types)
@@ -109,7 +115,12 @@ end
 -- ---------------------------------------------------------------------------
 -- Main tick  (called by halo.runloop or a while-true loop at ~20fps)
 -- ---------------------------------------------------------------------------
+local _tick_ms   = 0     -- monotonic tick clock (50ms per tick)
+local _shown     = nil   -- card instance currently owned by the renderer
+
 local function tick()
+  _tick_ms = _tick_ms + 50
+
   -- Receive BLE
   local raw = (_G.halo and _G.halo.bluetooth and _G.halo.bluetooth.receive
                and _G.halo.bluetooth.receive()) or nil
@@ -124,21 +135,32 @@ local function tick()
     -- display API and yields the stage the moment it ends or is revoked
     Figment.tick(0.05)
   elseif HostComm.dream_active() then
-    -- Dream Mode: draw ambient layer then any pending dream cards
-    DreamRend.draw_frame()
+    -- Dream Mode: same terrain, different light (cinema_v2/weather.md) —
+    -- the dimmed horizon under the weather, then any pending dream cards
+    local has_frame = (type(_G.frame) == "table")
+    if has_frame then frame.display.clear(0x000000) end
+    DreamRend.draw_frame(_tick_ms)
     local card = Cards:peek()
     if card then
       render_dream_card(card)
       -- Auto-dismiss dream cards after their dismiss_ms
       -- (CardQueue handles dismiss timer internally)
     end
+    if has_frame then frame.display.show() end
   else
-    -- Memory Mode: normal card queue rendering
-    local card = Cards:peek()
-    if card then
-      -- card rendering handled by existing display/cards.lua pipeline
-      -- (unchanged from pre-dream main.lua)
+    -- Memory Mode: the queue decides WHAT holds focus; the renderer
+    -- decides HOW it condenses, holds, and recedes. With no card the
+    -- renderer draws the Horizon — the display is never a black screen.
+    local card = Cards:tick(_tick_ms)
+    if card ~= _shown then
+      if card then
+        Renderer.show_card(card)
+      else
+        Renderer.dismiss()
+      end
+      _shown = card
     end
+    Renderer.tick()
   end
 end
 

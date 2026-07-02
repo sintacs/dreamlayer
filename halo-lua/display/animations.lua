@@ -75,33 +75,19 @@ M.LOADING_TO_OBJECT_SPINNER_FADE_MS = 160
 M.LOADING_TO_OBJECT_CARD_START_MS   = 100
 
 -- ---------------------------------------------------------------------------
--- Halo Cinema v1 — motion signature timing (docs/HALO_CINEMA_V1.md §1.1)
--- Every signature duration/geometry constant lives here; transitions.lua
--- reads these and NEVER hardcodes milliseconds.
+-- Meridian (Cinema v2) — every duration/geometry constant lives here;
+-- display modules read these and NEVER hardcode milliseconds.
+-- Survivors from Halo Cinema v1 (Ghost Wake, Truth Ripple, acoustics)
+-- keep their SIG_* names. The killed v1 signatures (Iris Bloom, Prism
+-- Slide, Confidence Halo orbit, Memory Comet) are removed with their
+-- replacements shipping in the same PR — see docs/CINEMA_V2_DELTAS.md.
 -- ---------------------------------------------------------------------------
-
--- S1 Iris Bloom (default card ENTER: radial mask reveal)
-M.SIG_IRIS_MS        = 180
-M.SIG_IRIS_R_FROM    = 112    -- safe-area edge radius
-M.SIG_IRIS_R_TO      = 36     -- content core radius where the ring lands
-M.SIG_IRIS_TRAIL_MS  = 60     -- ghost-slot Y ramp trailing edge
 
 -- S2 Ghost Wake (WorldAnchorCard ENTER: per-char Perlin condensation)
 M.SIG_GHOSTWAKE_MS        = 320
 M.SIG_GHOSTWAKE_JITTER_PX = 2
 M.SIG_GHOSTWAKE_Y_FROM    = 0      -- ghost slot luma ramp (0-1023 scale)
 M.SIG_GHOSTWAKE_Y_TO      = 400
-
--- S3 Prism Slide (card→card crossfade: chromatic split on dynamic slots)
-M.SIG_PRISM_MS       = 140
-M.SIG_PRISM_SPLIT_PX = 2
-M.SIG_PRISM_CB       = 96     -- cool fringe Cb push
-M.SIG_PRISM_CR       = 96     -- warm fringe Cr pull
-
--- S4 Confidence Halo (HOLD idle for recall cards: orbital confidence arc)
-M.SIG_HALO_PERIOD_MS = M.BREATHE_CYCLE_MS   -- one orbit per breathe cycle
-M.SIG_HALO_R_BASE    = 24
-M.SIG_HALO_R_CONF    = 40     -- radius = R_BASE + confidence * R_CONF
 
 -- S5 Truth Ripple (Truth Lens verdict ENTER: ripple from eye landmark)
 M.SIG_RIPPLE_MS      = 400
@@ -110,18 +96,60 @@ M.SIG_RIPPLE_CR      = 80     -- warm shift peak on the ripple slot
 M.SIG_RIPPLE_COLD_MS = 240    -- cold recovery on false-positive dismiss
 M.SIG_RIPPLE_CB      = 60     -- cold shift on recovery
 
--- S6 Memory Comet (ProactiveMemoryCard ENTER: recency-angle comet)
-M.SIG_COMET_MS           = 280
-M.SIG_COMET_TAIL         = 3      -- fading tail samples
-M.SIG_COMET_DEG_PER_WEEK = 30     -- entry angle sweep per week of recency
-M.SIG_COMET_MAX_DEG      = 330    -- cap (just shy of a full sweep)
-
--- HUD acoustics analogs (docs/HALO_CINEMA_V1.md §1.3)
+-- HUD acoustics analogs (docs/HALO_CINEMA_V1.md §1.3, kept)
 M.SIG_CHIME_MS       = 220    -- memory saved: single expanding ring
 M.SIG_CHIME_R_FROM   = 8
 M.SIG_CHIME_R_TO     = 28
 M.SIG_CHORD_STEP_MS  = 40     -- person recognized: 3-arc arpeggio step
 M.SIG_RUMBLE_MS      = 100    -- privacy veil: full-field dim pre-slam
 M.SIG_RUMBLE_Y_DROP  = 160    -- dynamic slot luma drop during rumble
+
+-- ---------------------------------------------------------------------------
+-- Focus law (docs/cinema_v2/focus.md): condensation / recession
+-- ---------------------------------------------------------------------------
+M.SIG_FOCUS_TRAVEL_MS   = 140   -- head flight rim -> core
+M.SIG_FOCUS_LAND_MS     = 100   -- landing ring collapse + content bloom
+M.SIG_FOCUS_TRAIL_MS    = 60    -- ghost-slot Y ramp trailing edge (from v1 iris)
+M.SIG_FOCUS_LAND_R_FROM = 56
+M.SIG_FOCUS_LAND_R_TO   = 36
+M.SIG_FOCUS_RING_R      = 92    -- landed hold ring radius (sweep = confidence)
+M.SIG_RECEDE_MS         = 160   -- content contracts, head flies home
+M.SIG_RECEDE_TEXT_CUT   = 0.4   -- text cuts at this fraction (kill-list #2)
+M.SIG_FOCUS_XFADE_LAG_MS = 40   -- condense start lag during crossfade
+
+-- ---------------------------------------------------------------------------
+-- The Horizon (docs/cinema_v2/horizon.md): the persistent rim instrument
+-- ---------------------------------------------------------------------------
+M.MER_TRACK_R          = 100   -- rim track radius (1px ghost arc)
+M.MER_MARK_BASE_R      = 101   -- marks radiate outward from here
+M.MER_RIM_R            = 105   -- nominal mark anchor (travel origin)
+M.MER_NOW_DEG          = -90   -- 12 o'clock, screen coords
+M.MER_DEG_PER_HOUR     = 30    -- full dial = 12h
+M.MER_WINDOW_HOURS     = 5     -- lookback/lookahead cap (150 deg each)
+M.MER_SEAM_FROM_DEG    = 60    -- past cap edge (seam start)
+M.MER_SEAM_TO_DEG      = 120   -- future cap edge (seam end, via bottom)
+M.MER_ELDER_DEG        = 58    -- older-than-window compression tick
+M.MER_FUTURE_CAP_DEG   = 122   -- further-than-window promise dot
+M.MER_MARKS_MAX        = 48
+M.MER_MARK_MERGE_DEG   = 3     -- memory marks within this merge (+len)
+M.MER_MARK_LEN         = { [0] = 3, [1] = 6, [2] = 9 }  -- by luma tier
+M.MER_NOW_LEN_MIN      = 6     -- notch breathe (geometric, no slot)
+M.MER_NOW_LEN_MAX      = 9
+M.MER_STALE_MS         = 30000 -- no horizon frame for this long -> tier drop
+M.MER_ARRIVAL_PULSE_MS = 300   -- mark pulse after recession lands
+M.MER_HIGHLIGHT_MS     = 2400  -- anchor-echo provenance brighten
+M.MER_DREAM_ENTER_MS   = 300   -- light change into dream (no scene cut)
+M.MER_DREAM_EXIT_MS    = 200
+M.MER_PROMISE_R        = 105   -- on-rim promise dot anchor
+M.MER_PROMISE_SLIP_R   = 95    -- cracking/shattered inward position
+M.MER_PROMISE_STACK_PX = 7     -- radial pitch for same-hour promises
+
+-- ---------------------------------------------------------------------------
+-- Testimony Thread (docs/cinema_v2/testimony.md): Truth Lens verdict
+-- ---------------------------------------------------------------------------
+M.TESTIMONY_R        = 64    -- thread radius (clears the verdict capsule)
+M.TESTIMONY_SLOT_DEG = 40    -- 9 stages x 40 deg
+M.TESTIMONY_STAGE_MS = 80    -- accumulation per stage after the ripple
+M.TESTIMONY_TEAR_PX  = 3     -- radial jitter on torn (deceptive) stages
 
 return M

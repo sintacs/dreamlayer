@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .base import BridgeBase, PAUSE_ALLOWED_RAW
+from .base import BridgeBase, pause_allows_raw
 from .lua_loader import collect_lua
 
 class EmulatorBridge(BridgeBase):
@@ -49,7 +49,7 @@ class EmulatorBridge(BridgeBase):
         carry captured signal crosses the pause gate.
         """
         t = obj.get("t")
-        if self.state == "paused" and t not in PAUSE_ALLOWED_RAW:
+        if self.state == "paused" and not pause_allows_raw(obj):
             return
         if t == "dream_enter":
             self.dream_active = True

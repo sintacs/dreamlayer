@@ -138,30 +138,54 @@ function PersonContext({ card }: { card: HaloCard }) {
   );
 }
 
-const GAUGE_DIR: Record<string, string> = {
-  truthful: P.accentSuccess,
-  deceptive: P.accentAttention,
-  insufficient: P.textGhost,
-};
+// The Testimony Thread (Meridian, docs/cinema_v2/testimony.md) —
+// replaces the v1 9-ring gauge (CINEMA_V2_DELTAS.md §5). Mirrors
+// halo-lua/display/renderer.lua draw_testimony 1:1.
+const THREAD_R = 64;
+const THREAD_SLOT_DEG = 40;
+const THREAD_TEAR_PX = 3;
 
 function TruthGauge({ card }: { card: HaloCard }) {
   const stages = card.stages || [];
   return (
     <G>
       <Eyebrow y={49} color={P.textGhost}>TRUTH LENS</Eyebrow>
+      {/* slot boundary ticks: the compass rose of the pipeline */}
       {Array.from({ length: 9 }).map((_, i) => {
-        const r = 20 + i * 4;
-        const s = stages[i];
-        const sweep = Math.min(1, Math.max(0, s?.confidence ?? 0)) * 359.9;
+        const a = ((-90 + i * THREAD_SLOT_DEG) * Math.PI) / 180;
         return (
-          <G key={i}>
-            <Circle cx={CX} cy={CY} r={r} stroke={P.borderSubtle}
-                    strokeOpacity={0.35} fill="none" />
-            {sweep > 4 && (
-              <Path d={arcPath(CX, CY, r, -90, -90 + sweep)}
-                    stroke={GAUGE_DIR[s?.direction ?? "insufficient"]}
-                    strokeWidth={2} fill="none" />
-            )}
+          <Path key={`tick${i}`}
+                d={`M ${CX + (THREAD_R - 2) * Math.cos(a)} ${CY + (THREAD_R - 2) * Math.sin(a)}
+                   L ${CX + (THREAD_R + 2) * Math.cos(a)} ${CY + (THREAD_R + 2) * Math.sin(a)}`}
+                stroke={P.borderSubtle} strokeWidth={1} />
+        );
+      })}
+      {/* the thread: truthful = continuous, deceptive = torn, insufficient = gap */}
+      {stages.slice(0, 9).map((s, i) => {
+        const dir = s?.direction ?? "insufficient";
+        if (dir === "insufficient") return null;
+        const conf = Math.min(1, Math.max(0, s?.confidence ?? 0));
+        const a0 = -90 + i * THREAD_SLOT_DEG + 2;
+        const span = conf * (THREAD_SLOT_DEG - 4);
+        if (span <= 1) return null;
+        if (dir === "truthful") {
+          return (
+            <Path key={`st${i}`} d={arcPath(CX, CY, THREAD_R, a0, a0 + span)}
+                  stroke={P.accentSuccess} strokeWidth={2} fill="none" />
+          );
+        }
+        const dash = span / 4;
+        return (
+          <G key={`st${i}`}>
+            {[-THREAD_TEAR_PX, THREAD_TEAR_PX, -THREAD_TEAR_PX].map((off, d) => {
+              const da0 = a0 + d * (dash + dash / 2);
+              const da1 = Math.min(da0 + dash, a0 + span);
+              if (da1 <= da0) return null;
+              return (
+                <Path key={d} d={arcPath(CX, CY, THREAD_R + off, da0, da1)}
+                      stroke={P.accentAttention} strokeWidth={2} fill="none" />
+              );
+            })}
           </G>
         );
       })}

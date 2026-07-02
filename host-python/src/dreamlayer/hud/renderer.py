@@ -357,6 +357,19 @@ class CardRenderer:
             "TruthLensCard":        self._truth_gauge,
             "WorldAnchorCard":      self._world_anchor,
             "SynesthesiaCard":      self._synesthesia,
+            # Meridian: the three cards v1's dispatch forgot — their
+            # committed goldens were black discs (CINEMA_V1_JUDGMENT.md
+            # Wrong #1) while the device drew them fine
+            "CommitmentDriftCard":  self._commitment_drift,
+            "TimeScrubNodeCard":    self._time_scrub_node,
+            "DeviationAlertCard":   self._deviation_alert,
+            # …and the four layout-driven cards NEITHER side drew (a
+            # consent prompt rendered as a black screen on device; found
+            # during the Meridian golden pass)
+            "ForgetLastCard":       self._layout_card,
+            "PrivateZoneCard":      self._layout_card,
+            "ConsentRequiredCard":  self._layout_card,
+            "LiveCaptionCard":      self._layout_card,
         }
         fn = dispatch.get(card.get("type", ""))
         if fn:
@@ -702,31 +715,64 @@ class CardRenderer:
         "insufficient": T.TEXT_GHOST,
     }
 
+    # Testimony Thread geometry — mirrors halo-lua/display/renderer.lua
+    # draw_testimony and animations.lua TESTIMONY_* (keep in lockstep)
+    _THREAD_R        = 64
+    _THREAD_SLOT_DEG = 40
+    _THREAD_TEAR_PX  = 3
+
     def _truth_gauge(self, draw, card):
-        """TruthLensCard — 9-ring gauge. Rings r=20..52 (4px pitch), one per
-        analysis stage, filled clockwise from 12 o'clock by stage
-        confidence, colored by signal direction. Center: verdict word +
-        confidence dot. (Truth Ripple entry is device-side motion; the
-        golden shows the settled frame.)"""
+        """TruthLensCard — the Testimony Thread (Meridian,
+        docs/cinema_v2/testimony.md; replaces the v1 9-ring gauge,
+        CINEMA_V2_DELTAS.md §5). One arc at r=64, nine 40° slots clockwise
+        from 12 in pipeline order: truthful = continuous accent_success
+        stroke, deceptive = torn (3 dashes, ±3px radial jitter) in
+        accent_attention, insufficient = an honest empty slot between the
+        ghost boundary ticks. Center: verdict + capsule + confidence dot.
+        (Truth Ripple entry is device-side motion; the golden shows the
+        settled frame.)"""
+        import math as _math
         stages  = card.get("stages") or []
         verdict = card.get("verdict") or card.get("primary") or ""
         conf    = card.get("confidence")
 
-        # Rings r=34..66 (4px pitch) leave a clear r<34 core so the verdict
-        # word never fights the ring strokes (pass-1 vision fix).
+        # slot boundary ticks: the compass rose of the pipeline
+        for i in range(9):
+            a = _math.radians(-90 + i * self._THREAD_SLOT_DEG)
+            x1 = CX + (self._THREAD_R - 2) * _math.cos(a)
+            y1 = CY + (self._THREAD_R - 2) * _math.sin(a)
+            x2 = CX + (self._THREAD_R + 2) * _math.cos(a)
+            y2 = CY + (self._THREAD_R + 2) * _math.sin(a)
+            draw.line([(x1, y1), (x2, y2)], fill=T.to_rgba(T.BORDER_SUBTLE, 0.9),
+                      width=1)
+
         for i in range(9):
             stage = stages[i] if i < len(stages) else {}
-            r = 34 + i * 4
-            # ghost track
-            self._circle(draw, CX, CY, r, 1, T.BORDER_SUBTLE, alpha=44)
-            sweep = max(0.0, min(1.0, stage.get("confidence", 0.0))) * 360
-            if sweep > 4:
-                color = self._GAUGE_DIR_COLOR.get(
-                    stage.get("direction", "insufficient"), T.TEXT_GHOST)
-                self._arc(draw, CX, CY, r, -90, -90 + sweep, 2, color, alpha=235)
+            direction = stage.get("direction", "insufficient")
+            if direction == "insufficient":
+                continue   # absence of evidence is displayed, never faked
+            sconf = max(0.0, min(1.0, stage.get("confidence", 0.0)))
+            a0 = -90 + i * self._THREAD_SLOT_DEG + 2
+            span = sconf * (self._THREAD_SLOT_DEG - 4)
+            if span <= 1:
+                continue
+            if direction == "truthful":
+                self._arc(draw, CX, CY, self._THREAD_R, a0, a0 + span, 2,
+                          T.ACCENT_SUCCESS, alpha=235)
+            else:
+                # torn: 3 dashes alternating -3/+3/-3 px radial offset
+                dash = span / 4
+                for d, off in enumerate((-self._THREAD_TEAR_PX,
+                                         self._THREAD_TEAR_PX,
+                                         -self._THREAD_TEAR_PX)):
+                    da0 = a0 + d * (dash + dash / 2)
+                    da1 = min(da0 + dash, a0 + span)
+                    if da1 > da0:
+                        self._arc(draw, CX, CY, self._THREAD_R + off, da0, da1,
+                                  2, T.ACCENT_ATTENTION, alpha=235)
 
-        # Black backing capsule so ring strokes never cross the verdict
-        # glyphs (pass-3 vision fix; device mirrors with a filled rect)
+        # Black backing capsule so thread strokes never cross the verdict
+        # glyphs (v1's armor was right; device mirrors with a filled rect)
         font = _font("md")
         try:
             tw = font.getlength(verdict)
@@ -798,6 +844,162 @@ class CardRenderer:
             else:  # triangle
                 pts = [(x, y - half), (x + half, y + half), (x - half, y + half)]
                 draw.polygon(pts, outline=(r_, g_, b_, 255))
+
+    # ------------------------------------------------------------------
+    # The three cards the v1 dispatch forgot (docs/CINEMA_V1_JUDGMENT.md,
+    # Wrong #1): their committed goldens were 100% black discs while the
+    # device drew them fine. Mirrored 1:1 from halo-lua/display/renderer.lua.
+    # ------------------------------------------------------------------
+
+    def _commitment_drift(self, draw, card):
+        """CommitmentDriftCard — mirrors draw_commitment_drift (renderer.lua):
+        left decay rail, DRIFT DETECTED eyebrow, task, person chain, footer,
+        urgency dot (the hold-phase pulse settles to its mid size)."""
+        task   = card.get("primary") or card.get("task") or ""
+        person = card.get("person") or ""
+        detail = card.get("footer") or card.get("detail") or ""
+        conf   = card.get("confidence") or 0.5
+        decay  = card.get("decay") or 0.0
+
+        urgency = T.PRIVACY_DANGER if decay >= 0.6 else T.WARNING_AMBER
+
+        rail_x, rail_y0, rail_y1 = 44, 68, 192
+        self._vbar(draw, rail_x, rail_y0, rail_y1, 1, T.BORDER_SUBTLE, alpha=160)
+        live_frac = max(0.0, min(1.0, conf * (1.0 - decay)))
+        live_h = int((rail_y1 - rail_y0) * live_frac)
+        if live_h > 0:
+            self._vbar(draw, rail_x, rail_y1 - live_h, rail_y1, 1, urgency)
+        self._dot(draw, rail_x, rail_y0, 2, T.BORDER_SUBTLE, alpha=160)
+        self._dot(draw, rail_x, rail_y1, 3, urgency)
+
+        self._text_rgba(draw, CX, 72, "DRIFT DETECTED", "xs", T.MEMORY_TRACE,
+                        alpha=200)
+        self._multiline_text(draw, CX, CY - 12, task, "md", T.TEXT_PRIMARY,
+                             max_width=160)
+        if person:
+            for i in range(3):
+                self._dot(draw, CX - 20 + i * 8, CY + 16, 2, T.BORDER_SUBTLE,
+                          alpha=140)
+            self._text_rgba(draw, CX, CY + 32, f"→ {person}", "sm",
+                            T.MEMORY_TRACE, alpha=220)
+        if detail:
+            self._text_rgba(draw, CX, 184, detail, "xs", T.TEXT_GHOST, alpha=150)
+        self._dot(draw, CX, 200, 3, urgency)
+
+    def _time_scrub_node(self, draw, card):
+        """TimeScrubNodeCard — mirrors draw_time_scrub_node (renderer.lua):
+        horizontal timeline with node dots, current node enlarged + tick,
+        timestamp eyebrow, summary, place, prev/next ghost labels."""
+        summary   = card.get("primary") or card.get("summary") or ""
+        place     = card.get("place") or ""
+        timestamp = card.get("eyebrow") or card.get("timestamp") or ""
+        idx       = int(card.get("index") or 1)
+        total     = int(card.get("total") or 1)
+        prev_lbl  = card.get("prev_label") or ""
+        next_lbl  = card.get("next_label") or ""
+
+        bar_y, bar_x0, bar_x1 = 82, 40, 216
+        self._hline(draw, bar_x0, bar_x1, bar_y, T.BORDER_SUBTLE, alpha=160)
+        for i in range(1, total + 1):
+            nx = bar_x0 + (bar_x1 - bar_x0) * (i - 1) // max(total - 1, 1)
+            if i == idx:
+                self._dot(draw, nx, bar_y, 5, T.MEMORY_TRACE)
+                draw.line([(nx, bar_y + 6), (nx, bar_y + 11)],
+                          fill=T.to_rgba(T.MEMORY_TRACE, 1.0), width=1)
+            else:
+                self._dot(draw, nx, bar_y, 2 if i < idx else 1,
+                          T.BORDER_SUBTLE, alpha=170)
+
+        crumb = timestamp if timestamp else f"{idx} / {total}"
+        self._text_rgba(draw, CX, 66, crumb, "xs", T.TEXT_GHOST, alpha=160)
+        self._multiline_text(draw, CX, CY - 4, summary, "md", T.TEXT_PRIMARY,
+                             max_width=168)
+        if place:
+            self._text_rgba(draw, CX, CY + 22, place, "sm", T.MEMORY_TRACE,
+                            alpha=210)
+        if prev_lbl:
+            self._text_rgba(draw, 66, 182, f"◀ {prev_lbl}", "xs", T.TEXT_GHOST,
+                            alpha=120)
+        if next_lbl:
+            self._text_rgba(draw, 190, 182, f"{next_lbl} ▶", "xs", T.TEXT_GHOST,
+                            alpha=120)
+
+    def _deviation_alert(self, draw, card):
+        """DeviationAlertCard — mirrors draw_deviation_alert (renderer.lua):
+        amber attention ring, SOUNDS DIFFERENT eyebrow, prior summary above
+        a dashed divider, new summary below, score dot. (The hold-phase
+        ripple is device-side motion; the golden shows the settled frame.)"""
+        prior = card.get("prior_summary") or card.get("footer") or ""
+        new   = card.get("new_summary") or card.get("primary") or ""
+        score = float(card.get("score") or 0.0)
+
+        score_col = (T.PRIVACY_DANGER if score >= 0.75
+                     else T.WARNING_AMBER if score >= 0.50
+                     else T.CONFIDENCE_MED)
+
+        self._circle(draw, CX, CY, 108, 1, T.WARNING_AMBER, alpha=90)
+        self._text_rgba(draw, CX, 66, "SOUNDS DIFFERENT", "xs",
+                        T.WARNING_AMBER, alpha=220)
+        self._hline(draw, 52, 204, 78, T.BORDER_SUBTLE, alpha=140)
+        self._text_rgba(draw, CX, 100, prior, "sm", T.TEXT_GHOST, alpha=150)
+        x = 80
+        while x < 176:
+            self._hline(draw, x, min(x + 6, 176), 120, T.BORDER_SUBTLE, alpha=170)
+            x += 10
+        self._multiline_text(draw, CX, 142, new, "sm", T.TEXT_PRIMARY,
+                             max_width=160)
+        self._dot(draw, CX, 170, max(2, int(2 + score * 3)), score_col)
+
+    def _layout_card(self, draw, card):
+        """Generic renderer for the layout-driven cards (ForgetLast /
+        PrivateZone / ConsentRequired / LiveCaption): the payload
+        self-describes rows via card['layout'] (built in cards.py).
+        Mirrors halo-lua/display/renderer.lua draw_layout_card."""
+        layout = card.get("layout") or {}
+
+        sep = layout.get("separator")
+        if sep:
+            self._hline(draw, sep.get("x1", 48), sep.get("x2", 208),
+                        sep.get("y", 80), T.BORDER_SUBTLE, alpha=170)
+
+        glyph = layout.get("shield") or layout.get("lock")
+        if glyph:
+            import math as _math
+            gx, gy = glyph.get("x", CX), glyph.get("y", 44)
+            gr = glyph.get("r", 10)
+            color = glyph.get("color", T.PRIVACY_CAUTION)
+            pts = []
+            for i in range(6):
+                a = _math.radians(60 * i - 30)
+                pts.append((gx + gr * _math.cos(a), gy + gr * _math.sin(a)))
+            draw.polygon(pts, outline=T.to_rgba(color, 1.0))
+            if layout.get("shield"):
+                bh = max(3, int(gr * 0.5))
+                bw = max(2, int(gr * 0.18))
+                gap = max(2, int(gr * 0.15))
+                draw.rectangle([gx - gap - bw, gy - bh / 2, gx - gap, gy + bh / 2],
+                               fill=T.to_rgba(color, 1.0))
+                draw.rectangle([gx + gap, gy - bh / 2, gx + gap + bw, gy + bh / 2],
+                               fill=T.to_rgba(color, 1.0))
+
+        def row(name, text, fallback_y, fallback_color, size="sm"):
+            if not text:
+                return
+            spec = layout.get(name) or {}
+            self._text(draw, spec.get("x", CX), spec.get("y", fallback_y),
+                       text, spec.get("size", size),
+                       spec.get("color", fallback_color))
+
+        row("eyebrow", card.get("eyebrow"), 64, T.TEXT_SECONDARY, "xs")
+        row("primary", card.get("primary"), 112, T.TEXT_PRIMARY, "md")
+        row("detail",  card.get("detail"),  144, T.TEXT_SECONDARY)
+        row("footer",  card.get("footer"),  168, T.TEXT_GHOST, "xs")
+
+        conf = card.get("confidence")
+        if conf is not None and layout.get("conf_dot"):
+            d = layout["conf_dot"]
+            self._dot(draw, d.get("x", CX), d.get("y", 185), d.get("r", 3),
+                      T.conf_color(conf))
 
     def _low_confidence(self, draw, card):
         draw_point_cloud_text(
