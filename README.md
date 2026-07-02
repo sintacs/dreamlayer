@@ -20,6 +20,7 @@ DreamLayer is the software stack for [Brilliant Labs](https://brilliant.xyz/) Ha
 | Future ghosts | **Premonition** | Your rhythms shimmer ahead of the now-notch, precision-gated |
 | Your climate | **Inner Weather** | Your body churns the core; the room storms the rim |
 | Two wearers | **Confluence** | Bonded skies entangle: converge and they merge, drift and they split |
+| Living promises | **Commitment Drift** | Commitments are HUD physics objects — bloom, crack, and shatter by behavior and time |
 
 ## Precision Lenses
 

@@ -319,6 +319,18 @@ class Orchestrator:
     # Commitment Drift
     # ------------------------------------------------------------------
 
+    def nudge_commitment(self, subject: str, now: float | None = None):
+        """Progress toward a commitment (heals it toward bloom)."""
+        return self.drift_engine.nudge(subject, now=now)
+
+    def keep_commitment(self, subject: str, now: float | None = None):
+        """Mark a commitment kept — bloom and pin."""
+        return self.drift_engine.keep(subject, now=now)
+
+    def break_commitment(self, subject: str, now: float | None = None):
+        """Mark a commitment broken — shatter and pin."""
+        return self.drift_engine.break_(subject, now=now)
+
     def tick_drift(self, now: float | None = None) -> list[dict]:
         alert_records = self.drift_engine.tick(now=now)
         hud_cards = []
