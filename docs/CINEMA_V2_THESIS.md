@@ -73,7 +73,7 @@ carries information or dies in Phase 2.
    condensation overlapping — no chromatic fringes needed.
 
 3. **The Promise Arc** — part of `horizon.lua`, host side
-   `host-python/src/dreamlayer/dream_mode/horizon_composer.py` +
+   `host-python/src/dreamlayer/orchestrator/horizon_composer.py` +
    `docs/cinema_v2/promise_arc.md`. Open commitments finally rendered
    between their alerts: each promise is a mark on the counterclockwise
    (future) side at its due-angle, and its drift state — the five-step
@@ -182,3 +182,8 @@ emulator build:
 - 2026-07-02 — Initial thesis committed (Phase 1). Revisions, if Phase 3
   or Phase 4 falsify any claim, will be logged here with dated reasons —
   never silently drifted.
+- 2026-07-02 (Phase 2) — Horizon composer re-homed from
+  `dream_mode/horizon_composer.py` to `orchestrator/horizon_composer.py`:
+  the horizon is mode-independent state composed from the ring buffer and
+  drift engine on the orchestrator tick; parking it in dream_mode would
+  have repeated v1's error of binding day-state to a rendering mode.
