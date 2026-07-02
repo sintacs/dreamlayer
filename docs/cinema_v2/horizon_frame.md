@@ -93,7 +93,7 @@ N/A (no visual behavior of its own); cadence unchanged by the setting.
 - **Malformed frame**: `horizon.lua` validates arity (even-length `v`,
   codes in range) and keeps the previous frame on violation; a parse
   error never blanks the day.
-- **Privacy pause mid-flight**: `PAUSE_ALLOWED_RAW` gating on the
+- **Privacy Veil mid-flight**: `PAUSE_ALLOWED_RAW` gating on the
   bridges (`bridge/base.py:19`) is extended to allow the empty pause
   frame through — the *absence* of marks must be deliverable while
   paused, or the rim would keep showing pre-pause state.

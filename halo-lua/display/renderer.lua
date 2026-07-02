@@ -16,7 +16,7 @@
 --- v1 Prism Slide and its fringe slots are gone (CINEMA_V2_DELTAS.md §2).
 ---
 --- Special behaviours:
----   PrivacyPausedCard / Consent / Forget / PrivateZone → slam entry kept;
+---   PrivacyVeilCard / Consent / Forget / PrivateZone → slam entry kept;
 ---     released with a hard cut, never a recession (no privacy residue)
 ---   TruthLensCard  → Truth Ripple entry (S5, kept) + Testimony Thread
 ---     accumulation (docs/cinema_v2/testimony.md); no focus ring (the
@@ -429,7 +429,7 @@ local function draw_person_context(card, sc, enter_t, exit_t)
 end
 
 -- Shield slam: outer rings expand radially; glyph appears only after rings complete
-local function draw_privacy_paused(sc, enter_t, exit_t)
+local function draw_privacy_veil(sc, enter_t, exit_t)
   -- Rings slam outward: at enter_t=0 they're r=0, at enter_t=0.6 they're full size
   local ring_t = clamp(enter_t / 0.6, 0, 1)
   local ring_sc = ease_out_expo(ring_t)
@@ -851,7 +851,7 @@ local DRAW = {
   CommitmentRecallCard  = function(c,sc,et,xt,it) draw_commitment_recall(c,sc,et,xt)      end,
   ProactiveMemoryCard   = function(c,sc,et,xt,it) draw_proactive_memory(c,sc,et,xt)       end,
   PersonContextCard     = function(c,sc,et,xt,it) draw_person_context(c,sc,et,xt)         end,
-  PrivacyPausedCard     = function(c,sc,et,xt,it) draw_privacy_paused(sc,et,xt)           end,
+  PrivacyVeilCard     = function(c,sc,et,xt,it) draw_privacy_veil(sc,et,xt)           end,
   ErrorCard             = function(c,sc,et,xt,it) draw_error(c,sc,et,xt)                  end,
   LowConfidenceCard     = function(c,sc,et,xt,it) draw_low_confidence(sc,et,xt)           end,
   -- new engines
@@ -883,7 +883,7 @@ local SIGNATURES = {
   ProactiveMemoryCard  = { enter = "focus", hold = "ring" },
   PersonContextCard    = { enter = "focus", hold = "ring" },
   TruthLensCard        = { enter = "ripple" },   -- thread is its own gauge
-  PrivacyPausedCard    = { enter = "slam" },
+  PrivacyVeilCard    = { enter = "slam" },
   ConsentRequiredCard  = { enter = "slam" },
   ForgetLastCard       = { enter = "slam" },
   PrivateZoneCard      = { enter = "slam" },
@@ -891,7 +891,7 @@ local SIGNATURES = {
 
 -- privacy-class cards never leave a mark and never recede (no residue)
 local PRIVACY_CLASS = {
-  PrivacyPausedCard = true, ConsentRequiredCard = true,
+  PrivacyVeilCard = true, ConsentRequiredCard = true,
   ForgetLastCard = true, PrivateZoneCard = true,
 }
 

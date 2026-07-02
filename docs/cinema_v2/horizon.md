@@ -115,9 +115,9 @@ luma step. All positional information is identical.
 - **Contradicted / revoked memory** (forget-last, purge): composer
   omits it on next frame; mark vanishes without ceremony — deletion is
   silent by design (no tombstones for forgotten things; privacy).
-- **Privacy pause**: composer stops sending; device draws notch in
+- **Privacy Veil**: composer stops sending; device draws notch in
   `status_paused` and *no marks* while paused — paused state is
-  unmistakable at the rim, matching PrivacyPausedCard center-stage.
+  unmistakable at the rim, matching PrivacyVeilCard center-stage.
 
 ## Peripheral-glance test (400ms, no focus)
 

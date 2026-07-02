@@ -38,7 +38,7 @@ mitigation that ships in this PR or an explicit deferral with a reason.
    staleness rule drops every mark one luma tier while the notch keeps
    breathing — "device alive, memory stale" is a distinct visual state
    (`horizon.lua` tier_drop; golden `idle_stale`).
-5. **Privacy pause leaking yesterday's rhythm.** Paused capture with a
+5. **Privacy Veil leaking yesterday's rhythm.** Paused capture with a
    populated rim would still *display* captured signal. *Shipped:* the
    composer emits an empty pause frame, the bridges pass ONLY the empty
    frame while paused (`bridge/base.py pause_allows_raw`), and the
@@ -70,7 +70,7 @@ mitigation that ships in this PR or an explicit deferral with a reason.
 5. **Paused state read as "nothing happened."** An empty rim could mean
    quiet day or paused capture. *Shipped:* the notch color flips to
    `status_paused` — the two states differ at the single most-looked-at
-   pixel cluster; plus PrivacyPausedCard occupies center stage at pause
+   pixel cluster; plus PrivacyVeilCard occupies center stage at pause
    onset (v1 behavior, kept).
 
 ### Competitor copy vectors + moat
@@ -358,7 +358,7 @@ mitigation that ships in this PR or an explicit deferral with a reason.
 3. **Field motion read as system activity** ("it's processing").
    *Accepted:* the field IS live signal (your motion, the room's
    sound); "the system is alive to the room" is the intended read.
-4. **Mistaking dream mode for privacy pause** (both are "different").
+4. **Mistaking dream mode for privacy veil** (both are "different").
    *Shipped:* pause kills marks + flips the notch color; dream keeps
    the day visible under new light. The states share no visual
    signature.
@@ -405,7 +405,7 @@ mitigation that ships in this PR or an explicit deferral with a reason.
    semantics is safer than guessing; the seq guard means the next valid
    frame heals. Forward-compat versioning *Deferred* until a second
    schema version actually exists (YAGNI, stated).
-4. **Composer emitting during privacy pause due to a future refactor
+4. **Composer emitting during privacy veil due to a future refactor
    moving the gate.** *Shipped:* defense in depth — the composer checks
    paused, AND both bridges gate marks-bearing horizon frames
    independently (`pause_allows_raw`). Two mistakes are required, in

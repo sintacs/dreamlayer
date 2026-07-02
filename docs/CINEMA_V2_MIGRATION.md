@@ -29,7 +29,7 @@ What changes for a user (and a developer) upgrading from Halo Cinema v1.
    not the place: your day dims but stays, the weather flows around it,
    promises stay lit. Memory echoes now also light up the mark of the
    hour they came from.
-7. **Privacy pause is visible at the rim too.** Paused = all marks gone
+7. **Privacy Veil is visible at the rim too.** Paused = all marks gone
    + the notch turns gray. Resume brings the day back. Privacy-class
    prompts (consent, forget, private zone) now actually render on
    device — in v1 they queued and drew a black screen.
@@ -84,7 +84,7 @@ exactly as v1.
   v1 branch was a stub comment).
 - `DISMISS_MS` semantics: timers now time the release of focus
   (recession), not deletion. Values unchanged.
-- Privacy-class cards (PrivacyPaused / Consent / ForgetLast /
+- Privacy-class cards (PrivacyVeil / Consent / ForgetLast /
   PrivateZone) hard-cut on release and never leave marks.
 - `card_queue.lua` and `state_machine.lua` are **unchanged** —
   priorities, preemption, dwell and FSM transitions all carry over.

@@ -25,7 +25,7 @@ OBJECT_CARD = """{
   last_seen = "7:42 PM", confidence = 0.9, origin_deg = 0,
 }"""
 
-PRIVACY_CARD = '{ type = "PrivacyPausedCard" }'
+PRIVACY_CARD = '{ type = "PrivacyVeilCard" }'
 
 TRUTH_CARD = """{
   type = "TruthLensCard", verdict = "ELEVATED", confidence = 0.7,

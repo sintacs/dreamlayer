@@ -67,7 +67,7 @@ Phase machine per card (replaces v1's enter/hold/exit):
   card draws at ghost tier so exactly one solid motion exists per frame.
   No chromatic fringes; dynamic slots 3/4 are returned to the dream
   weather bank (see `CINEMA_V2_DELTAS.md §2`).
-- Privacy-class cards (PrivacyPaused, Consent, ForgetLast, PrivateZone):
+- Privacy-class cards (PrivacyVeil, Consent, ForgetLast, PrivateZone):
   slam entry preserved (rumble + shield unchanged), and they **never
   recede to a mark** — release is a hard cut. Privacy states must not
   leave residue.

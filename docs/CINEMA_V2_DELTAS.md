@@ -188,7 +188,7 @@ there. Continuity of existence is also what makes the display *learnable*
 dismissed thing is *visually gone* — on a crowded day, every expired
 card leaves a residue mark, and residue is one bad tuning away from
 clutter. Mitigation: marks are capped (48), ghost-tier, 1–3px, and decay
-in luma with age; and privacy-class cards (PrivacyPaused, Consent,
+in luma with age; and privacy-class cards (PrivacyVeil, Consent,
 ForgetLast) are contractually exempt — they never leave marks.
 
 ## §8 — Dream Mode as a separate visual world
