@@ -1,35 +1,26 @@
 --- display/transitions.lua
---- Halo Cinema v1 motion signatures (docs/HALO_CINEMA_V1.md §1.1).
----
---- Six named signatures, extracted from renderer.lua for reuse:
----   S1 iris_bloom       card ENTER — radial mask reveal
----   S2 ghost_wake_text  WorldAnchorCard ENTER — Perlin condensation
----   S3 prism_slide      card→card crossfade — chromatic split fringes
----   S4 confidence_halo  HOLD idle — orbital confidence arc
+--- Meridian (Cinema v2) survivors of the Halo Cinema v1 signature set:
+---   S2 ghost_wake_text  WorldAnchor echo — Perlin condensation (kept)
 ---   S5 truth_ripple     Truth Lens verdict ENTER — ripple from eye landmark
----   S6 memory_comet     ProactiveMemoryCard ENTER — recency-angle comet
---- plus the HUD acoustics analogs (chime / chord / rumble) and the shared
---- exit_contract.
+---   chime / chord / rumble  HUD acoustics analogs (kept)
+---   exit_contract       geometry contracts, text cuts at t=0.4 (kept rule)
 ---
---- renderer.lua composes these; dream_renderer.lua calls ghost_wake_text and
---- iris_bloom for WorldAnchor / Synesthesia cards.
+--- Killed in v2 with replacements shipping in the same PR (see
+--- docs/CINEMA_V2_DELTAS.md §1-§4): iris_bloom and confidence_halo are
+--- unified into the Focus law's landing/hold ring (display/focus.lua),
+--- prism_slide is replaced by recede+condense overlap, and memory_comet
+--- is generalized into condensation travel from the horizon angle.
 ---
---- Every timing constant comes from display/animations.lua. Every color is a
---- palette token. Every signature honors reduce_motion: callers set it once
---- per card ENTER via transitions.set_reduce_motion(); each function then
---- renders its static, information-preserving variant.
+--- Every timing constant comes from display/animations.lua. Every color
+--- is a palette token. Every signature honors reduce_motion via
+--- transitions.set_reduce_motion(); display/focus.lua reads the same flag.
 ---
 --- Public API:
 ---   transitions.set_reduce_motion(flag) / transitions.reduce_motion()
 ---   transitions.enter_duration(sig_name)  -> ms
----   transitions.iris_bloom(t, accent)     -> gate radius (draws ring)
 ---   transitions.ghost_wake_text(x, y, text, size, t, seed_ms)
----   transitions.prism_slide(t)
----   transitions.confidence_halo(idle_ms, confidence, color)
 ---   transitions.truth_ripple(t, ox, oy)
 ---   transitions.truth_ripple_cold(t, ox, oy)
----   transitions.memory_comet(t, weeks_old, tx, ty, color)
----   transitions.comet_entry_angle(weeks_old) -> degrees
 ---   transitions.chime(t, cx, cy)
 ---   transitions.chord(t, cx, cy, confidence)
 ---   transitions.rumble(t)
@@ -84,39 +75,13 @@ end
 -- Per-signature enter durations (renderer's phase clock reads these)
 -- ---------------------------------------------------------------------------
 local ENTER_MS = {
-  iris       = A.SIG_IRIS_MS + A.SIG_IRIS_TRAIL_MS,
   ghost_wake = A.SIG_GHOSTWAKE_MS,
   ripple     = A.SIG_RIPPLE_MS,
-  comet      = A.SIG_COMET_MS + A.SIG_IRIS_MS,
 }
 
 function transitions.enter_duration(sig)
   if _reduce_motion then return 0 end
   return ENTER_MS[sig] or A.ENTER_DURATION_MS
-end
-
--- ---------------------------------------------------------------------------
--- S1 Iris Bloom
--- Collapsing accent ring from safe edge to content core; returns the current
--- gate radius — the caller reveals only elements inside that radius.
--- Trailing 60ms ramps the ghost_text slot luma for the "fade up" edge.
--- ---------------------------------------------------------------------------
-function transitions.iris_bloom(t, accent)
-  MAT.init()
-  if _reduce_motion or t >= 1 then
-    P.restore("ghost_text")
-    return 0   -- gate open: everything visible
-  end
-  local ring_t  = clamp(t * (ENTER_MS.iris / A.SIG_IRIS_MS), 0, 1)
-  local trail_t = clamp((t * ENTER_MS.iris - (ENTER_MS.iris - A.SIG_IRIS_TRAIL_MS))
-                        / A.SIG_IRIS_TRAIL_MS, 0, 1)
-  local r = lerp(A.SIG_IRIS_R_FROM, A.SIG_IRIS_R_TO, E.out_expo(ring_t))
-  if ring_t < 1 then
-    arc(CX, CY, floor(r), 0, 360, accent or P.accent_memory, 40)
-  end
-  -- Trailing edge: ghost tier fades up as the ring lands
-  P.set_dynamic_y("ghost_text", lerp(160, 400, trail_t))
-  return r
 end
 
 -- ---------------------------------------------------------------------------
@@ -154,51 +119,6 @@ function transitions.ghost_wake_text(x, y, text, size, t, seed_ms)
 end
 
 -- ---------------------------------------------------------------------------
--- S3 Prism Slide
--- Chromatic split fringes for the outgoing card: two accent rings drawn at
--- ±SPLIT_PX in the reserved prism_cool / prism_warm slots, whose chroma the
--- signature pushes apart (Cb+ / Cr−) and whose luma dies with t.
--- The outgoing card's geometry contract is handled by exit_contract; this
--- draws the refraction on top.
--- ---------------------------------------------------------------------------
-function transitions.prism_slide(t)
-  MAT.init()
-  if _reduce_motion then return end
-  t = clamp(t, 0, 1)
-  local fade = 1 - t
-  P.shift_dynamic("prism_cool", -fade * 0,  A.SIG_PRISM_CB * fade, 0)
-  P.shift_dynamic("prism_warm", -fade * 0,  0, -A.SIG_PRISM_CR * fade)
-  P.set_dynamic_y("prism_cool", 500 * fade)
-  P.set_dynamic_y("prism_warm", 500 * fade)
-  local off = floor(A.SIG_PRISM_SPLIT_PX * fade)
-  if off >= 1 then
-    local r = floor(lerp(56, 40, t))
-    arc(CX + off, CY, r, 0, 360, P.dynamic_color("prism_cool"), 24)
-    arc(CX - off, CY, r, 0, 360, P.dynamic_color("prism_warm"), 24)
-  end
-  if t >= 1 then
-    P.restore("prism_cool")
-    P.restore("prism_warm")
-  end
-end
-
--- ---------------------------------------------------------------------------
--- S4 Confidence Halo
--- Orbital arc: radius and sweep both encode confidence. One orbit per
--- SIG_HALO_PERIOD_MS. reduce_motion: same arc, static at 12 o'clock.
--- ---------------------------------------------------------------------------
-function transitions.confidence_halo(idle_ms, confidence, color)
-  confidence = clamp(confidence or 0.5, 0, 1)
-  local r     = floor(A.SIG_HALO_R_BASE + confidence * A.SIG_HALO_R_CONF)
-  local sweep = confidence * 360
-  local a0    = -90
-  if not _reduce_motion then
-    a0 = a0 + ((idle_ms or 0) % A.SIG_HALO_PERIOD_MS) / A.SIG_HALO_PERIOD_MS * 360
-  end
-  arc(CX, CY, r, a0, a0 + sweep, color or P.accent_memory, 24)
-end
-
--- ---------------------------------------------------------------------------
 -- S5 Truth Ripple
 -- Ripple pair expanding from the eye landmark with a warm palette pulse on
 -- the fx slot. Cold variant for false-positive dismiss.
@@ -231,67 +151,6 @@ end
 
 function transitions.truth_ripple_cold(t, ox, oy)
   ripple(t, ox, oy, A.SIG_RIPPLE_CB, 0)
-end
-
--- ---------------------------------------------------------------------------
--- S6 Memory Comet
--- Entry angle encodes recall recency: 12 o'clock = today, +30°/week
--- clockwise. Bezier from display edge to the card's text anchor with a
--- 3-sample fading tail; final 80ms widens the tail 1px (arrival shimmer).
--- reduce_motion: an 8px tick mark at the encoded angle on the card rim.
--- ---------------------------------------------------------------------------
-function transitions.comet_entry_angle(weeks_old)
-  local sweep = clamp((weeks_old or 0) * A.SIG_COMET_DEG_PER_WEEK,
-                      0, A.SIG_COMET_MAX_DEG)
-  return -90 + sweep   -- -90° = 12 o'clock, clockwise as memories age
-end
-
-local function comet_point(t, ang_rad, tx, ty)
-  local ex = CX + 126 * math.cos(ang_rad)
-  local ey = CY + 126 * math.sin(ang_rad)
-  local mx, my = (ex + tx) / 2, (ey + ty) / 2
-  -- control point pushed perpendicular for a swept-in path
-  local px, py = -(ty - ey), (tx - ex)
-  local plen = math.sqrt(px * px + py * py) + 0.001
-  local cx = mx + px / plen * 40
-  local cy = my + py / plen * 40
-  local u = E.in_out_cubic(clamp(t, 0, 1))
-  local mt = 1 - u
-  return mt * mt * ex + 2 * mt * u * cx + u * u * tx,
-         mt * mt * ey + 2 * mt * u * cy + u * u * ty
-end
-
-function transitions.memory_comet(t, weeks_old, tx, ty, color)
-  color = color or P.memory_trace
-  local ang = math.rad(transitions.comet_entry_angle(weeks_old))
-  tx, ty = tx or CX, ty or CY
-  if _reduce_motion then
-    -- static recency tick on the rim
-    if HAS_FRAME then
-      local x1 = CX + 104 * math.cos(ang)
-      local y1 = CY + 104 * math.sin(ang)
-      local x2 = CX + 112 * math.cos(ang)
-      local y2 = CY + 112 * math.sin(ang)
-      frame.display.line(floor(x1), floor(y1), floor(x2), floor(y2), color)
-    end
-    return
-  end
-  if not HAS_FRAME or t >= 1 then return end
-  t = clamp(t, 0, 1)
-  local hx, hy = comet_point(t, ang, tx, ty)
-  -- head
-  local shimmer = (t * A.SIG_COMET_MS > A.SIG_COMET_MS - 80) and 1 or 0
-  frame.display.circle(floor(hx), floor(hy), 2 + shimmer, color, true)
-  -- tail: previous SIG_COMET_TAIL samples in fading shades
-  local shades = { P.text_ghost, P.accent_memory_dim, P.accent_memory }
-  for i = 1, A.SIG_COMET_TAIL do
-    local tt = t - i * 0.06
-    if tt > 0 then
-      local x, y = comet_point(tt, ang, tx, ty)
-      frame.display.circle(floor(x), floor(y), 1 + shimmer,
-                           shades[((i - 1) % #shades) + 1], true)
-    end
-  end
 end
 
 -- ---------------------------------------------------------------------------

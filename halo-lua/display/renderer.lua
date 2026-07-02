@@ -1,29 +1,35 @@
 --- display/renderer.lua
---- Halo Cinema v1 transition system for DreamLayer Halo.
+--- Meridian (Cinema v2) render loop for DreamLayer Halo.
 ---
---- Three animation phases per card, routed per card type through the
---- SIGNATURES table to display/transitions.lua (docs/HALO_CINEMA_V1.md):
----   ENTER  per-signature   iris (default 240ms) | comet (460ms) |
----                          ripple (400ms) — staggered layers throughout
----   HOLD   ∞               confidence_halo on recall cards +
----                          card-specific idle (spinner / waveform / pulse)
----   EXIT   120 ms  linear  exit_contract: geometry contracts, text cuts
+--- The display is a place, not a stage (docs/CINEMA_V2_THESIS.md): when
+--- no card holds focus, renderer.tick() draws the Horizon — the wearer's
+--- day as a rim instrument (display/horizon.lua). Cards do not
+--- materialize; they CONDENSE inward from their horizon angle and RECEDE
+--- home when released (display/focus.lua, docs/cinema_v2/focus.md):
+---   CONDENSE  travel 140ms + landing 100ms  head flies rim->core, ring
+---             collapses 56->36 gating staggered content layers
+---   HOLD      ∞                             static focus ring at r=92,
+---             sweep = confidence; card-specific idles unchanged
+---   RECEDE    160ms                         text cuts at t=0.4, head
+---             flies home, mark pulses on arrival
+--- Crossfade = recession and condensation overlapping (40ms lag) — the
+--- v1 Prism Slide and its fringe slots are gone (CINEMA_V2_DELTAS.md §2).
 ---
 --- Special behaviours:
----   PrivacyPausedCard   → rumble dim then shield slam (rings, glyph delayed)
----   LoadingCard         → spinner angle advances each tick during HOLD
----   QueryListeningCard  → waveform phase advances each tick during HOLD
----   CommitmentDriftCard → confidence dot pulses during HOLD
----   DeviationAlertCard  → ripple ring expands during HOLD
----   TruthLensCard       → 9-ring gauge, Truth Ripple entry
----   show_card(new) during ENTER/HOLD → Prism Slide: outgoing card refracts
----                                       while the new card irises in
----   settings.reduce_motion → every signature renders its static variant
+---   PrivacyPausedCard / Consent / Forget / PrivateZone → slam entry kept;
+---     released with a hard cut, never a recession (no privacy residue)
+---   TruthLensCard  → Truth Ripple entry (S5, kept) + Testimony Thread
+---     accumulation (docs/cinema_v2/testimony.md); no focus ring (the
+---     thread is the card's confidence surface)
+---   LoadingCard / QueryListeningCard / CommitmentDriftCard /
+---   DeviationAlertCard idles unchanged
+---   settings.reduce_motion → content complete on first frame, full-sweep
+---     ring + static origin tick; recessions are hard cuts + mark step
 ---
 --- Public API (unchanged from callers):
 ---   renderer.bind(time_fn)     — wire monotonic clock (called once at boot)
----   renderer.show_card(card)   — begin ENTER for card (or crossfade)
----   renderer.dismiss()         — begin EXIT for current card
+---   renderer.show_card(card)   — begin CONDENSE for card (or crossfade)
+---   renderer.dismiss()         — begin RECEDE for current card
 ---   renderer.tick()            — advance animations, composite, push frame
 ---   renderer.push/flush/clear  — no-op stubs (backward compat)
 
@@ -33,6 +39,8 @@ local T     = require("display.typography")
 local A     = require("display.animations")
 local E     = require("lib.easing")
 local TR    = require("display.transitions")
+local F     = require("display.focus")
+local HZ    = require("display.horizon")
 
 local HAS_FRAME = (type(_G.frame) == "table")
 
@@ -706,51 +714,72 @@ local function draw_deviation_alert(card, sc, enter_t, exit_t, idle_t)
 end
 
 -- ---------------------------------------------------------------------------
--- TruthLensCard — 9-ring gauge (Halo Cinema v1, Phase 4)
--- One ring per analysis stage: face, AU, voice, prosody, linguistic,
--- narrative, fusion, aggregate, verdict.  Ring i sits at radius
--- GAUGE_R0 + (i-1)*GAUGE_PITCH, filled clockwise from 12 o'clock by that
--- stage's confidence, colored by its signal direction:
---   truthful → accent_success, deceptive → accent_attention,
---   insufficient → text_ghost.
--- Center holds the fused verdict word + a confidence dot.
--- ENTER uses Truth Ripple from card.origin (eye landmark), handled by the
--- signature dispatcher; reduce_motion draws all rings statically.
+-- TruthLensCard — the Testimony Thread (Meridian, docs/cinema_v2/testimony.md)
+-- Replaces the v1 9-ring gauge (CINEMA_V2_DELTAS.md §5). The nine pipeline
+-- stages draw as ONE arc at TESTIMONY_R, accumulating clockwise from 12 in
+-- stage order after the Truth Ripple lands: truthful = continuous stroke in
+-- accent_success, deceptive = torn (3 dashes, ±TESTIMONY_TEAR_PX radial
+-- jitter) in accent_attention, insufficient = an honest empty slot. Slot
+-- boundaries are 1px ghost ticks (ordinal addressability without labels).
+-- Center: verdict word + backing capsule (v1's armor was right) +
+-- confidence dot. thread_t: 0..1 accumulation progress (1 when settled).
 -- ---------------------------------------------------------------------------
--- r=34..66: the clear r<34 core keeps the verdict word off the rings
-local GAUGE_R0    = 34
-local GAUGE_PITCH = 4
-
-local GAUGE_DIR_COLOR = {
-  truthful     = P.accent_success,
-  deceptive    = P.accent_attention,
-  insufficient = P.text_ghost,
+local TESTIMONY_DIR_COLOR = {
+  truthful  = P.accent_success,
+  deceptive = P.accent_attention,
 }
 
-local function draw_truth_gauge(card, sc, enter_t, exit_t, idle_t)
-  local stages  = card.stages or {}
-  local verdict = card.verdict or card.primary or ""
-  local conf    = card.confidence
-
-  for i = 1, 9 do
-    local stage = stages[i] or {}
-    local r = floor((GAUGE_R0 + (i - 1) * GAUGE_PITCH) * math.max(sc, 0.01))
-    if r >= 2 then
-      -- ghost track
-      arc(CX, CY, r, 0, 360, P.border_subtle, 24)
-      -- stage fill: clockwise from 12 o'clock, sweep = stage confidence.
-      -- Rings draw on sequentially during ENTER (ring i gated at i/9).
-      local ring_gate = TR.reduce_motion() and 1 or clamp(enter_t * 9 - (i - 1), 0, 1)
-      local sweep = clamp(stage.confidence or 0, 0, 1) * 360 * ring_gate
-      if sweep > 4 then
-        local color = GAUGE_DIR_COLOR[stage.direction or "insufficient"] or P.text_ghost
-        arc(CX, CY, r, -90, -90 + sweep, color, 28)
+local function draw_testimony_stage(i, stage, fraction)
+  local dir = stage.direction or "insufficient"
+  if dir == "insufficient" then return end
+  local conf = clamp(stage.confidence or 0, 0, 1)
+  local a0 = -90 + (i - 1) * A.TESTIMONY_SLOT_DEG + 2
+  local span = conf * (A.TESTIMONY_SLOT_DEG - 4) * clamp(fraction, 0, 1)
+  if span <= 1 then return end
+  local color = TESTIMONY_DIR_COLOR[dir]
+  if dir == "truthful" then
+    arc(CX, CY, A.TESTIMONY_R, a0, a0 + span, color, 12)
+  else
+    local dash = span / 4
+    local offsets = { -A.TESTIMONY_TEAR_PX, A.TESTIMONY_TEAR_PX, -A.TESTIMONY_TEAR_PX }
+    for d = 1, 3 do
+      local da0 = a0 + (d - 1) * (dash + dash / 2)
+      local da1 = math.min(da0 + dash, a0 + span)
+      if da1 > da0 then
+        arc(CX, CY, A.TESTIMONY_R + offsets[d], da0, da1, color, 4)
       end
     end
   end
+end
 
+local function draw_testimony(card, sc, enter_t, exit_t, idle_t, thread_t)
+  local stages  = card.stages or {}
+  local verdict = card.verdict or card.primary or ""
+  local conf    = card.confidence
+  thread_t = TR.reduce_motion() and 1 or (thread_t or 1)
+
+  -- slot boundary ticks (compass rose of the pipeline)
+  for i = 0, 8 do
+    local deg = math.rad(-90 + i * A.TESTIMONY_SLOT_DEG)
+    local x1 = CX + (A.TESTIMONY_R - 2) * math.cos(deg)
+    local y1 = CY + (A.TESTIMONY_R - 2) * math.sin(deg)
+    local x2 = CX + (A.TESTIMONY_R + 2) * math.cos(deg)
+    local y2 = CY + (A.TESTIMONY_R + 2) * math.sin(deg)
+    frame.display.line(floor(x1), floor(y1), floor(x2), floor(y2), P.border_subtle)
+  end
+
+  -- the thread accumulates in stage order: stage i draws over
+  -- [(i-1)/9, i/9] of thread_t
+  for i = 1, 9 do
+    local stage = stages[i]
+    if stage then
+      local fraction = clamp(thread_t * 9 - (i - 1), 0, 1)
+      draw_testimony_stage(i, stage, fraction)
+    end
+  end
+
+  -- verdict first, evidence second: word appears with the ripple landing
   if layer_ok(enter_t, A.STAGGER_PRIMARY_MS) then
-    -- black backing capsule keeps ring strokes off the verdict glyphs
     local half_w = floor(#verdict * T.avg_w_with_tracking("md", 0) / 2) + 5
     frame.display.rect(CX - half_w, CY - 15, half_w * 2, 19, P.background, true)
     frame.display.text(verdict, CX, CY - 6, P.text_primary)
@@ -787,26 +816,38 @@ local DRAW = {
   CommitmentDriftCard   = function(c,sc,et,xt,it) draw_commitment_drift(c,sc,et,xt,it)    end,
   TimeScrubNodeCard     = function(c,sc,et,xt,it) draw_time_scrub_node(c,sc,et,xt,it)     end,
   DeviationAlertCard    = function(c,sc,et,xt,it) draw_deviation_alert(c,sc,et,xt,it)     end,
-  -- Halo Cinema v1 lenses
-  TruthLensCard         = function(c,sc,et,xt,it) draw_truth_gauge(c,sc,et,xt,it)         end,
+  -- Meridian lens presentation
+  TruthLensCard         = function(c,sc,et,xt,it,tt) draw_testimony(c,sc,et,xt,it,tt)     end,
 }
 
 -- ---------------------------------------------------------------------------
--- Signature routing (Halo Cinema v1, docs/HALO_CINEMA_V1.md §1.1)
--- enter: iris (S1, default) | comet (S6) | ripple (S5) | slam (legacy shield)
--- hold : halo (S4) on recall cards; card-specific idles stay in DRAW fns
--- exit : contract (shared); Prism Slide (S3) replaces it during crossfade
+-- Signature routing (Meridian, docs/cinema_v2/focus.md)
+-- enter: focus (default — condense from the card's horizon angle) |
+--        ripple (Truth Lens: S5 ripple + testimony accumulation) |
+--        slam (privacy class, unchanged)
+-- hold : ring (static focus ring, sweep = confidence) on recall cards;
+--        card-specific idles stay in the DRAW fns
+-- release: recede (shared) — privacy-class cards hard-cut instead
 -- ---------------------------------------------------------------------------
 local SIGNATURES = {
-  ObjectRecallCard     = { enter = "iris",   hold = "halo" },
-  CommitmentRecallCard = { enter = "iris",   hold = "halo" },
-  ProactiveMemoryCard  = { enter = "comet",  hold = "halo" },
-  PersonContextCard    = { enter = "iris",   hold = "halo" },
-  TruthLensCard        = { enter = "ripple" },
+  ObjectRecallCard     = { enter = "focus", hold = "ring" },
+  CommitmentRecallCard = { enter = "focus", hold = "ring" },
+  ProactiveMemoryCard  = { enter = "focus", hold = "ring" },
+  PersonContextCard    = { enter = "focus", hold = "ring" },
+  TruthLensCard        = { enter = "ripple" },   -- thread is its own gauge
   PrivacyPausedCard    = { enter = "slam" },
+  ConsentRequiredCard  = { enter = "slam" },
+  ForgetLastCard       = { enter = "slam" },
+  PrivateZoneCard      = { enter = "slam" },
 }
 
-local DEFAULT_SIGNATURE = { enter = "iris" }
+-- privacy-class cards never leave a mark and never recede (no residue)
+local PRIVACY_CLASS = {
+  PrivacyPausedCard = true, ConsentRequiredCard = true,
+  ForgetLastCard = true, PrivateZoneCard = true,
+}
+
+local DEFAULT_SIGNATURE = { enter = "focus" }
 
 local function signature_for(card)
   return (card and SIGNATURES[card.type]) or DEFAULT_SIGNATURE
@@ -815,21 +856,27 @@ end
 local function enter_ms_for(card)
   local sig = signature_for(card)
   if sig.enter == "slam" then return A.ENTER_DURATION_MS end
-  return TR.enter_duration(sig.enter)
+  if sig.enter == "ripple" then
+    if TR.reduce_motion() then return 0 end
+    return A.SIG_RIPPLE_MS + 9 * A.TESTIMONY_STAGE_MS
+  end
+  return F.enter_ms()
 end
 
 -- ---------------------------------------------------------------------------
--- Internal composite: draw one card, routed through its motion signature.
--- ENTER — signature-specific (iris ring, comet flight, truth ripple, slam)
--- HOLD  — confidence halo on recall cards + card idle
--- EXIT  — exit_contract: geometry contracts, text cuts at t=0.4 (the draw
---         fns' stagger gates suppress text when enter_t < 0)
+-- Internal composite: draw one card, routed through the Focus law.
+-- CONDENSE — travel (content absent) then landing (ring gates staggered
+--            content); ripple/slam keep their special entries
+-- HOLD     — static focus ring (sweep = confidence) on recall cards + idle
+-- RECEDE   — exit_contract: geometry contracts, text cuts at t=0.4, head
+--            flies home (privacy-class cards hard-cut, no flight)
 -- ---------------------------------------------------------------------------
 local function composite(card, phase, elapsed_ms, idle_t)
   if not card then return end
   local fn = DRAW[card.type]
   if not fn then return end
   local sig = signature_for(card)
+  local origin_deg = F.origin_or_now(card)
 
   local enter_t, exit_t, sc
 
@@ -837,55 +884,85 @@ local function composite(card, phase, elapsed_ms, idle_t)
     local dur = enter_ms_for(card)
     local raw = (dur <= 0) and 1.0 or clamp(elapsed_ms / dur, 0, 1)
     exit_t = 0
+    sc     = 1.0   -- v1 kill list #1 stands: no uniform scale wobble
 
-    if sig.enter == "comet" and not TR.reduce_motion() then
-      -- S6: comet travels first; the card blooms on arrival
-      local comet_frac = A.SIG_COMET_MS / (A.SIG_COMET_MS + A.SIG_IRIS_MS)
-      if raw < comet_frac then
-        TR.memory_comet(raw / comet_frac, card.weeks_old or 0, CX, CY - 10)
+    if sig.enter == "focus" and not TR.reduce_motion() then
+      if elapsed_ms < A.SIG_FOCUS_TRAVEL_MS then
+        -- travel: the head flies in from the card's horizon angle;
+        -- content is not yet on stage
+        F.travel(elapsed_ms / A.SIG_FOCUS_TRAVEL_MS, origin_deg,
+                 card.conf_color or P.accent_memory)
         return
       end
-      raw = (raw - comet_frac) / (1 - comet_frac)
+      -- landing: ring collapse gates the staggered content layers
+      local land_t = clamp((elapsed_ms - A.SIG_FOCUS_TRAVEL_MS)
+                           / A.SIG_FOCUS_LAND_MS, 0, 1)
+      enter_t = land_t
+      fn(card, sc, enter_t, exit_t, idle_t or 0)
+      F.landing_ring(land_t, card.conf_color or P.accent_memory)
+      return
     end
-
-    enter_t = raw
-    sc      = 1.0   -- kill list #1: no more 0.94 uniform scale wobble
 
     if sig.enter == "slam" then
       -- sub-bass rumble dims the ambient field before the shield slams
       TR.rumble(clamp(elapsed_ms / A.SIG_RUMBLE_MS, 0, 1))
     end
 
+    enter_t = raw
+    if sig.enter == "ripple" then
+      -- verdict with the ripple, evidence after: thread_t covers the
+      -- accumulation window that follows SIG_RIPPLE_MS
+      local ripple_t = (dur <= 0) and 1
+                     or clamp(elapsed_ms / A.SIG_RIPPLE_MS, 0, 1)
+      local thread_t = (dur <= 0) and 1
+                     or clamp((elapsed_ms - A.SIG_RIPPLE_MS)
+                              / (9 * A.TESTIMONY_STAGE_MS), 0, 1)
+      enter_t = ripple_t
+      fn(card, sc, enter_t, exit_t, idle_t or 0, thread_t)
+      local origin = card.origin or {}
+      TR.truth_ripple(ripple_t, origin.x, origin.y)
+      return
+    end
+
     fn(card, sc, enter_t, exit_t, idle_t or 0)
 
-    if sig.enter == "iris" or sig.enter == "comet" then
-      TR.iris_bloom(raw, card.conf_color or P.accent_memory)
-    elseif sig.enter == "ripple" then
-      local origin = card.origin or {}
-      TR.truth_ripple(raw, origin.x, origin.y)
-    end
-    if sig.enter == "comet" and TR.reduce_motion() then
-      -- static recency tick preserves the entry-angle information
-      TR.memory_comet(1, card.weeks_old or 0, CX, CY - 10)
+    if sig.enter == "focus" and TR.reduce_motion() then
+      -- static variant: full ring sweep + origin tick carry both readings
+      if card.confidence then
+        F.hold_ring(card.confidence, card.conf_color or P.accent_memory)
+      end
+      F.origin_tick(origin_deg, card.conf_color or P.accent_memory)
     end
     return
 
   elseif phase == "exit" then
-    local raw = clamp(elapsed_ms / A.EXIT_DURATION_MS, 0, 1)
+    local raw = clamp(elapsed_ms / F.recede_ms(), 0, 1)
+    if TR.reduce_motion() then raw = 1 end
     exit_t = raw
     local scale, text_ok = TR.exit_contract(raw)
     sc      = scale
     -- enter_t < 0 fails every stagger gate: text cuts, geometry contracts
     enter_t = text_ok and 1.0 or -1.0
+    if not PRIVACY_CLASS[card.type] then
+      F.recede(raw, origin_deg)
+    end
 
   else -- hold
     enter_t = 1.0
     exit_t  = 0
     sc      = 1.0
-    if sig.hold == "halo" and card.confidence then
-      -- S4: halo underneath the card content; radius+sweep encode confidence
-      TR.confidence_halo(idle_t or 0, card.confidence,
-                         card.conf_color or P.accent_memory_dim)
+    if sig.hold == "ring" and card.confidence then
+      -- static focus ring: sweep = confidence; identical under
+      -- reduce_motion (the v2 standard)
+      F.hold_ring(card.confidence, card.conf_color or P.accent_memory)
+      if TR.reduce_motion() then
+        F.origin_tick(origin_deg, card.conf_color or P.accent_memory)
+      end
+    end
+    if sig.enter == "ripple" then
+      -- settled thread (thread_t = 1)
+      fn(card, sc, enter_t, exit_t, idle_t or 0, 1)
+      return
     end
   end
 
@@ -906,9 +983,11 @@ function renderer.bind(disp, time_fn)
   if ok and MAT then MAT.init() end
 end
 
---- Begin ENTER animation for card.
---- If a card is already visible, simultaneously begins its Prism Slide
---- refraction while the new card irises in (S3 crossfade).
+--- Begin CONDENSE for card.
+--- If a card is already visible, it begins its RECESSION while the new
+--- card condenses in, offset by SIG_FOCUS_XFADE_LAG_MS — recession is
+--- ghost-dim and condensation solid, so exactly one primary motion
+--- exists per frame (docs/cinema_v2/focus.md).
 function renderer.show_card(card)
   if not card then
     renderer.dismiss()
@@ -922,35 +1001,58 @@ function renderer.show_card(card)
   local now = _now_ms()
   -- If something is showing, capture it as the outgoing card
   if _card and _phase ~= "exit" then
+    -- never two simultaneous recessions: a third card mid-crossfade
+    -- hard-cuts the receding one (bounded motion complexity per frame)
     _prev_card   = _card
     _prev_exit_t = 0
     _prev_start  = now
+    _phase_start = now + (TR.reduce_motion() and 0 or A.SIG_FOCUS_XFADE_LAG_MS)
+  else
+    _phase_start = now
   end
-  _card        = card
-  _phase       = "enter"
-  _phase_start = now
-  _idle_t      = 0
+  _card   = card
+  _phase  = "enter"
+  _idle_t = 0
 end
 
---- Begin EXIT animation for the current card.
+--- Begin RECEDE for the current card.
 function renderer.dismiss()
   if not _card then return end
-  if _phase == "exit" then return end  -- already exiting
+  if _phase == "exit" then return end  -- already receding
   _phase       = "exit"
   _phase_start = _now_ms()
 end
 
+--- Release a finished recession: the content goes home — its mark pulses
+--- on the rim. Privacy-class cards leave nothing (no residue contract).
+local function finish_recede(card, now)
+  if card and not PRIVACY_CLASS[card.type] then
+    HZ.pulse_mark(F.origin_or_now(card), now)
+  end
+end
+
 --- Advance animations and push one composite frame.
 --- Called every tick from main.lua (no args needed; reads clock internally).
+--- With no focused card this draws the Horizon — the display's resting
+--- state is the wearer's day, never a black screen
+--- (docs/cinema_v2/horizon.md; CINEMA_V2_DELTAS.md §6).
 function renderer.tick()
   if not HAS_FRAME then return end
-  if not _card then return end
 
-  local now     = _now_ms()
+  local now = _now_ms()
+
+  if not _card and not _prev_card then
+    -- idle: the Horizon is the display
+    frame.display.clear(0x000000)
+    HZ.draw({ now_ms = now, reduce_motion = TR.reduce_motion() })
+    frame.display.show()
+    return
+  end
+
   local elapsed = now - _phase_start
   local idle_t  = _idle_t
 
-  -- Advance phase (ENTER duration is signature-specific)
+  -- Advance phase (CONDENSE duration is signature-specific)
   if _phase == "enter" and elapsed >= enter_ms_for(_card) then
     _phase       = "hold"
     _phase_start = now
@@ -960,49 +1062,64 @@ function renderer.tick()
   elseif _phase == "hold" then
     _idle_t = _idle_t + 50  -- ~50 ms per tick at frame.sleep(0.05)
     idle_t  = _idle_t
-  elseif _phase == "exit" and elapsed >= A.EXIT_DURATION_MS then
-    -- Exit complete — clear card
+  elseif _phase == "exit" and elapsed >= F.recede_ms() then
+    -- Recession complete — focus released, mark pulses
+    finish_recede(_card, now)
     _card  = nil
     _phase = nil
     frame.display.clear(0x000000)
+    HZ.draw({ now_ms = now, reduce_motion = TR.reduce_motion() })
     frame.display.show()
     return
   end
 
-  -- Advance outgoing crossfade (Prism Slide runs on its own clock)
+  -- Advance outgoing recession (its own clock, from show_card)
   if _prev_card then
     local prev_elapsed = now - _prev_start
-    _prev_exit_t = clamp(prev_elapsed / A.SIG_PRISM_MS, 0, 1)
+    _prev_exit_t = clamp(prev_elapsed / F.recede_ms(), 0, 1)
+    if TR.reduce_motion() then _prev_exit_t = 1 end
     if _prev_exit_t >= 1 then
+      finish_recede(_prev_card, now)
       _prev_card = nil  -- crossfade complete
-      TR.prism_slide(1)  -- restore fringe slots
     end
   end
 
-  -- Composite frame
+  -- Composite frame: the day stays under the card, one tier down
   frame.display.clear(0x000000)
+  HZ.draw({ now_ms = now, focus = true, reduce_motion = TR.reduce_motion() })
 
-  -- Draw outgoing card (refracting out) underneath
+  -- Outgoing card recedes underneath
   if _prev_card then
     composite(_prev_card, "exit", (now - _prev_start), 0)
-    TR.prism_slide(_prev_exit_t)
   end
 
-  -- Draw incoming card on top
-  composite(_card, _phase, elapsed, idle_t)
+  -- Incoming card on top (its clock may still be inside the crossfade lag)
+  if elapsed >= 0 then
+    composite(_card, _phase, elapsed, idle_t)
+  end
 
   frame.display.show()
 end
 
 -- Backward-compat stubs
 function renderer.show_card_immediate(card)
-  -- Used by tests: skip animation, draw once synchronously
+  -- Used by tests and golden export: skip animation, draw the settled
+  -- HOLD state once synchronously (horizon backdrop + ring + content)
   if not HAS_FRAME then return end
   if not card then return end
   local fn = DRAW[card.type]
   if not fn then return end
   frame.display.clear(0x000000)
-  fn(card, 1.0, 1.0, 0, 0)
+  HZ.draw({ now_ms = _now_ms(), focus = true, reduce_motion = true })
+  local sig = signature_for(card)
+  if sig.hold == "ring" and card.confidence then
+    F.hold_ring(card.confidence, card.conf_color or P.accent_memory)
+  end
+  if sig.enter == "ripple" then
+    fn(card, 1.0, 1.0, 0, 0, 1)
+  else
+    fn(card, 1.0, 1.0, 0, 0)
+  end
   frame.display.show()
   _card  = card
   _phase = "hold"

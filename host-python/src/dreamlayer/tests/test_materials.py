@@ -53,8 +53,11 @@ def mat():
 def test_reserved_slot_map_matches_themes(mat):
     """Slot indices must mirror hud/themes.py DYNAMIC_SLOTS."""
     from dreamlayer.hud import themes as T
-    for name in ("ghost_text", "fx", "prism_cool", "prism_warm"):
+    for name in ("ghost_text", "fx"):
         assert mat.eval(f'_p.dynamic_slot("{name}")') == T.DYNAMIC_SLOTS[name]
+    # the v1 prism aliases are gone: slots 3/4 belong to the weather only
+    assert mat.eval('_p.dynamic_slot("prism_cool")') is None
+    assert mat.eval('_p.dynamic_slot("prism_warm")') is None
 
 
 def test_reserve_dynamic_is_idempotent(mat):

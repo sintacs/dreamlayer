@@ -30,12 +30,13 @@ WARNING_AMBER     = 0xFF6600
 # If it packs ARGB into one int with alpha in top byte: 0x08FFFFFF
 GHOST_WHITE       = 0xFFFFFF
 
-# --- Halo Cinema v1: dynamic palette slot bank (mirrors palette.lua) ---
+# --- Meridian: dynamic palette slot bank (mirrors palette.lua) ---
 # Slots 1-6 are runtime-reassignable via {t:"palette"} frames /
 # frame.display.assign_color_ycbcr. Slot 0 and 7-15 are static.
 # Air tier: sky/energy/drift_*; Ghost tier: ghost_text; fx is shared
-# (Truth Ripple warm pulse, DeviationAlert ring). Prism fringes alias the
-# drift slots — dream mode and card crossfades are mutually exclusive.
+# (Truth Ripple warm pulse, DeviationAlert ring). The v1 prism-fringe
+# aliases on the drift slots are gone (CINEMA_V2_DELTAS.md §2): every
+# slot has exactly one owner.
 DYNAMIC_SLOTS = {
     "sky":        1,
     "energy":     2,
@@ -43,9 +44,6 @@ DYNAMIC_SLOTS = {
     "drift_b":    4,
     "ghost_text": 5,
     "fx":         6,
-    # card-mode aliases
-    "prism_cool": 3,
-    "prism_warm": 4,
 }
 
 

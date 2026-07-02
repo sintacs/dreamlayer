@@ -52,10 +52,10 @@ function M.init()
   _initialized = true
   P.reserve_dynamic("ghost_text", P.text_ghost, 5)
   P.reserve_dynamic("fx",         P.accent_memory, 6)
-  -- Prism fringes alias the dream drift slots (3/4): dream mode and card
-  -- crossfades are mutually exclusive, so the slots never fight.
-  P.reserve_dynamic("prism_cool", P.accent_memory, 3)
-  P.reserve_dynamic("prism_warm", P.accent_attention, 4)
+  -- Meridian: the v1 prism fringes are gone (docs/CINEMA_V2_DELTAS.md §2),
+  -- so drift slots 3/4 have exactly one owner — the dream weather. The
+  -- mode-transition slot-contention hole in the v1 risk register is closed
+  -- structurally, not patched.
 end
 
 --- Draw ghost-tier text. `intensity` in [0,1] maps to the ghost slot's luma

@@ -10,7 +10,6 @@
 --- DreamRenderer maintains:
 ---   _particles[]     -- 24 particle positions driven by mic energy
 ---   _line_field_v2[] -- 12 curl-noise vectors streamed from ImuReactor
----   _line_angles[]   -- legacy 8-vector fallback (t="geometry" only)
 ---
 --- Palette weather (mic_reactor.py) animates the reserved Air-tier slots:
 ---   sky(1), energy(2), drift_a(3), drift_b(4) — see palette.reserve_dynamic.
@@ -21,6 +20,7 @@
 local P    = require("display/primitives")
 local PAL  = require("display/palette")
 local TR   = require("display.transitions")
+local HZ   = require("display.horizon")
 local math = math
 
 local HAS_FRAME = (type(_G.frame) == "table")
@@ -39,7 +39,6 @@ PAL.reserve_dynamic("drift_b", PAL.border_subtle,     4)
 -- ---------------------------------------------------------------------------
 local W, H       = 256, 256          -- display dimensions
 local N_PARTICLES = 24
-local N_LINES     = 8                -- legacy fallback field
 local N_LINES_V2  = 12               -- curl-noise field (Line Field 2.0)
 local CX, CY      = W/2, H/2
 
@@ -47,7 +46,6 @@ local CX, CY      = W/2, H/2
 -- State
 -- ---------------------------------------------------------------------------
 local _particles  = {}
-local _line_angles = {}
 local _line_field_v2 = nil   -- 12 {x1,y1,x2,y2} vectors from t="line_field"
 local _anchor_key    = nil   -- Ghost Wake timing: current anchor identity
 local _anchor_t0     = 0     -- ms when the current anchor first rendered
@@ -67,11 +65,6 @@ for i = 1, N_PARTICLES do
     r   = math.random(1, 3),
     col = PAL.accent_memory,
   }
-end
-
--- Seed line angles
-for i = 1, N_LINES do
-  _line_angles[i] = (i - 1) * math.pi / N_LINES
 end
 
 -- ---------------------------------------------------------------------------
@@ -117,6 +110,16 @@ function M.update_particles(intensity, mode)
     if p.x > W   then p.x = 0 end
     if p.y < 0   then p.y = H end
     if p.y > H   then p.y = 0 end
+    -- Meridian: particles never invade the horizon band — territory is
+    -- clipped to r <= 96 so the rim stays legible (cinema_v2/weather.md)
+    local dx, dy = p.x - CX, p.y - CY
+    local d2 = dx * dx + dy * dy
+    if d2 > 96 * 96 then
+      local d = math.sqrt(d2)
+      p.x = CX + dx / d * 92
+      p.y = CY + dy / d * 92
+      p.vx, p.vy = -p.vx * 0.5, -p.vy * 0.5
+    end
   end
 end
 
@@ -132,33 +135,20 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.update_line_field(yaw_rate, intensity)
-  local rotate_speed = yaw_rate * 0.008 * intensity
-  for i = 1, N_LINES do
-    _line_angles[i] = _line_angles[i] + rotate_speed
-  end
+  -- Meridian: the legacy 8-vector device-side field is gone; vectors come
+  -- precomputed via {t="line_field"}. Kept as a no-op for the geometry
+  -- handler's call shape.
 end
 
 function M.draw_line_field()
   if not HAS_FRAME then return end
-  -- Line Field 2.0: prefer the streamed curl-noise vectors
-  if _line_field_v2 then
-    for _, v in ipairs(_line_field_v2) do
-      frame.display.line(v[1], v[2], v[3], v[4], PAL.dynamic_color("sky"))
-    end
-    return
-  end
-  -- Legacy 8-vector radial fallback (no line_field frames received yet)
-  local len = 40 + _geo_intensity * 60
-  for i, angle in ipairs(_line_angles) do
-    local x1 = CX + math.cos(angle) * len
-    local y1 = CY + math.sin(angle) * len
-    local x2 = CX - math.cos(angle) * len
-    local y2 = CY - math.sin(angle) * len
-    frame.display.line(
-      math.floor(x1), math.floor(y1),
-      math.floor(x2), math.floor(y2),
-      PAL.text_ghost
-    )
+  -- Line Field 2.0: the streamed curl-noise vectors (host samples them on
+  -- a rim-tangent band in v2 — docs/cinema_v2/weather.md). No frames yet
+  -- means no field: an empty sky is honest weather; the v1 8-vector
+  -- radial fallback is gone (it crossed the center and carried nothing).
+  if not _line_field_v2 then return end
+  for _, v in ipairs(_line_field_v2) do
+    frame.display.line(v[1], v[2], v[3], v[4], PAL.dynamic_color("sky"))
   end
 end
 
@@ -202,7 +192,14 @@ end
 function M.render_world_anchor(card, now_ms)
   -- Ghost Wake (S2): text condenses from ambient jitter at the bottom of
   -- the display over SIG_GHOSTWAKE_MS, then settles at ghost-tier luma.
+  -- Meridian: the echo carries provenance — the anchor's horizon mark at
+  -- its original hour brightens while the echo is visible
+  -- (docs/cinema_v2/weather.md). Anchors without a time-angle degrade to
+  -- text-only, never wrong.
   if not HAS_FRAME then return end
+  if card.origin_deg then
+    HZ.set_highlight(tonumber(card.origin_deg), now_ms)
+  end
   local summary = card.primary or ""
   local detail  = card.detail  or ""
   -- 22-char cap + rows 192/208/222 keep ghost text inside the circular
@@ -268,11 +265,17 @@ end
 -- Full dream frame (called from main runloop in dream mode)
 -- ---------------------------------------------------------------------------
 
-function M.draw_frame()
+function M.draw_frame(now_ms)
   if not HAS_FRAME then return end
-  -- 1. Line field (background, drawn first)
+  -- Meridian: the dream is a change of light over the same terrain, not a
+  -- scene cut (docs/cinema_v2/weather.md). Memory marks drop to floor
+  -- tier, promises stay full (they don't sleep), the notch keeps
+  -- breathing.
+  -- 1. The day, dimmed (terrain)
+  HZ.draw({ now_ms = now_ms, dim = true })
+  -- 2. Line field (weather, bends around the rim)
   M.draw_line_field()
-  -- 2. Particles (midground)
+  -- 3. Particles (midground, clipped inside r=96)
   M.draw_particles()
   -- NOTE: ghost anchor and synesthesia overlays are drawn by the card
   -- renderer when their respective cards are in the queue.

@@ -31,6 +31,13 @@ local MT = {
   DREAM_ENTER     = "dream_enter",
   DREAM_EXIT      = "dream_exit",
 
+  -- Meridian (Cinema v2): the composed day-ring
+  -- {t="horizon", seq=n, paused=0|1, v=[dd,code, dd,code, …]} — ≤48 marks,
+  -- dd = deci-degrees screen space, code = kind*100+state*10+luma
+  -- (docs/cinema_v2/horizon_frame.md; Python side orchestrator/
+  -- horizon_composer.py — keep in sync)
+  HORIZON         = "horizon",
+
   -- Physical events (arrive as JSON envelopes via BLE receive)
   BUTTON          = "button",
   IMU_TAP         = "imu_tap",

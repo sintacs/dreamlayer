@@ -256,11 +256,11 @@ class RealBridge(BridgeBase):
         and sprite frames derive from live mic/camera signal and must never
         cross the pause boundary (mirrors emulator_bridge.send_raw).
         """
-        from .base import PAUSE_ALLOWED_RAW
+        from .base import pause_allows_raw
         self._require_connected()
         with self._paused_lock:
             paused = self._paused
-        if paused and obj.get("t") not in PAUSE_ALLOWED_RAW:
+        if paused and not pause_allows_raw(obj):
             return
         self._run(self._send_raw(obj))
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import os
 from ..memory.db import MemoryDB
 from ..memory.retrieval import Retriever
@@ -13,6 +14,7 @@ from ..config import CONFIG
 from .passive_capture import SilentCapture
 from .passive_injector import PassiveEventInjector
 from .commitment_drift import CommitmentDriftEngine
+from .horizon_composer import HorizonComposer
 from .time_scrub import TimeScrubSession
 from .tell import TellEngine
 from .state import HostState
@@ -52,6 +54,9 @@ class Orchestrator:
         self.drift_engine = CommitmentDriftEngine(self.ring)
         self._scrub_session: TimeScrubSession | None = None
         self.tell_engine = TellEngine(self.ring)
+
+        # Meridian: the Horizon Frame composer (docs/cinema_v2/horizon_frame.md)
+        self.horizon = HorizonComposer(self.ring, self.drift_engine)
 
         # Dream Mode engine (starts stopped; activated on double_tap)
         self.dream = DreamEngine(
@@ -188,8 +193,19 @@ class Orchestrator:
         return self.silent_capture.capture_transcript(transcript, context=context, now_ms=now_ms)
 
     def tick(self) -> dict | None:
-        """Drive passive event injection (~4 Hz)."""
+        """Drive passive event injection (~4 Hz) and the Horizon Frame
+        stream (rate-limited inside the composer)."""
+        self.tick_horizon()
         return self.passive.tick()
+
+    def tick_horizon(self, now: float | None = None) -> dict | None:
+        """Compose and send the day-ring when due or changed. While
+        privacy-paused only the empty pause frame flows — the absence of
+        marks must be deliverable (docs/cinema_v2/horizon_frame.md)."""
+        frame = self.horizon.maybe_frame(now, paused=self.privacy.paused)
+        if frame is not None:
+            self.bridge.send_raw(frame)
+        return frame
 
     # ------------------------------------------------------------------
     # Commitment Drift
@@ -250,14 +266,58 @@ class Orchestrator:
     def ask(self, query):
         self.bridge.send_command("ask")
         intent = intents.classify(query)
+        source = None
         if intent["intent"] == "object_recall":
-            card = answer_builder.build_object_answer(self.retriever.search(query, kind="object"))
+            scored = self.retriever.search(query, kind="object")
+            card = answer_builder.build_object_answer(scored)
+            if scored:
+                source = scored[0][1]
         elif intent["intent"] == "commitment_recall":
-            card = answer_builder.build_commitment_answer(self.db.commitments(person=intent.get("person")))
+            commits = self.db.commitments(person=intent.get("person"))
+            card = answer_builder.build_commitment_answer(commits)
+            if commits:
+                source = commits[0]
         else:
             card = cards.low_confidence()
+        # Meridian: answers condense from where they live in time — stamp
+        # the Focus law's origin angle from the source memory's timestamp
+        # (docs/cinema_v2/focus.md). No timestamp -> the card enters from
+        # "now", which is the honest default.
+        origin_ts = self._source_ts(source)
+        if origin_ts is not None and card.get("type") in (
+            "ObjectRecallCard", "CommitmentRecallCard"
+        ):
+            card["origin_deg"] = round(self.horizon.angle_for_ts(origin_ts), 1)
         self.bridge.send_card(card)
         return card
+
+    @staticmethod
+    def _source_ts(row) -> float | None:
+        """Best-effort event timestamp from a memory/commitment row."""
+        if not row:
+            return None
+        meta = row.get("meta")
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except (ValueError, TypeError):
+                meta = {}
+        if isinstance(meta, dict) and meta.get("timestamp"):
+            try:
+                return float(meta["timestamp"])
+            except (TypeError, ValueError):
+                pass
+        created = row.get("created_at")
+        if created:
+            try:
+                from datetime import datetime, timezone
+                dt = datetime.fromisoformat(str(created))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except ValueError:
+                pass
+        return None
 
     def on_place(self, signature):
         """Handle place signature match — feeds Dream Mode ghost layer if active."""
