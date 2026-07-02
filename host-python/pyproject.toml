@@ -20,4 +20,4 @@ hardware = ["brilliant-ble", "brilliant-msg"]
 dream    = ["brilliant-msg", "Pillow>=10"]   # pip install memoscape[dream]
 
 [tool.pytest.ini_options]
-testpaths = ["src/memoscape/tests"]
+testpaths = ["src/memoscape/tests", "src/dreamlayer/tests"]
