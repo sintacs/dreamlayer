@@ -185,7 +185,8 @@ def test_third_party_intro_creates_contact_with_relationship_note():
     assert card is not None and fr.contact_count == 1
     res = fr.identify(_frame(0.8))
     assert res.match.contact.name == "Dan"
-    assert "brother" in (res.match.contact.notes or "")   # dossier seeded
+    assert res.match.contact.relation == "brother"        # how you know them
+    assert res.to_hud_card()["relation"] == "brother"     # led on the recall card
 
 
 # -- meet someone on the spot -------------------------------------------------
@@ -208,10 +209,31 @@ def test_orchestrator_meet_someone_new_then_recall_shows_dossier():
     # created + recallable, dossier seeded with relation and note
     res = orc.look_at_person(_frame(0.8))
     assert res is not None and res["person"] == "Sarah"
-    note_line = res["identity"]["note"]
-    assert "runs marketing" in note_line             # newest note shown
+    assert "runs marketing" in res["identity"]["note"]        # newest note shown
+    assert res["identity"]["relation"] == "colleague"         # leads the card
+    # the rescue cue combines it all
+    cue = res["rescue"]
+    assert cue["name"] == "Sarah" and cue["relation"] == "colleague"
+    assert "runs marketing" in cue["note"]
     stored = orc.social._enricher.get_notes(res["identity"]["contact_id"])
-    assert "colleague" in stored and "runs marketing" in stored
+    assert "runs marketing" in stored                         # note kept
+    assert orc.social._enricher.get_relation(res["identity"]["contact_id"]) == "colleague"
+
+
+def test_rescue_cue_leads_with_name_relation_lastseen_note():
+    # you meet a colleague, note something, then chat — later a look gives you
+    # everything you need to not blank: name, how you know them, last-seen, note
+    orc = Orchestrator(FakeBridge())
+    orc.handle_voice("this is my colleague Sarah, she runs marketing", frame=_frame(0.8))
+    orc.ingest_caption("the Q3 deck is ready", speaker="Sarah")   # ledger knows her
+    res = orc.look_at_person(_frame(0.8))
+    cue = res["rescue"]
+    assert cue["name"] == "Sarah"
+    assert cue["relation"] == "colleague"
+    assert "runs marketing" in cue["note"]
+    assert cue["last_seen"]                       # "just now" / "Ns ago"
+    # and the identity card itself leads with the relationship
+    assert "colleague" in res["identity"]["lines"]
 
 
 def test_orchestrator_meet_is_veil_gated():

@@ -355,9 +355,9 @@ class IntroductionCapture:
                 self._enricher.set_notes(
                     record.contact_id,
                     f"Introduced themselves — name only ({offer.name}).")
-            # a stated relationship/role becomes the first dossier note
+            # a stated relationship/role — how you know them — leads the recall
             if offer.relation:
-                self._enricher.append_note(record.contact_id, offer.relation)
+                self._enricher.set_relation(record.contact_id, offer.relation)
         return record
 
     def enroll(self, name: str, frame: Optional[np.ndarray] = None,
