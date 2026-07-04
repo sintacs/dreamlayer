@@ -33,3 +33,27 @@ Device: CONFLUENCE + TINCAN BLE types (lockstep with entangle.py/tincan.py);
 dream_renderer draws the peer half-band + seam ticks and the ping pulse
 train. Demo: `python scripts/run_demo_confluence.py` — the full dinner arc.
 Tests: `src/dreamlayer/tests/test_confluence.py` (33).
+
+## GhostMode — the bond, lifted to a group (2+ wearers)
+
+A bond is a doorway between two wearers; **GhostMode** (mesh.py) is a *circle*
+of them — a room, a hiking party, a crowd. One `form()` mints a `(group_id,
+code)`; everyone else `join()`s with the code and derives the same group key
+(`ghostmesh|group_id|code`). The same contract holds, one level up: only
+*feeling* crosses (a `MeshPacket` body is a weather scalar, a bearing + band,
+or a gesture symbol — **never speech, places, or names**), members are
+anonymous on the wire (a random `member_id`), forged/replayed/stranger/self
+traffic drops, the Veil silences your side, a quiet member fades after 12 s,
+the group expires in 8 h. Any human name you attach (`alias`) lives only on
+*your* device — it never crosses. Transport is a seam (`MeshTransport`): an
+in-memory bus for tests, **BLE LE Coded PHY** (long-range, robust in a crowd,
+tiny packets) on Halo.
+
+**The Beacon** (beacon.py) rides the mesh with one job: point you at your
+people. Each member emits a coarse **bearing + distance band relative to
+themselves** (never coordinates); on your rim it renders as a pulse train at
+that bearing — nearer pulses faster and brighter (reuses the TinCan shape). A
+`BeaconCard` lists who's found and roughly where ("Maya · ahead-left · close")
+using your *local* alias, never a wire name. No map, no "where are you" text.
+Veil-gated; only bearing/presence crosses. Tests:
+`src/dreamlayer/tests/test_ghostmode.py` (15).
