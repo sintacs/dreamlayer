@@ -28,6 +28,11 @@ from .crossing import SharedRhythms, RhythmClaim, export_claims, crossings
 from .duet import DuetSession, keep_for_both
 from .gift import wrap_gift, unwrap_gift, GIFT_PLAY_S
 from .taps import TapCollector
+from .mesh import (
+    MeshManager, MeshPacket, MeshMember, MeshTransport, InMemoryBus,
+    GROUP_TTL_S, QUIET_FADE_S,
+)
+from .beacon import Beacon, BeaconContact, dist_band, MSG_BEACON
 
 __all__ = [
     "BondManager", "Bond", "BondOffer", "WeatherPacket", "BOND_TTL_S",
@@ -37,4 +42,7 @@ __all__ = [
     "DuetSession", "keep_for_both",
     "wrap_gift", "unwrap_gift", "GIFT_PLAY_S",
     "TapCollector",
+    "MeshManager", "MeshPacket", "MeshMember", "MeshTransport", "InMemoryBus",
+    "GROUP_TTL_S", "QUIET_FADE_S",
+    "Beacon", "BeaconContact", "dist_band", "MSG_BEACON",
 ]

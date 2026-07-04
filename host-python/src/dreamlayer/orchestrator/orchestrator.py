@@ -304,6 +304,10 @@ class Orchestrator:
         self.tincan = None
         self.tap_collector = TapCollector()
         self.confluence_outbox: list[dict] = []
+        # GhostMode mesh (2+ wearers) + The Beacon: attached by the app layer
+        # when a circle is formed. Same pattern as the pairwise bond above.
+        self.mesh = None
+        self.beacon = None
 
         # Wire vision pipeline into SceneDescriber if LLM available
         if getattr(cfg, "openai_api_key", "") or os.environ.get("OPENAI_API_KEY"):
