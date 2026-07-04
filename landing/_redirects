@@ -1,0 +1,5 @@
+# Cloudflare Pages redirects.
+# Canonicalize the www subdomain onto the apex. Requires www.dreamlayer.app
+# to be added as a custom domain on the Pages project so its traffic reaches
+# here; the 301! forces the redirect even when a matching asset exists.
+https://www.dreamlayer.app/* https://dreamlayer.app/:splat 301!
