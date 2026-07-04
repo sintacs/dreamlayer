@@ -8,6 +8,10 @@ text*, strips the wake phrase (detect_wake), and figures out what you meant:
     "Hey Oracle, what did Marcus need?"       → recall(query)
     "where did I leave my bike?"              → locate(subject="bike")
     "reply to Priya saying on my way"         → reply(to="Priya", text="on my way")
+    "set a timer for five minutes"            → timer(seconds=300)
+    "interval timer, 30 on, 15 off, 8 rounds" → interval(work=30, rest=15, rounds=8)
+    "stop the timer"                          → timer_cancel
+    "what time is it?" / "show a clock"       → clock(mode="time"|"show")
     "brief me" / "what's my day"              → brief
     "what did I miss?"                        → missed
     "what's the answer?"                      → scholar(mode="answer")
@@ -34,6 +38,69 @@ WAKE = ("hey oracle", "ok oracle", "okay oracle", "oracle",
 class Intent:
     kind: str                       # recall|locate|reply|brief|missed|scholar|ask
     args: dict = field(default_factory=dict)
+
+
+# -- native timers & clock: the everyday behaviors Oracle just builds --------
+
+_WORD_NUM = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
+    "forty-five": 45, "fortyfive": 45, "fifty": 50, "sixty": 60, "ninety": 90,
+}
+_NUM = r"(\d+(?:\.\d+)?|" + "|".join(sorted(_WORD_NUM, key=len, reverse=True)) + r")"
+_UNIT_SEC = {"hour": 3600, "hours": 3600, "hr": 3600, "hrs": 3600,
+             "minute": 60, "minutes": 60, "min": 60, "mins": 60,
+             "second": 1, "seconds": 1, "sec": 1, "secs": 1}
+_DUR_RE = re.compile(_NUM + r"\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b")
+_ROUNDS_RE = re.compile(_NUM + r"\s*(rounds?|sets?|reps?|times|intervals?|cycles?)\b")
+
+
+def _num(tok: str) -> float:
+    return float(tok) if tok not in _WORD_NUM else float(_WORD_NUM[tok])
+
+
+def _durations(t: str) -> list[float]:
+    """Every duration in the line, in order, as seconds."""
+    out = []
+    for num, unit in _DUR_RE.findall(t):
+        out.append(_num(num) * _UNIT_SEC[unit.rstrip("s") if unit.rstrip("s") in _UNIT_SEC else unit])
+    return out
+
+
+def _parse_timer_clock(t: str) -> "Intent | None":
+    """Native timer / interval / clock intents, or None if the line isn't one.
+    `t` is the lowercased, wake-stripped command."""
+    has_timer_word = bool(re.search(r"\btimer\b|\binterval", t))
+    # stop/cancel a running one — an explicit verb, or "timer off" adjacently
+    # (so "15 seconds off" in an interval doesn't read as a cancel)
+    if re.search(r"\b(cancel|stop|clear|dismiss|kill)\b.*\b(timer|intervals?|clock|countdown)\b", t) \
+            or re.search(r"\b(timer|clock|countdown)s?\s+(off|stop)\b", t):
+        return Intent("timer_cancel", {})
+    # clock — "what time is it", "show a clock", "clock on the hud"
+    if not has_timer_word:
+        if re.search(r"\bwhat(?:'?s| is)?\s+the\s+time\b", t) or "what time is it" in t \
+                or re.search(r"\btell me the time\b", t):
+            return Intent("clock", {"mode": "time"})
+        if re.search(r"\b(show|put|display|start)\b.*\bclock\b", t) \
+                or re.search(r"\bclock\b.*\b(on|up|hud|please)\b", t) or t in ("clock", "a clock"):
+            return Intent("clock", {"mode": "show"})
+    durs = _durations(t)
+    # interval — two phases (work/rest, on/off) or the word "interval"
+    is_interval = "interval" in t or (
+        len(durs) >= 2 and re.search(r"\b(on|off|work|working|rest|active|recover)\b", t))
+    if is_interval and durs:
+        work = durs[0]
+        rest = durs[1] if len(durs) >= 2 else durs[0]
+        rm = _ROUNDS_RE.search(t)
+        rounds = int(_num(rm.group(1))) if rm else None
+        return Intent("interval", {"work": work, "rest": rest, "rounds": rounds})
+    # plain timer — "set a timer for X", "X minute timer", "count down X"
+    wants_timer = has_timer_word or re.search(r"\bcount ?down\b", t) \
+        or re.search(r"\bset (?:a |an )?(?:timer|alarm)\b", t)
+    if wants_timer and durs:
+        return Intent("timer", {"seconds": sum(durs)})
+    return None
 
 
 def detect_wake(text: str) -> tuple[bool, str]:
@@ -99,5 +166,10 @@ def parse_intent(text: str) -> Intent:
                 r"(?:put (?:this|it) in )?plain (?:english|words|language)|"
                 r"break (?:this|it) down)\b", t):
         return Intent("scholar", {"mode": "explain"})
+
+    # native timers / clock — Oracle builds these; no rehearsal needed
+    tc = _parse_timer_clock(t)
+    if tc is not None:
+        return tc
 
     return Intent("ask", {"query": raw.strip()})

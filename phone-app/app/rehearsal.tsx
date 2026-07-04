@@ -216,11 +216,19 @@ export default function Rehearsal() {
         </>
       ) : (
         <Card>
-          <Text style={[typography.body, { color: colors.textPrimary }]}>Perform a behavior once.</Text>
+          <Text style={[typography.body, { color: colors.textPrimary }]}>Make a behavior of your own.</Text>
           <Text style={[typography.caption, { color: colors.textSecondary, marginTop: space.xs }]}>
-            Tap “rehearse”, then tap the stage and speak beats. The glasses learn the choreography — a timer, a
-            counter, a reminder — and run it forever.
+            This is the studio for things you invent — a custom drill, a counter, a two-phase routine. You
+            perform it once (tap the stage, speak the beats) and the glasses learn it and run it forever.
           </Text>
+          <View style={s.oracleNote}>
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              <Text style={{ color: colors.accentMemory }}>Just need a timer or a clock?</Text> Don’t rehearse —
+              ask Oracle: <Text style={{ color: colors.textPrimary }}>“set a timer for 5 minutes,”</Text>{" "}
+              <Text style={{ color: colors.textPrimary }}>“interval timer, 30 on, 15 off, 8 rounds,”</Text>{" "}
+              <Text style={{ color: colors.textPrimary }}>“what time is it.”</Text> Oracle builds those for you.
+            </Text>
+          </View>
         </Card>
       )}
 
@@ -285,6 +293,12 @@ const s = StyleSheet.create({
     paddingHorizontal: space.lg,
   },
   recordDot: { width: 8, height: 8, borderRadius: 4 },
+  oracleNote: {
+    marginTop: space.md,
+    paddingTop: space.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
   beatRow: { flexDirection: "row", gap: space.sm },
   beatBtn: {
     flex: 1,
