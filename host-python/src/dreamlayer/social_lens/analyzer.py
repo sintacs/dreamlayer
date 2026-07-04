@@ -171,16 +171,19 @@ class SocialLens:
         self._enricher.append_note(contact.contact_id, note)
         return self._enricher.enrich(contact)
 
-    def meet(self, name: str, frame=None, note: Optional[str] = None):
+    def meet(self, name: str, frame=None, note: Optional[str] = None,
+             relation: Optional[str] = None):
         """Meet someone on the spot — "this is Sarah" while looking at them.
-        If a contact by that name already exists, the note is added to them;
-        otherwise a new contact is created from the face in view (or name-only
-        if no face). Sets last_identified so a follow-up "remember she…"
-        attaches. Returns the enriched record, or None (veiled / no name)."""
+        If a contact by that name already exists, the note/relation is added to
+        them; otherwise a new contact is created from the face in view (or
+        name-only if no face). Sets last_identified so a follow-up "remember
+        she…" attaches. Returns the enriched record, or None (veiled / no name)."""
         if not name:
             return None
         existing = self._index.find_by_name(name)
         if existing is not None:
+            if relation:
+                self._enricher.set_relation(existing.contact_id, relation)
             if note:
                 self._enricher.append_note(existing.contact_id, note)
             self._last_identified = existing.contact_id
@@ -188,6 +191,8 @@ class SocialLens:
         record = self.introductions.enroll(name, frame=frame, note=note)
         if record is None:
             return None                       # veiled
+        if relation:
+            self._enricher.set_relation(record.contact_id, relation)
         self._last_identified = record.contact_id
         return self._enricher.enrich(record)
 

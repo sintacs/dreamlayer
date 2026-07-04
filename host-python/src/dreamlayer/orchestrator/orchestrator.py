@@ -1319,12 +1319,10 @@ class Orchestrator:
         if not self.privacy.allow_capture():
             return {"intent": "meet_person", "ok": False,
                     "say": "Not while you're incognito."}
-        rec = self.social.meet(name, frame=frame, note=relation)
+        rec = self.social.meet(name, frame=frame, note=note, relation=relation)
         if rec is None:
             return {"intent": "meet_person", "ok": False,
                     "say": "Couldn't add them just now."}
-        if note:
-            self.social.add_note_by_id(rec.contact_id, note)
         self._last_person = {"contact_id": rec.contact_id, "name": name,
                              "ts": self._clock()}
         tail = (" — I'll know them next time" if frame is not None
@@ -1737,6 +1735,17 @@ class Orchestrator:
             dossier = cards.person_dossier(d)
             self.bridge.send_card(dossier, event="greet")
             out["dossier"] = dossier
+        # the rescue: one tight cue so you never blank — how you know them,
+        # when you last spoke, and the freshest thing you noted
+        c = res.match.contact
+        out["rescue"] = {
+            "name": name,
+            "relation": (c.relation or "").strip(),
+            "last_seen": d.get("last_seen_ago", "") if d.get("known")
+            else (f"met {c.last_met}" if c.last_met else ""),
+            "note": c.latest_note(),
+            "topic": (d.get("topics") or [""])[0] if d.get("known") else "",
+        }
         return out
 
     # -- back-compat aliases (the model is the three switches above) -----

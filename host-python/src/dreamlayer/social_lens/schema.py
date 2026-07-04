@@ -17,6 +17,7 @@ class ContactRecord:
     role         : job title (optional)
     last_met     : ISO-8601 date string of last interaction (optional)
     notes        : freeform personal notes (optional)
+    relation     : how you know them — "colleague", "brother" (optional)
     email        : email address (optional)
     """
     contact_id: str
@@ -26,6 +27,7 @@ class ContactRecord:
     role: Optional[str] = None
     last_met: Optional[str] = None
     notes: Optional[str] = None
+    relation: Optional[str] = None
     email: Optional[str] = None
 
     def __post_init__(self):
@@ -33,6 +35,10 @@ class ContactRecord:
             raise ValueError(
                 f"ContactRecord embedding must be 512-d, got {len(self.embedding)}"
             )
+
+    def latest_note(self) -> str:
+        """The most recent freeform note (what the recall card highlights)."""
+        return _latest_note(self.notes)
 
     def context_line(self) -> str:
         """One-line context string for the HUD card."""
@@ -111,28 +117,44 @@ class SocialLensResult:
         conf_color = 0x07E0 if m.confidence >= 0.85 else (
             0xFFE0 if m.confidence >= 0.70 else 0xFD20
         )
+        # The rescue: lead with how you know them, so you never blank —
+        # relationship, then context, then the freshest thing you noted.
+        relation = (c.relation or "").strip()
         note = _latest_note(c.notes)          # what you last asked to remember
         note_line = f"“{note}”" if note else ""
-        lines = ["FACE RECALL", c.name, c.context_line()]
+        ctx = c.context_line()
+        lines = ["FACE RECALL", c.name]
+        if relation:
+            lines.append(relation)
+        if ctx:
+            lines.append(ctx)
         if note_line:
             lines.append(note_line)
         lines.append(f"{conf_pct}% match")
-        layout = {
-            "eyebrow": {"x": 128, "y": 186, "size": "sm",
-                        "color": conf_color, "tracking": 3},
-            "primary": {"x": 128, "y": 204, "size": "sm", "color": 0xFFFF},
-            "detail":  {"x": 128, "y": 220, "size": "sm", "color": 0x5EF7},
-        }
+        # stack whatever's present, top to bottom
+        y = 182
+        layout = {"eyebrow": {"x": 128, "y": y, "size": "sm",
+                              "color": conf_color, "tracking": 3}}
+        y += 18
+        layout["primary"] = {"x": 128, "y": y, "size": "sm", "color": 0xFFFF}
+        if relation:
+            y += 16
+            layout["relation"] = {"x": 128, "y": y, "size": "sm", "color": 0x2E9F}
+        if ctx:
+            y += 16
+            layout["detail"] = {"x": 128, "y": y, "size": "sm", "color": 0x5EF7}
         if note_line:
-            layout["note"] = {"x": 128, "y": 236, "size": "sm", "color": 0x2E9F}
-        layout["footer"] = {"x": 128, "y": 236 + (16 if note_line else 0),
-                            "size": "sm", "color": conf_color}
+            y += 16
+            layout["note"] = {"x": 128, "y": y, "size": "sm", "color": 0x2E9F}
+        y += 16
+        layout["footer"] = {"x": 128, "y": y, "size": "sm", "color": conf_color}
         return {
             "type": "SocialLensCard",
             "dismiss_ms": 5000,
             "eyebrow": "FACE RECALL",
             "primary": c.name,
-            "detail": c.context_line(),
+            "relation": relation,
+            "detail": ctx,
             "note": note_line,
             "footer": f"{conf_pct}% match",
             "color": conf_color,

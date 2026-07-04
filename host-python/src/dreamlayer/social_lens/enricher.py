@@ -38,6 +38,14 @@ class ContactEnricher:
         """Record a new last-met date."""
         self._backend.set(f"social_lens_last_met_{contact_id}", date_str)
 
+    def get_relation(self, contact_id: str) -> Optional[str]:
+        """How you know them — "colleague", "brother" — kept apart from freeform
+        notes so it can lead the recall card."""
+        return self._backend.get(f"social_lens_relation_{contact_id}")
+
+    def set_relation(self, contact_id: str, relation: str) -> None:
+        self._backend.set(f"social_lens_relation_{contact_id}", relation)
+
     def get_notes(self, contact_id: str) -> Optional[str]:
         """Return personal notes for a contact."""
         return self._backend.get(f"social_lens_notes_{contact_id}")
@@ -79,6 +87,7 @@ class ContactEnricher:
         """Return a copy of the ContactRecord enriched with stored context."""
         last_met = self.get_last_met(contact.contact_id)
         notes = self.get_notes(contact.contact_id)
+        relation = self.get_relation(contact.contact_id)
         return ContactRecord(
             contact_id=contact.contact_id,
             name=contact.name,
@@ -87,6 +96,7 @@ class ContactEnricher:
             role=contact.role,
             last_met=last_met or contact.last_met,
             notes=notes or contact.notes,
+            relation=relation or contact.relation,
             email=contact.email,
         )
 
