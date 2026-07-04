@@ -101,6 +101,12 @@ class Brain:
         # achievements. Brain-hosted so the phone (and hub) can read/record it.
         from ...saga import SagaProfile
         self.saga = SagaProfile(self.cfg_dir)
+        # Plugin marketplace (docs/MARKETPLACE.md): the Brain hosts the plugins
+        # the user installs. Every package is validated (integrity + capability
+        # scan + smoke test) before it's written; the panel and phone manage them.
+        from ...plugins import PluginStore
+        self.plugins = PluginStore(self.cfg_dir / "plugins",
+                                   host_capabilities=self.plugin_capabilities())
         # Oracle's profile of you (name, interests, people, remembered prefs).
         # Built on the glasses hub from the conversation stream, then *pushed*
         # here so the phone can read it — the hub->Brain bridge. Just a mirror;
@@ -113,6 +119,61 @@ class Brain:
             self.activity.prune(self.config.retention_days)
         self._wire_model()
         self.reindex()
+
+    # -- plugin marketplace --------------------------------------------------
+
+    def plugin_capabilities(self) -> frozenset:
+        """What this Brain can safely grant a plugin. The always-available
+        extension points, plus midi (the Mac has it); vision when a vision model
+        or cloud is available; network unless incognito. fs/subprocess are
+        withheld by default — a plugin needing them is rejected."""
+        caps = {"object_lens", "glance", "perception", "cards", "ring", "midi"}
+        if self.config.model == "ollama" or self.config.cloud_ready():
+            caps.add("vision")
+        if not self.config.lan_only:
+            caps.add("network")
+        return frozenset(caps)
+
+    def plugins_state(self) -> dict:
+        from ...plugins import PluginPackage
+        installed = []
+        for name in self.plugins.installed():
+            try:
+                pkg = PluginPackage.load(self.plugins.dir / name)
+                installed.append({"name": pkg.manifest.name, "version": pkg.manifest.version,
+                                  "author": pkg.manifest.author,
+                                  "requires": list(pkg.manifest.requires)})
+            except Exception:
+                installed.append({"name": name, "version": "", "author": "", "requires": []})
+        return {"installed": installed,
+                "capabilities": sorted(self.plugin_capabilities())}
+
+    def install_plugin(self, body: dict) -> dict:
+        """Install a plugin, validated. Accepts a sideloaded package
+        ({manifest, source}) or a registry name (needs a wired registry)."""
+        from ...plugins import PluginPackage, PluginManifest, ValidationReport
+        if body.get("source") and body.get("manifest"):
+            pkg = PluginPackage(manifest=PluginManifest.from_dict(body["manifest"]),
+                                source=str(body["source"]))
+            report = self.plugins.install_package(pkg)
+            label = pkg.manifest.name
+        elif body.get("name"):
+            report = self.plugins.install(str(body["name"]))
+            label = str(body["name"])
+        else:
+            report = ValidationReport()
+            report.add_error("provide a package (manifest+source) or a registry name")
+            label = "?"
+        if report.ok:
+            self.activity.add("plugin", f"Installed plugin {label}")
+        return {"ok": report.ok, "errors": report.errors,
+                "warnings": report.warnings, "state": self.plugins_state()}
+
+    def remove_plugin(self, name: str) -> dict:
+        ok = self.plugins.remove(name)
+        if ok:
+            self.activity.add("plugin", f"Removed plugin {name}")
+        return {"ok": ok, "state": self.plugins_state()}
 
     def reindex(self) -> dict:
         self.index.reindex()
@@ -916,6 +977,8 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 self._json(200, brain.rewind())
             elif path == "/dreamlayer/saga":
                 self._json(200, brain.saga.snapshot())
+            elif path == "/dreamlayer/plugins":
+                self._json(200, brain.plugins_state())
             elif path == "/dreamlayer/profile":
                 # what the Oracle has learned about you (mirrored from the hub)
                 self._json(200, brain.profile)
@@ -1012,6 +1075,10 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             elif path == "/dreamlayer/brain/ask":
                 ans = brain.ask(self._body().get("query", ""))
                 self._json(200, _answer_json(ans))
+            elif path == "/dreamlayer/plugins/install":
+                self._json(200, brain.install_plugin(self._body()))
+            elif path == "/dreamlayer/plugins/remove":
+                self._json(200, brain.remove_plugin(self._body().get("name", "")))
             elif path == "/dreamlayer/brief":
                 b = self._body()
                 out = brain.brief(agenda=b.get("agenda"),

@@ -361,6 +361,21 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
   </section>
 
   <section>
+    <div class="eyebrow">Extend</div><h2>Plugins</h2>
+    <p class="lead">Community plugins your Brain runs. Every one is validated —
+      integrity, a capability scan, and a smoke test — before it's installed.
+      <a href="https://dreamlayer.app/plugins.html" target="_blank">Browse the store ↗</a></p>
+    <div class="conn-s" style="margin:0 0 8px">This Brain can grant:
+      <span id="plugCaps">…</span></div>
+    <ul id="plugins" class="feed"></ul>
+    <div class="conn" style="border-bottom:0"><div style="flex:1"><div class="conn-t">Sideload a package</div>
+      <div class="conn-s">Paste a plugin package (JSON: manifest + source) to install it directly. It passes the same gate.</div>
+      <textarea id="plugPkg" placeholder='{"manifest": {...}, "source": "..."}' style="width:100%;min-height:64px;margin-top:6px;font-family:monospace;font-size:12px"></textarea>
+      <div class="row" style="margin-top:6px"><button class="sm" onclick="installPlugin()">Install package</button>
+        <span id="plugStatus" class="conn-s" style="margin:0"></span></div></div></div>
+  </section>
+
+  <section>
     <div class="eyebrow">Log</div><h2>Activity</h2>
     <ul id="history" class="feed"></ul>
   </section>
@@ -797,7 +812,28 @@ drop.addEventListener("drop",async ev=>{
 });
 $("browser").addEventListener("click",e=>{if(e.target.id==="browser")browseClose();});
 
+async function loadPlugins(){let r;try{r=await api("/dreamlayer/plugins");}catch(e){return;}
+  $("plugCaps").textContent=(r.capabilities||[]).join(", ")||"the basics";
+  const ul=$("plugins");
+  if(!(r.installed||[]).length){ul.innerHTML='<li class="conn-s" style="margin:0">No plugins installed yet — browse the store.</li>';return;}
+  ul.innerHTML=(r.installed||[]).map(p=>{
+    const perms=(p.requires||[]).length?(p.requires||[]).map(x=>"needs "+esc(x)).join(" · "):"no special access";
+    return '<li class="conn"><div style="flex:1"><div class="conn-t">'+esc(p.name)+' <span class="conn-s">v'+esc(p.version||"")+'</span></div>'+
+      '<div class="conn-s">'+perms+'</div></div>'+
+      '<button class="sm ghost" onclick="removePlugin(\''+esc(p.name)+'\')">Remove</button></li>';
+  }).join("");}
+async function removePlugin(name){await api("/dreamlayer/plugins/remove",{method:"POST",body:JSON.stringify({name})});
+  toast("Removed "+name);loadPlugins();}
+async function installPlugin(){const raw=$("plugPkg").value.trim();if(!raw){return;}
+  let body;try{body=JSON.parse(raw);}catch(e){$("plugStatus").textContent="not valid JSON";return;}
+  $("plugStatus").textContent="Validating…";
+  const r=await api("/dreamlayer/plugins/install",{method:"POST",body:JSON.stringify(body)});
+  if(r.ok){$("plugPkg").value="";$("plugStatus").textContent="";toast("Installed");loadPlugins();}
+  else{$("plugStatus").textContent=(r.errors||["failed"]).join("; ");}}
+window.removePlugin=removePlugin;
+
 load();
+loadPlugins();
 setInterval(refreshStatus,4000);
 setInterval(()=>{if(modelSel==="ollama")checkModel();},15000);
 </script></body></html>"""
