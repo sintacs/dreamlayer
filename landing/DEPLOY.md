@@ -19,12 +19,15 @@ The workflow only fires on `main`. Merge this branch's PR (or `workflow_dispatch
 it manually from the Actions tab once the workflow is on `main`). The first run
 creates a Pages project named **`dreamlayer`** and publishes `landing/`.
 
-### 3. Attach the custom domain
+### 3. Attach the custom domains
 Cloudflare dashboard → **Workers & Pages → dreamlayer → Custom domains → Set up a
 domain** → enter `dreamlayer.app`. Because the domain is already registered in the
 same Cloudflare account, the DNS records (a `CNAME`/flattened `A` to the Pages
-project) are created automatically and TLS is issued within a minute or two. Add
-`www.dreamlayer.app` the same way if you want the redirect.
+project) are created automatically and TLS is issued within a minute or two.
+
+Then add `www.dreamlayer.app` the same way. Both must be attached: the apex serves
+the site, and `www` is what [`_redirects`](_redirects) 301-redirects onto the apex
+(it only fires once `www` is a custom domain routing traffic to this project).
 
 ## Local preview
 ```bash
