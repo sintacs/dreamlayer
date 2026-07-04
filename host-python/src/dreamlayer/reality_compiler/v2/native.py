@@ -1,0 +1,124 @@
+"""v2/native.py — built-in behaviors Oracle compiles for you.
+
+The Reality Compiler is the engine; you don't have to *author* the everyday
+things. Ask Oracle — "set a timer for five minutes", "interval timer, thirty
+seconds on, fifteen off, eight rounds", "show a clock" — and these builders
+turn that into a budget-verified Figment that runs on the exact same on-glass
+stage a rehearsed behavior runs on. No rehearsal, no keeping: they deploy
+immediately and clear themselves.
+
+Everything here is a *pure* builder returning a Figment that passes
+budgets.verify() — the timer you get from a sentence is as bounded and safe as
+one you performed by hand.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from .figment import (
+    END, Figment, Scene, TextLine, PulseSpec, Transition,
+    CounterDecl, CounterOp, Guard, MIN_SCENE_SEC,
+)
+
+# a calm end-of-phase pulse: the last few seconds breathe, never strobe
+_PULSE_WINDOW = 5.0
+_PULSE_HZ = 2.0
+_STOP = "long"                       # a hold clears a running native behavior
+
+
+def _clamp(secs: float) -> float:
+    return max(MIN_SCENE_SEC, round(float(secs), 3))
+
+
+def _pulse(dur: float) -> PulseSpec:
+    return PulseSpec(window_sec=min(_PULSE_WINDOW, dur),
+                     color="accent_attention", rate_hz=_PULSE_HZ)
+
+
+def timer_figment(seconds: float, label: str = "Timer") -> Figment:
+    """A single countdown: label + m:ss ticking down, a pulse in the final
+    seconds, then a brief DONE. A hold clears it early."""
+    dur = _clamp(seconds)
+    fig = Figment(name=label[:24] or "Timer", initial="run")
+    fig.add_scene(Scene(
+        id="run", duration_sec=dur, tick="countdown",
+        lines=[
+            TextLine(label.upper()[:24], row=0, size="sm", color="text_secondary"),
+            TextLine("{remaining}", row=1, size="lg"),
+        ],
+        pulse=_pulse(dur),
+        on_timeout=[Transition(target="done")],
+        on={_STOP: Transition(target=END)},
+    ))
+    fig.add_scene(Scene(
+        id="done", duration_sec=3.0,
+        lines=[
+            TextLine(label.upper()[:24], row=0, size="sm", color="text_secondary"),
+            TextLine("DONE", row=1, size="lg", color="accent_success"),
+        ],
+        on_timeout=[Transition(target=END)],
+    ))
+    return fig
+
+
+def interval_figment(work_sec: float, rest_sec: float,
+                     rounds: Optional[int] = None,
+                     label: str = "Intervals") -> Figment:
+    """Work/rest intervals: a WORK countdown, a REST countdown, looping. With
+    `rounds` it counts them and ends; without, it runs until you hold to stop.
+    Each phase pulses in its final seconds so you feel the switch."""
+    work = _clamp(work_sec)
+    rest = _clamp(rest_sec)
+    fig = Figment(name=label[:24] or "Intervals", initial="work")
+
+    work_lines = [
+        TextLine("WORK", row=0, size="sm", color="accent_attention"),
+        TextLine("{remaining}", row=1, size="lg"),
+    ]
+    if rounds:
+        fig.add_counter(CounterDecl(name="round", start=1, lo=0,
+                                    hi=max(int(rounds), 1)))
+        work_lines.append(TextLine("{count:round}/%d" % int(rounds), row=3,
+                                   size="sm", color="text_secondary"))
+
+    fig.add_scene(Scene(
+        id="work", duration_sec=work, tick="countdown", lines=work_lines,
+        pulse=_pulse(work),
+        on_timeout=[Transition(target="rest")],
+        on={_STOP: Transition(target=END)},
+    ))
+
+    if rounds:
+        # after resting: end once we've done `rounds`, else next round
+        rest_exit = [
+            Transition(target=END, when=Guard("round", "ge", int(rounds))),
+            Transition(target="work", counter_ops=[CounterOp("round", "inc", 1)]),
+        ]
+    else:
+        rest_exit = [Transition(target="work")]
+
+    fig.add_scene(Scene(
+        id="rest", duration_sec=rest, tick="countdown",
+        lines=[
+            TextLine("REST", row=0, size="sm", color="accent_memory"),
+            TextLine("{remaining}", row=1, size="lg"),
+        ],
+        pulse=_pulse(rest),
+        on_timeout=rest_exit,
+        on={_STOP: Transition(target=END)},
+    ))
+    return fig
+
+
+def clock_figment(label: str = "Clock") -> Figment:
+    """A persistent clock. The Figment shows {slot}; the host pushes the current
+    time into the slot each minute (transport.text). A hold dismisses it."""
+    fig = Figment(name=label[:24] or "Clock", initial="clock")
+    fig.add_scene(Scene(
+        id="clock",
+        lines=[
+            TextLine("{slot}", row=1, size="lg"),
+        ],
+        on={_STOP: Transition(target=END)},
+    ))
+    return fig

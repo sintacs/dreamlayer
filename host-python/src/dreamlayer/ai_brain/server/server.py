@@ -53,6 +53,20 @@ def lan_ip() -> str:
         s.close()
 
 
+def _spoken_duration(secs: float) -> str:
+    """'5 minutes', '1 minute 30 seconds' — how Oracle says a length back."""
+    secs = int(round(secs))
+    h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
+    parts = []
+    if h:
+        parts.append(f"{h} hour" + ("s" if h != 1 else ""))
+    if m:
+        parts.append(f"{m} minute" + ("s" if m != 1 else ""))
+    if s:
+        parts.append(f"{s} second" + ("s" if s != 1 else ""))
+    return " ".join(parts) or "0 seconds"
+
+
 def _hour_label(ts: float) -> str:
     """'2 PM' for an hour block in the rewind timeline."""
     lt = time.localtime(ts)
@@ -265,6 +279,67 @@ class Brain:
         self.activity.add("rc", f"Revoked figment {figment_id}")
         return {"ok": record.success, "message": record.message,
                 "active": self._rc_active, **self.rc_repertoire()}
+
+    # -- native behaviors Oracle builds (timers, intervals, clock) -----------
+
+    def rc_native(self, intent: str, args: dict) -> dict:
+        """Turn a parsed voice intent (timer / interval / clock) into a
+        budget-verified Figment and put it on the stage immediately — no
+        rehearsal, no Repertoire clutter. These are ephemeral: signed and
+        deployed, but their vault entries are pruned so they don't pile up in
+        the kept list. Returns a spoken confirmation + the figment id."""
+        from ...reality_compiler.v2 import native
+
+        a = args or {}
+        if intent == "timer":
+            secs = float(a.get("seconds") or 0)
+            if secs <= 0:
+                return {"ok": False, "say": "How long a timer?"}
+            fig = native.timer_figment(secs, label=a.get("label") or "Timer")
+            say = f"Timer set for {_spoken_duration(secs)}."
+        elif intent == "interval":
+            work = float(a.get("work") or 0)
+            rest = float(a.get("rest") or 0)
+            rounds = a.get("rounds")
+            if work <= 0 or rest <= 0:
+                return {"ok": False, "say": "How long on and off?"}
+            fig = native.interval_figment(work, rest, rounds=rounds,
+                                          label=a.get("label") or "Intervals")
+            r = f" for {int(rounds)} rounds" if rounds else " until you hold to stop"
+            say = (f"Intervals: {_spoken_duration(work)} on, "
+                   f"{_spoken_duration(rest)} off{r}.")
+        elif intent == "clock":
+            if a.get("mode") == "time":
+                now = time.localtime()
+                return {"ok": True, "intent": "clock",
+                        "say": time.strftime("It's %-I:%M %p.", now)}
+            fig = native.clock_figment()
+            say = "Clock's up. Hold to dismiss it."
+        else:
+            return {"ok": False, "say": ""}
+
+        # deploy it straight to the stage, then drop it from the kept list
+        self.rc.keep(fig)
+        record = self.rc.deploy(fig.id)
+        self._rc_active = fig.id if record.success else self._rc_active
+        if intent == "clock" and record.success:
+            # seed the slot so the clock isn't blank; the stage refreshes it
+            # each minute (device tick / host push) once it's on real glasses
+            self.rc.deployer.push_text(fig.id, time.strftime("%-I:%M %p"))
+        try:
+            self.rc.vault.revoke(fig.id)   # ephemeral: keep the Repertoire clean
+        except Exception:
+            pass
+        self.activity.add("rc", f"Oracle started {fig.name!r}")
+        return {"ok": record.success, "intent": intent, "say": say,
+                "figment_id": fig.id, "name": fig.name}
+
+    def rc_native_cancel(self) -> dict:
+        """Clear whatever native behavior is on the stage."""
+        if self._rc_active:
+            self.rc.revoke(self._rc_active)
+            self._rc_active = None
+        return {"ok": True, "say": "Stopped.", "intent": "timer_cancel"}
 
     def reindex(self) -> dict:
         self.index.reindex()
@@ -1207,6 +1282,13 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                                      "answer": ans.text if ans is not None else ""})
                 elif it.kind == "brief":
                     self._json(200, {"intent": "brief", **brain.brief()})
+                elif it.kind in ("timer", "interval", "clock"):
+                    # native behaviors Oracle builds & runs (docs/RC_V2): a
+                    # timer/interval compiles to a Figment on the stage; a
+                    # clock time-query just answers
+                    self._json(200, brain.rc_native(it.kind, it.args))
+                elif it.kind == "timer_cancel":
+                    self._json(200, brain.rc_native_cancel())
                 else:
                     self._json(200, {"intent": it.kind, **it.args})
             elif path == "/dreamlayer/calendar":
