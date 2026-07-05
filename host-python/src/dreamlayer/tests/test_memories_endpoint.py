@@ -98,6 +98,40 @@ def test_debt_you_owe_phrasing(tmp_path):
     assert any(s == "You owe Dana lunch" for s in proms), proms
 
 
+def test_purge_is_honored_where_memories_live(tmp_path):
+    """Review finding (privacy): the phone's "Erase all memories" only cleared
+    its local list — the next refresh() resurrected everything from the Brain.
+    The Brain now drops its kept anchors on purge, and they stay gone."""
+    b = _seed(tmp_path)
+    assert any(m["kind"] == "Place" for m in b.memories()["memories"])
+    r = b.purge_memories()
+    assert r["ok"] and r["purged"] == 1
+    assert not any(m["kind"] == "Place" for m in b.memories()["memories"])
+    # gone after a reload too — the store on disk was rewritten
+    b2 = Brain(tmp_path)
+    assert not any(m["kind"] == "Place" for m in b2.memories()["memories"])
+    assert b2.waypath_locate("bike")["found"] is False
+
+
+def test_purge_endpoint_over_http(tmp_path):
+    import threading, urllib.request
+    from dreamlayer.ai_brain.server.server import make_brain_server
+    b = _seed(tmp_path)
+    srv = make_brain_server(b, host="127.0.0.1", port=7807)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    tok = b.config.token
+    try:
+        req = urllib.request.Request("http://127.0.0.1:7807/dreamlayer/memories/purge",
+                                     data=b"{}", method="POST")
+        req.add_header("Content-Type", "application/json")
+        if tok:
+            req.add_header("X-DreamLayer-Token", tok)
+        got = json.loads(urllib.request.urlopen(req).read())
+        assert got["ok"] and got["purged"] == 1
+    finally:
+        srv.shutdown()
+
+
 def test_memories_over_http(tmp_path):
     import threading, urllib.request
     from dreamlayer.ai_brain.server.server import make_brain_server

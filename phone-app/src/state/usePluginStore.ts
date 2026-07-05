@@ -14,15 +14,23 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const INDEX_URL =
-  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/index.json";
+// The registry is served from the deployed site first (the deploy workflow
+// copies registry/ into the Pages build), with raw GitHub as the fallback —
+// raw.githubusercontent 404s while the repo is private, which used to make
+// every install a dead end.
+const INDEX_URLS = [
+  "https://dreamlayer.app/registry/index.json",
+  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/index.json",
+];
 
 // Where the actual signed packages (manifest + source) live. Installing fetches
 // the package here and *sideloads* it to the paired Brain, which validates it
 // (integrity + capability scan + smoke test) and runs it — the phone never
 // runs plugin code, and a name alone can't install (the Brain has no registry).
-const PACKAGE_BASE =
-  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/packages/";
+const PACKAGE_BASES = [
+  "https://dreamlayer.app/registry/packages/",
+  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/packages/",
+];
 
 // The deployed social-API Worker (registry-api/): live downloads/ratings and
 // one-tap rating. The catalogue comes from the snapshot/index; the API only
@@ -220,6 +228,7 @@ type PluginState = {
   search: (query: string, sort: SortKey) => PluginEntry[];
   isInstalled: (name: string) => boolean;
   install: (entry: PluginEntry, mac?: MacTarget) => Promise<{ ok: boolean; error?: string }>;
+  flushPending: (mac: MacTarget) => Promise<void>;
   remove: (name: string, mac?: MacTarget) => Promise<void>;
   rate: (name: string, stars: number) => Promise<void>;
 };
@@ -260,21 +269,57 @@ async function postToMac(mac: MacTarget, path: string, body: any): Promise<any |
 }
 
 /** Fetch the actual package (manifest + source) so a Brain can validate + run it.
- *  null when the registry is private/unreachable (then only a name can be sent,
- *  which a Brain without a wired registry will refuse — surfaced to the user). */
+ *  Tries each mirror in order; null when none answers (then only a name can be
+ *  sent, which a Brain without a wired registry will refuse — surfaced to the
+ *  user). The shape check also defeats Pages' SPA fallback, which answers 200
+ *  text/html for missing paths. */
 async function fetchPackage(
   entry: PluginEntry,
 ): Promise<{ manifest: any; source: string } | null> {
-  const url = PACKAGE_BASE + encodeURIComponent(`${entry.name}-${entry.version}.json`);
-  try {
-    const res = await fetch(url, { cache: "no-store" } as any);
-    if (!res.ok) return null;
-    const d = await res.json();
-    if (d?.manifest && d?.source) return { manifest: d.manifest, source: String(d.source) };
-  } catch {
-    /* private/unreachable */
+  const file = encodeURIComponent(`${entry.name}-${entry.version}.json`);
+  for (const base of PACKAGE_BASES) {
+    try {
+      const res = await fetch(base + file, { cache: "no-store" } as any);
+      if (!res.ok) continue;
+      const d = await res.json();
+      if (d?.manifest && d?.source) return { manifest: d.manifest, source: String(d.source) };
+    } catch {
+      /* mirror unreachable or served HTML — try the next */
+    }
   }
   return null;
+}
+
+/** Fetch the package and sideload it to the Brain, returning the Brain's real
+ *  verdict with an honest reason on failure (validation errors, auth, or a
+ *  missing package — each reads differently to the user). */
+async function sideload(
+  entry: PluginEntry,
+  mac: MacTarget,
+): Promise<{ ok: boolean; error?: string }> {
+  const pkg = await fetchPackage(entry);
+  const body = pkg
+    ? { manifest: pkg.manifest, source: pkg.source, grant: entry.requires }
+    : { name: entry.name, version: entry.version, grant: entry.requires };
+  const resp = await postToMac(mac, "/dreamlayer/plugins/install", body);
+  if (resp?.ok) return { ok: true };
+  const error =
+    (Array.isArray(resp?.errors) && resp.errors[0]) ||
+    (typeof resp?.error === "string" && resp.error) || // e.g. "unauthorised" — re-pair
+    (resp == null
+      ? "your hub didn't answer — check it's on the same network"
+      : pkg
+      ? "your hub couldn't validate it"
+      : "couldn't fetch the plugin package");
+  return { ok: false, error };
+}
+
+/** Best-effort public download counter — only for installs that actually ran. */
+function bumpDownload(name: string) {
+  if (!SOCIAL_API) return;
+  fetch(SOCIAL_API.replace(/\/$/, "") + "/api/plugins/" + encodeURIComponent(name) + "/download", {
+    method: "POST",
+  }).catch(() => {});
 }
 
 export const usePluginStore = create<PluginState>((set, get) => ({
@@ -299,13 +344,19 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     // snapshot, overlaid by the live git index if public, then by live social
     // stats merged by name. Any step failing just leaves the prior data.
     let base: PluginEntry[] = SNAPSHOT.slice();
-    try {
-      const res = await fetch(INDEX_URL, { cache: "no-store" } as any);
-      const data = await res.json();
-      const list = Array.isArray(data?.plugins) ? data.plugins.map(normalize) : [];
-      if (list.length) base = list;
-    } catch {
-      /* private/unreachable → keep the snapshot */
+    for (const url of INDEX_URLS) {
+      try {
+        const res = await fetch(url, { cache: "no-store" } as any);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const list = Array.isArray(data?.plugins) ? data.plugins.map(normalize) : [];
+        if (list.length) {
+          base = list;
+          break;
+        }
+      } catch {
+        /* mirror unreachable → try the next, else keep the snapshot */
+      }
     }
     if (SOCIAL_API) {
       try {
@@ -345,19 +396,10 @@ export const usePluginStore = create<PluginState>((set, get) => ({
   install: async (entry, mac = null) => {
     // Sideload the real package to the paired Brain and reflect *its* verdict —
     // no more optimistically showing "installed" for a plugin the hub silently
-    // rejected. With no hub, it's queued locally until one pairs.
-    const pkg = await fetchPackage(entry);
+    // rejected. With no hub, it's queued locally until one pairs (flushPending).
     if (mac?.url) {
-      const body = pkg
-        ? { manifest: pkg.manifest, source: pkg.source, grant: entry.requires }
-        : { name: entry.name, version: entry.version, grant: entry.requires };
-      const resp = await postToMac(mac, "/dreamlayer/plugins/install", body);
-      if (!resp?.ok) {
-        const error =
-          (Array.isArray(resp?.errors) && resp.errors[0]) ||
-          (pkg ? "your hub couldn't validate it" : "couldn't fetch the plugin package");
-        return { ok: false, error }; // nothing persisted — the UI stays not-installed
-      }
+      const r = await sideload(entry, mac);
+      if (!r.ok) return r; // nothing persisted — the UI stays not-installed
     }
     const rec: InstalledPlugin = {
       name: entry.name,
@@ -369,17 +411,33 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     const installed = { ...get().installed, [entry.name]: rec };
     set({ installed });
     await persist(installed);
-    if (SOCIAL_API) {
-      try {
-        await fetch(
-          SOCIAL_API.replace(/\/$/, "") + "/api/plugins/" + encodeURIComponent(entry.name) + "/download",
-          { method: "POST" },
-        );
-      } catch {
-        /* best effort */
-      }
-    }
+    if (mac?.url) bumpDownload(entry.name); // count real installs, not queued intents
     return { ok: true };
+  },
+
+  flushPending: async (mac) => {
+    // A Brain just paired: complete every install that was queued while
+    // offline — the promise "it installs the next time one is paired", kept.
+    if (!mac?.url) return;
+    const installed = { ...get().installed };
+    let changed = false;
+    for (const rec of Object.values(installed)) {
+      if (rec.status !== "pending") continue;
+      const entry =
+        get().index.find((p) => p.name === rec.name) ??
+        ({ name: rec.name, version: rec.version, requires: rec.grantedCapabilities } as PluginEntry);
+      const r = await sideload(entry, mac);
+      if (r.ok) {
+        installed[rec.name] = { ...rec, status: "installed", installedAt: Date.now() };
+        bumpDownload(rec.name);
+        changed = true;
+      }
+      // failures stay pending — visible in the UI, retried on the next pair
+    }
+    if (changed) {
+      set({ installed });
+      await persist(installed);
+    }
   },
 
   remove: async (name, mac = null) => {

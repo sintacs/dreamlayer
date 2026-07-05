@@ -19,13 +19,14 @@ function target(): MacTarget | null {
   return m.connected && m.url ? { url: m.url, token: m.token, relayUrl: m.relayUrl } : null;
 }
 
-async function req(m: MacTarget, path: string): Promise<any> {
+async function req(m: MacTarget, path: string, opts: RequestInit = {}): Promise<any> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (m.token) headers["X-DreamLayer-Token"] = m.token;
+  const o: RequestInit = { ...opts, headers };
   try {
-    return await (await fetch(m.url + path, { headers })).json();
+    return await (await fetch(m.url + path, o)).json();
   } catch (e) {
-    if (m.relayUrl) return await (await fetch(m.relayUrl + path, { headers })).json();
+    if (m.relayUrl) return await (await fetch(m.relayUrl + path, o)).json();
     throw e;
   }
 }
@@ -80,7 +81,14 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
   memories: SEED,
   service: {
     lastCard: { kind: "Promise", primary: "You owe Marcus the signed lease", lines: ["due Friday", "tap to open the thread"] },
-    purgeAll: () => set({ memories: [] }),
+    purgeAll: () => {
+      // Honor the erase where the memories actually live: tell the Brain to
+      // drop its kept anchors too, so the next refresh() can't quietly
+      // resurrect what the user just erased ("This cannot be undone.").
+      set({ memories: [] });
+      const m = target();
+      if (m) req(m, "/dreamlayer/memories/purge", { method: "POST", body: "{}" }).catch(() => {});
+    },
     setLastCard: (c) => set((s) => ({ service: { ...s.service, lastCard: c } })),
   },
   refresh: async () => {
@@ -90,8 +98,9 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
     if (!m) return;
     try {
       const r = await req(m, "/dreamlayer/memories");
-      const list = Array.isArray(r?.memories) ? r.memories.map(normalizeMemory) : [];
-      set({ memories: list });
+      // only a well-formed answer replaces the list — an error body (e.g. a
+      // stale token's {"error":"unauthorised"}) must not wipe local memories
+      if (Array.isArray(r?.memories)) set({ memories: r.memories.map(normalizeMemory) });
     } catch {
       /* unreachable → keep current */
     }

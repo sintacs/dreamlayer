@@ -997,6 +997,17 @@ class Brain:
         except Exception:
             pass
 
+    def purge_memories(self) -> dict:
+        """The phone's "Erase all memories" honored where the memories actually
+        live: every Waypath anchor is dropped and the store rewritten, so a
+        later refresh can't quietly resurrect what the user erased. People and
+        reminders are mirrors of their own surfaces (People tab, Reminders) and
+        are not deleted here — erasing memories is not deleting your contacts."""
+        n = self.waypath.forget_all()
+        self._save_waypath()
+        self.activity.add("privacy", f"Erased kept memories ({n} anchor(s))")
+        return {"ok": True, "purged": n}
+
     def waypath_stash(self, subject: str, place: str) -> dict:
         subject = (subject or "").strip()
         place = (place or "").strip()
@@ -1589,6 +1600,10 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             elif path == "/dreamlayer/social/people/edit":
                 # a phone edit: add/remove a note, set relation, settle debts
                 self._json(200, brain.edit_person(self._body()))
+            elif path == "/dreamlayer/memories/purge":
+                # "Erase all memories" from the phone's danger zone — honored
+                # here so a later refresh can't resurrect what was erased
+                self._json(200, brain.purge_memories())
             elif path == "/dreamlayer/brief":
                 b = self._body()
                 out = brain.brief(agenda=b.get("agenda"),
