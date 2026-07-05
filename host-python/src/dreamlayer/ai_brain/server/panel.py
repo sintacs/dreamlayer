@@ -222,7 +222,7 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
 
   <section>
     <div class="eyebrow">People</div><h2>Who you've met</h2>
-    <p class="lead">The dossier registry — names you've introduced, with a note and tags. The glasses greet them with what you know.</p>
+    <p class="lead">Everyone you know — names you've introduced here, your synced Contacts, and people you met on your Halo, complete with their relationship, notes, and any favors owed. The glasses greet them with what you know.</p>
     <div class="conn"><div><div class="conn-t">Sync macOS Contacts</div>
       <div class="conn-s">Pull your address book in so dossiers populate themselves. Your hand-added notes always win. Reads locally — nothing leaves this Mac.</div></div>
       <label class="sw"><input type="checkbox" id="conSync" onchange="saveConSync()"><span class="track"></span></label></div>
@@ -513,16 +513,36 @@ async function syncCalNow(){$("calStatus").textContent="Syncing…";
   const r=await api("/dreamlayer/calendar/sync",{method:"POST",body:"{}"});
   toast(`Synced ${r.synced||0} event(s)`);loadAgenda();loadCalendars();loadHistory();}
 
-async function loadPeople(){let r;try{r=await api("/dreamlayer/people");}catch(e){return;}
-  const items=r.items||[];
+async function loadPeople(){
+  // Two people stores merged by name: the dossier registry (/dreamlayer/people —
+  // hand-added + Contacts sync) and the glasses' social memory
+  // (/dreamlayer/social/people — relation, notes, and debts jotted on the HUD).
+  let reg={items:[]}, soc={people:[]};
+  try{reg=await api("/dreamlayer/people");}catch(e){}
+  try{soc=await api("/dreamlayer/social/people");}catch(e){}
+  const map={};
+  (reg.items||[]).forEach(p=>{const k=(p.name||"").trim().toLowerCase();if(!k)return;
+    map[k]={name:p.name,note:p.note||"",tags:p.tags||[],source:p.source||"",
+            relation:"",notes:[],debts:[]};});
+  (soc.people||[]).forEach(p=>{const k=(p.name||"").trim().toLowerCase();if(!k)return;
+    const e=map[k]||{name:p.name,note:"",tags:[],source:"glasses",relation:"",notes:[],debts:[]};
+    e.relation=p.relation||e.relation||"";
+    e.notes=p.notes||[];e.debts=p.debts||[];e.last_seen=p.last_seen||"";
+    if(!map[k])e.source="glasses";map[k]=e;});
+  const items=Object.values(map);
   $("people").innerHTML=items.length?items.map(p=>{
     const tags=(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(" ");
-    const synced=p.source==="contacts";
-    const badge=synced?`<span class="tag">contact</span>`:"";
-    const rm=synced?"":`<button class="sm ghost" onclick='rmPerson(${JSON.stringify(p.name)})'>Remove</button>`;
-    return `<li><div><div class="q">${esc(p.name)} ${badge}</div>`+
-      `<div class="a">${esc(p.note||"")} ${tags}</div></div>${rm}</li>`;}).join("")
-    :'<li class="empty">No one yet — introduce people or sync your Contacts.</li>';}
+    const badge=p.source==="contacts"?`<span class="tag">contact</span>`
+      :(p.source==="glasses"?`<span class="tag">met on Halo</span>`:"");
+    const rel=p.relation?`<span class="tag">${esc(p.relation)}</span>`:"";
+    const debts=(p.debts||[]).map(d=>`<span class="tag" style="background:#3a1420;color:#ff9db0;border-color:#5a2030">${esc(d)}</span>`).join(" ");
+    const notes=(p.notes&&p.notes.length)?p.notes.map(esc).join(" · "):"";
+    const detail=[esc(p.note||""),notes].filter(Boolean).join(" · ");
+    const removable=p.source!=="contacts"&&p.source!=="glasses";
+    const rm=removable?`<button class="sm ghost" onclick='rmPerson(${JSON.stringify(p.name)})'>Remove</button>`:"";
+    return `<li><div><div class="q">${esc(p.name)} ${rel} ${badge}</div>`+
+      `<div class="a">${detail} ${tags} ${debts}</div></div>${rm}</li>`;}).join("")
+    :'<li class="empty">No one yet — introduce people, sync your Contacts, or meet someone on your Halo.</li>';}
 async function addPerson(){const n=$("pName").value.trim();if(!n)return;
   const tags=$("pTags").value.split(",").map(s=>s.trim()).filter(Boolean);
   await api("/dreamlayer/people",{method:"POST",body:JSON.stringify({name:n,note:$("pNote").value.trim(),tags:tags})});
