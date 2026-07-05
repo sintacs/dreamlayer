@@ -2,12 +2,43 @@
  * useMemoryStore — the phone's window onto DreamLayer's own memory.
  *
  * The real memories live on the brain (phone on-device store, or the Mac mini
- * when connected). This store mirrors the most recent ones for the Memories
- * tab and exposes `service.lastCard` — the last card the glasses drew — plus
- * `purgeAll()` for the danger zone. It ships with a few sample memories so the
- * surface is alive before a Halo has ever been worn; `purgeAll()` clears them.
+ * when connected). `refresh()` pulls the paired Brain's kept memory —
+ * GET /dreamlayer/memories: places you saved (Waypath), people you've met and
+ * favors owed (Social Lens), and dated reminders — and replaces the list.
+ * Exposes `service.lastCard` (the last card the glasses drew) and `purgeAll()`
+ * for the danger zone. It ships with a few sample memories so the surface is
+ * alive before a Halo has ever been worn / before a Brain is paired.
  */
 import { create } from "zustand";
+import { useBrainStore } from "./useBrainStore";
+
+type MacTarget = { url: string; token: string; relayUrl?: string };
+
+function target(): MacTarget | null {
+  const m = useBrainStore.getState().macMini;
+  return m.connected && m.url ? { url: m.url, token: m.token, relayUrl: m.relayUrl } : null;
+}
+
+async function req(m: MacTarget, path: string): Promise<any> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (m.token) headers["X-DreamLayer-Token"] = m.token;
+  try {
+    return await (await fetch(m.url + path, { headers })).json();
+  } catch (e) {
+    if (m.relayUrl) return await (await fetch(m.relayUrl + path, { headers })).json();
+    throw e;
+  }
+}
+
+function normalizeMemory(x: any, i: number): Memory {
+  return {
+    id: String(x?.id ?? `m${i}`),
+    kind: String(x?.kind ?? "Note"),
+    summary: String(x?.summary ?? ""),
+    createdAt: String(x?.createdAt ?? ""),
+    ts: Number(x?.ts ?? 0) || 0,
+  };
+}
 
 export type Memory = {
   id: string;
@@ -30,7 +61,7 @@ type MemoryState = {
     purgeAll: () => void;
     setLastCard: (c: HaloCard) => void;
   };
-  refresh: () => void;
+  refresh: () => Promise<void>;
   ingest: (m: Memory) => void;
 };
 
@@ -52,8 +83,18 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
     purgeAll: () => set({ memories: [] }),
     setLastCard: (c) => set((s) => ({ service: { ...s.service, lastCard: c } })),
   },
-  refresh: () => {
-    /* on a real device this pulls from the brain; local-first keeps state */
+  refresh: async () => {
+    // Pull the paired Brain's kept memory. With no Brain, keep whatever's local
+    // (the seed, or what's been ingested) so the surface stays alive offline.
+    const m = target();
+    if (!m) return;
+    try {
+      const r = await req(m, "/dreamlayer/memories");
+      const list = Array.isArray(r?.memories) ? r.memories.map(normalizeMemory) : [];
+      set({ memories: list });
+    } catch {
+      /* unreachable → keep current */
+    }
   },
   ingest: (m) => set((s) => ({ memories: [m, ...s.memories] })),
 }));

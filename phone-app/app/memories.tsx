@@ -38,8 +38,14 @@ function group(memories: Memory[]): { label: string; items: Memory[] }[] {
 
 export default function Memories() {
   const memories = useMemoryStore((s) => s.memories);
+  const refresh = useMemoryStore((s) => s.refresh);
   const macConnected = useBrainStore((s) => s.macMini.connected);
   const ask = useBrainStore((s) => s.ask);
+
+  // Pull the Brain's kept memory whenever one is paired.
+  React.useEffect(() => {
+    if (macConnected) refresh();
+  }, [macConnected, refresh]);
 
   const [q, setQ] = React.useState("");
   const [recall, setRecall] = React.useState<{ text: string; sources: string[]; tier: string } | null>(null);

@@ -1055,6 +1055,61 @@ class Brain:
                 "say": (f"Reply to {to}: “{text}” — open Messages to send."
                         if text else f"Open Messages to reply to {to}.")}
 
+    def memories(self, limit: int = 40) -> dict:
+        """A read of DreamLayer's own kept memory for the phone's Memories tab,
+        assembled from what the Brain holds: places you saved (Waypath), people
+        you've met and favors owed (Social Lens), and dated reminders. Not raw
+        recordings — the moments that matter, newest first."""
+        import time as _t
+        now = _t.time()
+        today = _t.localtime(now).tm_yday
+
+        def when(ts: float) -> str:
+            if not ts:
+                return ""
+            lt = _t.localtime(ts)
+            if lt.tm_yday == today and (now - ts) < 18 * 3600:
+                return _t.strftime("%-I:%M %p", lt)
+            if (now - ts) < 48 * 3600:
+                return "Yesterday, " + _t.strftime("%-I:%M %p", lt)
+            return _t.strftime("%a, %-I:%M %p", lt)
+
+        rows = []
+        # places you saved (Waypath) — real timestamps
+        for a in self.waypath._anchors.values():
+            loc = f"at {a.place}" if a.place else "somewhere you saved"
+            rows.append(("Place", f"Your {a.subject} — {loc}", a.ts or now, when(a.ts)))
+        # people you've met + favors owed (Social Lens) — living memory
+        for p in self.social_people:
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            detail = ", ".join([x for x in [p.get("relation", "")]
+                                + (p.get("notes") or [])[:1] if x])
+            rows.append(("Person", name + (f" — {detail}" if detail else ""),
+                         now, p.get("last_seen", "") or ""))
+            for d in (p.get("debts") or []):
+                dl = d.strip()
+                low = dl.lower()
+                if low.startswith("you owe"):
+                    s = f"You owe {name} {dl[7:].strip()}"
+                elif low.startswith("owes you"):
+                    s = f"{name} {dl}"
+                else:
+                    s = f"{name}: {dl}"
+                rows.append(("Promise", s, now, ""))
+        # dated reminders (Promise)
+        for r in self.reminders():
+            ts = float(r.get("ts", 0) or 0)
+            if ts:
+                rows.append(("Promise", r["title"], ts, when(ts)))
+
+        rows.sort(key=lambda x: x[2], reverse=True)
+        out = [{"id": f"m{i}", "kind": kind, "summary": summary,
+                "createdAt": label, "ts": int(ts * 1000)}
+               for i, (kind, summary, ts, label) in enumerate(rows[:limit])]
+        return {"memories": out}
+
     def set_profile(self, data: dict) -> dict:
         """Store the Oracle profile the glasses hub just pushed (a mirror, so the
         phone can read it). Keeps only the known shape; persists to profile.json."""
@@ -1393,6 +1448,10 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             elif path == "/dreamlayer/social/people":
                 # your social memory: everyone met, notes, relations, debts
                 self._json(200, brain.social_people_state())
+            elif path == "/dreamlayer/memories":
+                # the phone's Memories tab: places you saved, people met, favors
+                # owed, dated reminders — assembled from what the Brain holds
+                self._json(200, brain.memories())
             elif path == "/dreamlayer/profile":
                 # what the Oracle has learned about you (mirrored from the hub)
                 self._json(200, brain.profile)
