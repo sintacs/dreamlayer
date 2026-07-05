@@ -25,15 +25,15 @@ export default function Layout() {
       <Tabs.Screen name="brain" options={{ title: "Brain" }} />
       <Tabs.Screen name="now" options={{ title: "Now" }} />
       <Tabs.Screen name="messages" options={{ title: "Messages" }} />
+      <Tabs.Screen name="people" options={{ title: "People" }} />
       <Tabs.Screen name="memories" options={{ title: "Memories" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
-      {/* reachable from Settings → Labs, kept out of the bar for a clean 5 */}
+      {/* reachable from Settings → Labs, kept out of the bar */}
       <Tabs.Screen name="brief" options={{ href: null }} />
       <Tabs.Screen name="plugins" options={{ href: null }} />
       <Tabs.Screen name="rewind" options={{ href: null }} />
       <Tabs.Screen name="saga" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
-      <Tabs.Screen name="people" options={{ href: null }} />
       <Tabs.Screen name="rehearsal" options={{ href: null }} />
       <Tabs.Screen name="confluence" options={{ href: null }} />
       <Tabs.Screen name="onboarding" options={{ href: null }} />
