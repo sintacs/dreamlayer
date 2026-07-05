@@ -15,6 +15,19 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { decodePairing } from "../services/pairing";
 
+/** A Brain just paired — complete any plugin installs queued while offline.
+ *  Lazy require avoids a load-order dependency between the two stores. */
+function flushPendingPlugins(m: { connected: boolean; url: string; token: string }) {
+  if (!m.connected || !m.url) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { usePluginStore } = require("./usePluginStore");
+    usePluginStore.getState().flushPending({ url: m.url, token: m.token });
+  } catch {
+    /* plugin store unavailable — nothing to flush */
+  }
+}
+
 export type BrainKind = "phone" | "mac_mini";
 
 export type MacMini = { connected: boolean; url: string; token: string; relayUrl?: string };
@@ -226,6 +239,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     const s = get();
     persist(s);
     syncToBrain(s);
+    if (on) flushPendingPlugins(s.macMini);
   },
 
   setCloud: (on) => {
@@ -293,6 +307,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     const s = get();
     persist(s);
     syncToBrain(s);
+    if (b.brainUrl) flushPendingPlugins(s.macMini);
     return { brain: !!b.brainUrl, glasses: !!b.glassesId };
   },
 

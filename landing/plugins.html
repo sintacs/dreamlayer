@@ -224,7 +224,10 @@ const SNAPSHOT = {
       "downloads":0,"rating":0,"ratings_count":0,"comments_count":0 }
   ]
 };
-const INDEX_URL = "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/index.json";
+// Same-origin first (the deploy bundles registry/ into the site), then raw
+// GitHub — which 404s while the repo is private.
+const INDEX_URLS = ["/registry/index.json",
+  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/index.json"];
 // The deployed social-API Worker (registry-api/): live downloads/ratings +
 // one-tap rating. The catalogue comes from the snapshot/index; the API only
 // supplies the numbers, merged by name. Empty ⇒ static, git-backed store.
@@ -401,10 +404,13 @@ render();
 // stats (downloads/ratings) merged by name. Never blocks; degrades on failure.
 async function refresh(){
   let base = SNAPSHOT.plugins.slice();
-  try {
-    const r = await fetch(INDEX_URL, {cache:"no-store"});
-    if(r.ok){ const d = await r.json(); if(d && d.plugins && d.plugins.length) base = d.plugins; }
-  } catch(e){}
+  for(const url of INDEX_URLS){
+    try {
+      const r = await fetch(url, {cache:"no-store"});
+      if(r.ok){ const d = await r.json();
+        if(d && d.plugins && d.plugins.length){ base = d.plugins; break; } }
+    } catch(e){}
+  }
   if(SOCIAL_API){
     try {
       const r = await fetch(SOCIAL_API.replace(/\/$/,"")+"/api/plugins", {cache:"no-store"});

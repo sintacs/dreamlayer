@@ -10,7 +10,7 @@ name: Deploy landing to Cloudflare Pages
 on:
   push:
     branches: [main]
-    paths: ["landing/**", ".github/workflows/deploy-landing.yml"]
+    paths: ["landing/**", "registry/**", ".github/workflows/deploy-landing.yml"]
   workflow_dispatch:
 
 jobs:
@@ -21,6 +21,11 @@ jobs:
       deployments: write
     steps:
       - uses: actions/checkout@v4
+      # Publish the plugin registry with the site: the phone app and web store
+      # install by fetching dreamlayer.app/registry/packages/<name>-<ver>.json
+      # (raw.githubusercontent 404s while the repo is private).
+      - name: Bundle plugin registry into the site
+        run: cp -r registry landing/registry
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
