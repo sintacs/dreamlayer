@@ -17,6 +17,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const INDEX_URL =
   "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/index.json";
 
+// Where the actual signed packages (manifest + source) live. Installing fetches
+// the package here and *sideloads* it to the paired Brain, which validates it
+// (integrity + capability scan + smoke test) and runs it — the phone never
+// runs plugin code, and a name alone can't install (the Brain has no registry).
+const PACKAGE_BASE =
+  "https://raw.githubusercontent.com/LetsGetToWorkBro/dreamlayer/main/registry/packages/";
+
 // The deployed social-API Worker (registry-api/): live downloads/ratings and
 // one-tap rating. The catalogue comes from the snapshot/index; the API only
 // supplies the numbers, merged by name. Empty ⇒ static, git-backed store.
@@ -212,7 +219,7 @@ type PluginState = {
   fetchIndex: () => Promise<void>;
   search: (query: string, sort: SortKey) => PluginEntry[];
   isInstalled: (name: string) => boolean;
-  install: (entry: PluginEntry, mac?: MacTarget) => Promise<void>;
+  install: (entry: PluginEntry, mac?: MacTarget) => Promise<{ ok: boolean; error?: string }>;
   remove: (name: string, mac?: MacTarget) => Promise<void>;
   rate: (name: string, stars: number) => Promise<void>;
 };
@@ -238,17 +245,36 @@ async function persist(installed: Record<string, InstalledPlugin>) {
   }
 }
 
-async function postToMac(mac: MacTarget, path: string, body: any) {
-  if (!mac?.url) return;
+async function postToMac(mac: MacTarget, path: string, body: any): Promise<any | null> {
+  if (!mac?.url) return null;
   try {
-    await fetch(mac.url.replace(/\/$/, "") + path, {
+    const res = await fetch(mac.url.replace(/\/$/, "") + path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-DreamLayer-Token": mac.token },
       body: JSON.stringify(body),
     });
+    return await res.json().catch(() => ({}));
   } catch {
-    /* best effort; local is source of truth */
+    return null; // hub unreachable
   }
+}
+
+/** Fetch the actual package (manifest + source) so a Brain can validate + run it.
+ *  null when the registry is private/unreachable (then only a name can be sent,
+ *  which a Brain without a wired registry will refuse — surfaced to the user). */
+async function fetchPackage(
+  entry: PluginEntry,
+): Promise<{ manifest: any; source: string } | null> {
+  const url = PACKAGE_BASE + encodeURIComponent(`${entry.name}-${entry.version}.json`);
+  try {
+    const res = await fetch(url, { cache: "no-store" } as any);
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (d?.manifest && d?.source) return { manifest: d.manifest, source: String(d.source) };
+  } catch {
+    /* private/unreachable */
+  }
+  return null;
 }
 
 export const usePluginStore = create<PluginState>((set, get) => ({
@@ -317,6 +343,22 @@ export const usePluginStore = create<PluginState>((set, get) => ({
   isInstalled: (name) => !!get().installed[name],
 
   install: async (entry, mac = null) => {
+    // Sideload the real package to the paired Brain and reflect *its* verdict —
+    // no more optimistically showing "installed" for a plugin the hub silently
+    // rejected. With no hub, it's queued locally until one pairs.
+    const pkg = await fetchPackage(entry);
+    if (mac?.url) {
+      const body = pkg
+        ? { manifest: pkg.manifest, source: pkg.source, grant: entry.requires }
+        : { name: entry.name, version: entry.version, grant: entry.requires };
+      const resp = await postToMac(mac, "/dreamlayer/plugins/install", body);
+      if (!resp?.ok) {
+        const error =
+          (Array.isArray(resp?.errors) && resp.errors[0]) ||
+          (pkg ? "your hub couldn't validate it" : "couldn't fetch the plugin package");
+        return { ok: false, error }; // nothing persisted — the UI stays not-installed
+      }
+    }
     const rec: InstalledPlugin = {
       name: entry.name,
       version: entry.version,
@@ -327,11 +369,6 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     const installed = { ...get().installed, [entry.name]: rec };
     set({ installed });
     await persist(installed);
-    await postToMac(mac, "/dreamlayer/plugins/install", {
-      name: entry.name,
-      version: entry.version,
-      grant: entry.requires,
-    });
     if (SOCIAL_API) {
       try {
         await fetch(
@@ -342,6 +379,7 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         /* best effort */
       }
     }
+    return { ok: true };
   },
 
   remove: async (name, mac = null) => {

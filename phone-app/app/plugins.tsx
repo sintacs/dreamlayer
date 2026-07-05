@@ -77,7 +77,15 @@ export default function Plugins() {
           : "Queued — it installs and is validated on your hub the next time one is paired."),
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Install", onPress: () => install(p, macTarget) },
+        {
+          text: "Install",
+          onPress: async () => {
+            const r = await install(p, macTarget);
+            if (!r.ok) {
+              Alert.alert(`Couldn't install ${p.name}`, r.error || "Please try again.");
+            }
+          },
+        },
       ],
     );
   };
