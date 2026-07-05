@@ -146,6 +146,9 @@ class TestServer:
         try:
             status, body = _get(lb.url + "/")
             assert status == 200 and "DreamLayer" in body and "Brain" in body
+            # the People section now merges the glasses' social memory
+            # (relation/notes/debts) with the dossier registry
+            assert "/dreamlayer/social/people" in body and "met on Halo" in body
         finally:
             lb.stop()
 
