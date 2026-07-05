@@ -160,10 +160,14 @@ class Brain:
 
     def plugin_capabilities(self) -> frozenset:
         """What this Brain can safely grant a plugin. The always-available
-        extension points, plus midi (the Mac has it); vision when a vision model
-        or cloud is available; network unless incognito. fs/subprocess are
-        withheld by default — a plugin needing them is rejected."""
-        caps = {"object_lens", "glance", "perception", "cards", "ring", "midi"}
+        extension points, plus midi (the Mac has it); mesh + shop (the
+        GhostMode-broadcast and TasteLens-connector seams — a plugin that emits
+        to a mesh/shop that isn't wired just no-ops, same as perception/glance
+        pre-hardware); vision when a vision model or cloud is available; network
+        unless incognito. fs/subprocess are withheld — a plugin needing them is
+        rejected."""
+        caps = {"object_lens", "glance", "perception", "cards", "ring", "midi",
+                "mesh", "shop"}
         if self.config.model == "ollama" or self.config.cloud_ready():
             caps.add("vision")
         if not self.config.lan_only:
