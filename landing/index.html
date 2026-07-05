@@ -41,6 +41,11 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
+/* Lenis owns smoothing when active; disable native smooth so they don't fight */
+html.lenis,html.lenis body{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto!important}
+.lenis.lenis-smooth [data-lenis-prevent]{overscroll-behavior:contain}
+.lenis.lenis-stopped{overflow:hidden}
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
 ::selection{background:rgba(47,212,196,.28);color:#fff}
@@ -509,16 +514,92 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
   .marquee .track{animation:none}
   .hud-card,.tier .rail i::after{transition:none}
 }
+/* ===== v2: hamburger, uniform hero buttons, live glass ===== */
+.menu-btn{position:fixed;top:14px;right:max(14px,env(safe-area-inset-right));z-index:120;
+  width:46px;height:46px;border-radius:14px;border:1px solid var(--border);
+  background:rgba(10,16,17,.66);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  display:grid;place-items:center;cursor:pointer;transition:border-color var(--base) var(--ease)}
+.menu-btn:hover{border-color:var(--teal)}
+.menu-btn span{display:block;width:18px;height:2px;border-radius:2px;background:var(--text);
+  position:relative;transition:transform var(--base) var(--ease),opacity var(--fast) var(--ease)}
+.menu-btn span+span{margin-top:4px}
+.menu-open .menu-btn span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.menu-open .menu-btn span:nth-child(2){opacity:0}
+.menu-open .menu-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+.drawer{position:fixed;inset:0;z-index:110;background:rgba(0,0,0,.9);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 32px;
+  opacity:0;pointer-events:none;transition:opacity var(--base) var(--ease)}
+.menu-open .drawer{opacity:1;pointer-events:auto}
+.drawer a{display:flex;align-items:baseline;gap:16px;max-width:520px;margin:0 auto;width:100%;
+  padding:20px 8px;border-bottom:1px solid var(--border);color:var(--text);
+  font-size:clamp(22px,5vw,34px);font-weight:700;letter-spacing:-.01em;
+  transform:translateY(12px);opacity:0;transition:transform var(--base) var(--ease),opacity var(--base) var(--ease),color var(--fast) var(--ease)}
+.menu-open .drawer a{transform:none;opacity:1}
+.drawer a:nth-child(1){transition-delay:.04s}.drawer a:nth-child(2){transition-delay:.09s}
+.drawer a:nth-child(3){transition-delay:.14s}.drawer a:nth-child(4){transition-delay:.19s}
+.drawer a:nth-child(5){transition-delay:.24s}
+.drawer a:hover{color:var(--teal)}
+.drawer a .k{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.14em;
+  color:var(--text-3);flex:none;width:24px;text-transform:uppercase}
+.drawer a .d{display:block;font-size:13px;font-weight:400;color:var(--text-2);letter-spacing:0;margin-top:4px}
+.drawer .close-note{max-width:520px;margin:22px auto 0;width:100%;font-family:var(--mono);
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)}
+body.menu-open{overflow:hidden}
+/* keep the scroll-in bar's right cluster clear of the fixed hamburger */
+.bar{padding-right:calc(var(--gutter) + 58px)}
+
+/* uniform hero buttons — equal width, centred */
+.hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.hero-cta .btn{flex:0 1 auto;min-width:196px;justify-content:center;text-align:center}
+@media(max-width:440px){.hero-cta{flex-direction:column;align-items:stretch}
+  .hero-cta .btn{min-width:0;width:100%}}
+
+/* hero live glass — the decorative ring, alive */
+.hero-glass{position:relative;width:clamp(150px,20vh,196px);height:clamp(150px,20vh,196px);
+  margin:0 auto 40px;border-radius:50%}
+.hero-glass canvas{width:100%;height:100%;display:block;border-radius:50%;background:#000;
+  border:1px solid rgba(44,199,154,.28);
+  box-shadow:0 0 50px -8px rgba(44,199,154,.35),inset 0 0 30px rgba(0,0,0,.7)}
+.hero-glass::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 33% 27%,rgba(255,255,255,.07),transparent 46%)}
+
+/* the sim section's live embed (replaces the static screenshot) */
+.sim-live{margin:34px auto 0;max-width:900px;display:grid;grid-template-columns:auto 1fr;
+  gap:clamp(20px,4vw,44px);align-items:center;
+  border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);
+  padding:clamp(22px,4vw,40px);box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.sim-live .g{position:relative;width:min(46vw,240px);aspect-ratio:1}
+.sim-live .g canvas{width:100%;height:100%;display:block;border-radius:50%;background:#000;
+  border:1px solid #14211f;box-shadow:0 0 50px rgba(44,199,154,.14),inset 0 0 34px rgba(0,0,0,.7)}
+.sim-live .g::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.06),transparent 45%)}
+.sim-live .cap .k{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--teal)}
+.sim-live .cap p{color:var(--text-2);font-size:14px;line-height:1.6;margin:8px 0 16px}
+.sim-live .cap .line{font-family:var(--mono);font-size:12.5px;color:var(--text-3);margin-top:6px}
+.sim-live .cap .line b{color:var(--text)}
+@media(max-width:620px){.sim-live{grid-template-columns:1fr;text-align:center;justify-items:center}
+  .sim-live .g{width:min(64vw,240px)}}
 </style>
 </head>
 <body>
+<button class="menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="drawer">
+  <span></span><span></span><span></span>
+</button>
+<nav class="drawer" id="drawer" aria-hidden="true">
+  <a href="./simulator.html"><span class="k">01</span><span>Simulator<span class="d">Run the whole layer in your browser — no glasses, no install.</span></span></a>
+  <a href="./plugins.html"><span class="k">02</span><span>Plugin store<span class="d">Browse, rate, and install what the community builds.</span></span></a>
+  <a href="./playground.html"><span class="k">03</span><span>Web BLE playground<span class="d">Talk Lua to a real Halo over Bluetooth, from the page.</span></span></a>
+  <a href="https://letsgettoworkbro.github.io/dreamlayer-docs/" target="_blank" rel="noopener"><span class="k">04</span><span>Knowledge base ↗<span class="d">Every card, screen, and panel — the complete reference.</span></span></a>
+  <a href="#soon"><span class="k">05</span><span>Get early access<span class="d">One note when the layer wakes. Nothing else.</span></span></a>
+  <span class="close-note">Esc or tap ✕ to close</span>
+</nav>
 
 <!-- ======================= top bar ======================= -->
 <header class="bar" id="bar" aria-hidden="true">
   <a class="wordmark" href="#top"><span class="ring"></span>DREAMLAYER</a>
   <nav class="barnav">
-    <a href="#simulator">Simulator</a>
-    <a href="./playground.html">Playground</a>
+    <a href="./simulator.html">Simulator</a>
     <a href="./plugins.html">Plugin&nbsp;store</a>
     <a class="pill" href="#soon"><span class="dot"></span>Early&nbsp;access</a>
   </nav>
@@ -529,11 +610,7 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
   <canvas id="field" aria-hidden="true"></canvas>
   <div class="hero-vignette"></div>
   <div class="hero-core" id="heroCore">
-    <div class="hero-ring" aria-hidden="true">
-      <span class="r breathe"></span>
-      <span class="r inner"></span>
-      <span class="core"></span>
-    </div>
+    <div class="hero-glass" aria-hidden="true"><canvas id="heroGlass"></canvas></div>
     <span class="eyebrow arrive in" style="--d:60ms">A layer for smart AR glasses</span>
     <h1 class="display arrive in" style="--d:140ms">DreamLayer</h1>
     <p class="tag arrive in" style="--d:220ms">A memory layer for the real world.</p>
@@ -541,9 +618,9 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
       remembers it, understands it, and hands it back the instant you need it —
       privately, on your own hardware.</p>
     <div class="cta-row hero-cta arrive in" style="--d:380ms">
-      <a class="btn primary" href="#soon">Get early access</a>
+      <a class="btn primary" href="./simulator.html">Try the simulator</a>
       <a class="btn ghost" href="./plugins.html">Plugin store</a>
-      <a class="btn ghost" href="./playground.html">Try in browser</a>
+      <a class="btn ghost" href="#soon">Get early access</a>
     </div>
   </div>
   <div class="scroll-cue" aria-hidden="true"><span>Scroll</span><span class="line"></span></div>
@@ -1077,13 +1154,6 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
 
 <!-- ======================= simulator ======================= -->
 <style>
-  .sim-figure{margin:34px auto 0;max-width:920px;border:1px solid var(--border);
-    border-radius:var(--r-lg);overflow:hidden;background:#000;
-    box-shadow:0 0 60px rgba(47,212,196,.08),0 24px 60px rgba(0,0,0,.5)}
-  .sim-figure img{display:block;width:100%;height:auto}
-  .sim-cap{display:block;text-align:center;color:var(--text-2);font-size:12.5px;
-    margin-top:14px}
-  .sim-cap b{color:var(--teal);font-weight:600}
   .cmd{max-width:640px;margin:30px auto 0;border:1px solid var(--border);
     border-radius:var(--r-sm);background:var(--surface);overflow:hidden}
   .cmd .cmd-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;
@@ -1099,25 +1169,24 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow arrive">Try it without glasses</span>
-      <h2 class="headline arrive" style="--d:80ms">Run the whole thing on your desk.</h2>
+      <h2 class="headline arrive" style="--d:80ms">Run the whole thing in your browser.</h2>
       <p class="body arrive" style="--d:160ms">The Halo Simulator is DreamLayer with the hardware
-        drawn in software — a browser cockpit around the <em style="font-style:normal;color:var(--teal)">real
-        stack</em>. Talk to Oracle, set a timer that actually counts down on the glass, introduce
-        someone and have them recognised next time, drop the Privacy Veil. Nothing in it is a mock;
-        only the glasses are simulated.</p>
+        drawn in software — the <em style="font-style:normal;color:var(--teal)">real stack</em>,
+        ported to run right here. No terminal, no install. Talk to Oracle, set a timer that actually
+        counts down on the glass, introduce someone and have them recognised, drop the Privacy Veil.
+        Only the glasses are simulated.</p>
     </div>
 
-    <figure class="sim-figure arrive" style="--d:220ms">
-      <picture>
-        <source srcset="./assets/sim/simulator.webp" type="image/webp">
-        <img src="./assets/sim/simulator.jpg" width="1600" height="1013" loading="lazy"
-             alt="The Halo Simulator: a round HUD showing a FACE RECALL card for Sarah, beside a
-                  live transcript where you introduce her, note a debt, and glance to recall her.">
-      </picture>
-    </figure>
-    <span class="sim-cap arrive" style="--d:260ms">Every pixel on the glass is rendered by the
-      <b>same card renderer the device uses</b> — and the countdown runs on the Figment stage that’s
-      the Python twin of the on-glass Lua, pinned in lock-step by the test suite.</span>
+    <div class="sim-live arrive" style="--d:220ms">
+      <div class="g"><canvas id="simEmbed"></canvas></div>
+      <div class="cap">
+        <span class="k">Live · running now</span>
+        <p>This glass is the in-browser simulator, playing itself. Every pixel is drawn by a faithful
+          port of the device renderer — the same voice grammar, Social Lens recall, and Figment timer
+          stage the real stack runs.</p>
+        <div class="line" id="simEmbedCap"><b>Oracle</b> is warming up…</div>
+      </div>
+    </div>
 
     <div class="can-grid" style="margin-top:44px">
       <div class="can arrive" style="--d:0ms"><b>The real loop, end to end</b><span>Your typed line is
@@ -1133,8 +1202,8 @@ footer{border-top:1px solid var(--border);padding:44px 0 max(44px,env(safe-area-
     </div>
 
     <div class="cmd arrive" style="--d:180ms">
-      <div class="cmd-h"><span class="dot"></span>one command, no device</div>
-<pre><span class="c"># clone, install, run — then open http://127.0.0.1:8765</span>
+      <div class="cmd-h"><span class="dot"></span>prefer the full Python stack? one command</div>
+<pre><span class="c"># the real Orchestrator + Figment stage, served to your browser</span>
 pip install -e <span class="t">"host-python[dev]"</span>
 python -m <span class="t">dreamlayer.simulator</span></pre>
     </div>
@@ -1211,6 +1280,10 @@ python -m <span class="t">dreamlayer.simulator</span></pre>
   </div>
 </footer>
 
+<script src="./assets/vendor/gsap.min.js" defer></script>
+<script src="./assets/vendor/ScrollTrigger.min.js" defer></script>
+<script src="./assets/vendor/lenis.min.js" defer></script>
+<script src="./assets/sim/halo-sim.js" defer></script>
 <script>
 /* ============================================================
    DreamLayer landing runtime.
@@ -1298,27 +1371,65 @@ var io=new IntersectionObserver(function(entries){
 },{rootMargin:"0px 0px -10% 0px",threshold:0.05});
 document.querySelectorAll(".arrive").forEach(function(el){ io.observe(el); });
 
-/* ---------- top bar + hero scroll-link ---------- */
+/* ---------- top bar + hero + veil scroll link ----------
+   Driven by GSAP ScrollTrigger (scrubbed, resolution-independent) with Lenis
+   momentum when they're available; a throttled scroll handler otherwise, so
+   the page never depends on the libraries loading. */
 var bar=document.getElementById("bar"), heroCore=document.getElementById("heroCore");
 var cue=document.querySelector(".scroll-cue");
-var ticking=false;
-function onScroll(){
-  if(ticking) return; ticking=true;
-  requestAnimationFrame(function(){
-    ticking=false;
-    var y=scrollY, vh=innerHeight;
-    var on=y>vh*0.72;
-    bar.classList.toggle("on",on); bar.setAttribute("aria-hidden",String(!on));
-    if(!reduced){
-      var p=Math.min(1,y/(vh*0.9));
-      heroCore.style.opacity=String(1-p*1.15);
-      heroCore.style.transform="translateY("+(-p*vh*0.16)+"px) scale("+(1-p*0.06)+")";
-      if(cue) cue.style.opacity=String(1-p*2.4);
-    }
-    veilScroll();
-  });
+function setBar(on){ bar.classList.toggle("on",on); bar.setAttribute("aria-hidden",String(!on)); }
+function applyHero(p){
+  heroCore.style.opacity=String(1-p*1.15);
+  heroCore.style.transform="translateY("+(-p*innerHeight*0.16)+"px) scale("+(1-p*0.06)+")";
+  if(cue) cue.style.opacity=String(1-p*2.4);
 }
-addEventListener("scroll",onScroll,{passive:true}); onScroll();
+function initScroll(){
+var G=window.gsap, ST=window.ScrollTrigger, L=window.Lenis;
+if(G && ST && !reduced){
+  G.registerPlugin(ST);
+  if(L){
+    // the canonical Lenis + GSAP unified RAF loop (Lenis README / GSAP docs):
+    // one ticker drives Lenis, ScrollTrigger updates on Lenis scroll, no lag smoothing.
+    var lenis=new L({ lerp:0.1, smoothWheel:true });
+    lenis.on("scroll", ST.update);
+    G.ticker.add(function(t){ lenis.raf(t*1000); });
+    G.ticker.lagSmoothing(0);
+    window.__lenis=lenis;
+    // route in-page anchors through Lenis so smooth-scroll and ScrollTrigger agree
+    document.querySelectorAll('a[href^="#"]').forEach(function(a){
+      a.addEventListener("click", function(e){
+        var id=a.getAttribute("href"); if(id.length<2) return;
+        var el=document.querySelector(id); if(!el) return;
+        e.preventDefault(); lenis.scrollTo(el, { offset:-10 });
+      });
+    });
+  }
+  ST.create({ trigger:"#top", start:"top top", end:"bottom top", scrub:true,
+    onUpdate:function(self){ applyHero(self.progress); } });
+  ST.create({ start:function(){ return innerHeight*0.72; }, end:"max",
+    onToggle:function(self){ setBar(self.isActive); } });
+  ST.create({ trigger:"#veil", start:"top top", end:"bottom bottom", scrub:true,
+    onUpdate:function(){ applyVeil(); } });
+  addEventListener("load", function(){ ST.refresh(); });
+}else{
+  var ticking=false;
+  function onScroll(){
+    if(ticking) return; ticking=true;
+    requestAnimationFrame(function(){
+      ticking=false;
+      var y=scrollY, vh=innerHeight;
+      setBar(y>vh*0.72);
+      if(!reduced) applyHero(Math.min(1,y/(vh*0.9)));
+      applyVeil();
+    });
+  }
+  addEventListener("scroll",onScroll,{passive:true}); onScroll();
+}
+}
+/* the deferred GSAP/Lenis bundles execute before DOMContentLoaded, so wait for
+   it before deciding ScrollTrigger-vs-fallback (the inline script parses first) */
+if(document.readyState!=="loading") initScroll();
+else document.addEventListener("DOMContentLoaded", initScroll);
 
 /* ---------- sticky story ---------- */
 var scope=document.getElementById("scope");
@@ -1390,7 +1501,7 @@ new IntersectionObserver(function(en){
 var veil=document.getElementById("veil"),
     veilWorld=document.getElementById("veilWorld"),
     veilCore=document.getElementById("veilCore");
-function veilScroll(){
+function applyVeil(){
   var r=veil.getBoundingClientRect(), vh=innerHeight;
   var total=r.height-vh;
   var p=Math.max(0,Math.min(1,-r.top/total));       // 0 → 1 through the section
@@ -1404,7 +1515,7 @@ function veilScroll(){
   veilCore.style.transform="translateY("+((1-rise)*14)+"px)";
   veilCore.style.pointerEvents=rise>0.5?"auto":"none";
 }
-veilScroll();
+applyVeil();
 
 /* ---------- live HUD orbs (canvas) ----------
    Replaces autoplay <video>, which iOS blocks in Low Power Mode. These
@@ -1728,6 +1839,80 @@ veilScroll();
     step.insertBefore(wrap, step.firstChild);
   });
 })();
+})();
+
+/* ============================================================
+   Hamburger drawer + the live glass in the hero and the sim section.
+   Both glasses run the in-browser Halo engine (assets/sim/halo-sim.js)
+   on a scripted auto-demo, so the hero and the "try it" section show a
+   living HUD instead of a still. Deferred until the engine has loaded.
+   ============================================================ */
+(function(){
+  "use strict";
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- hamburger drawer ---- */
+  var menuBtn=document.getElementById("menuBtn"), drawer=document.getElementById("drawer");
+  function setMenu(open){
+    document.body.classList.toggle("menu-open",open);
+    menuBtn.setAttribute("aria-expanded",String(open));
+    drawer.setAttribute("aria-hidden",String(!open));
+  }
+  if(menuBtn){
+    menuBtn.addEventListener("click",function(){ setMenu(!document.body.classList.contains("menu-open")); });
+    drawer.addEventListener("click",function(e){
+      var a=e.target.closest("a"); if(a || e.target===drawer) setMenu(false);
+    });
+    addEventListener("keydown",function(e){ if(e.key==="Escape") setMenu(false); });
+  }
+
+  /* ---- the live glasses: a gentle scripted loop of the real loop ---- */
+  function startGlass(canvas, opts){
+    if(!canvas || !window.Halo) return null;
+    var sim=new Halo.Sim(), glass=new Halo.Glass(canvas, sim);
+    addEventListener("resize",function(){ glass.resize(); glass.render(); },{passive:true});
+    if(reduced){ sim.handleVoice("set a timer for 5 minutes"); glass.render(); return { sim:sim, glass:glass }; }
+    glass.start();
+    var say=opts && opts.onSay;
+    function v(text,look){ var r=sim.handleVoice(text,look); if(say && r.say) say(r.say, text); }
+    function glance(look){ var r=sim.lookAt(look); if(say && r.say) say(r.say); }
+    // a looping story: timer → meet + recall → stash + locate → veil → reset
+    var script=[
+      [600,  function(){ v("set a timer for 5 minutes"); }],
+      [3400, function(){ v("this is my colleague Sarah, she runs marketing","face-a"); }],
+      [1900, function(){ v("Sarah owes me twenty dollars"); }],
+      [1500, function(){ glance("face-a"); }],
+      [4200, function(){ v("I left my bike at the north rack"); }],
+      [2200, function(){ v("where's my bike"); }],
+      [3600, function(){ sim.veil(true); }],
+      [2600, function(){ sim.veil(false); }],
+      [2600, function(){ sim.figment=null; sim.card=null; sim.people=[]; sim.waypath={}; sim._faceOf={}; }],
+    ];
+    var i=0, timer=0, alive=true;
+    function next(){
+      if(!alive) return;
+      var step=script[i % script.length]; i++;
+      timer=setTimeout(function(){ try{ step[1](); }catch(e){} next(); }, step[0]);
+    }
+    // only animate the loop when the canvas is on-screen (and motion is welcome)
+    var io=new IntersectionObserver(function(en){
+      var vis=en[0].isIntersecting;
+      if(vis){ glass._on=true; glass.start(); if(!timer && !reduced) next(); }
+      else { glass.stop(); clearTimeout(timer); timer=0; }
+    },{threshold:0.15});
+    io.observe(canvas);
+    return { sim:sim, glass:glass };
+  }
+
+  function boot(){
+    if(!window.Halo){ return setTimeout(boot, 60); }   // wait for the deferred engine
+    startGlass(document.getElementById("heroGlass"));
+    var capEl=document.getElementById("simEmbedCap");
+    startGlass(document.getElementById("simEmbed"), { onSay:function(sayLine){
+      if(capEl) capEl.innerHTML="<b>Oracle</b> " + (sayLine||"").replace(/[<>&]/g,"");
+    }});
+  }
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",boot); else boot();
 })();
 </script>
 </body>
