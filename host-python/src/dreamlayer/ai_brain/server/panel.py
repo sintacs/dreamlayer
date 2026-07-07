@@ -177,8 +177,57 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
   #toast.show{opacity:1;transform:translate(-50%,0)}
   #toast .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-right:9px;vertical-align:middle}
   a{color:var(--memory)}
+  /* --- cinematic restyle: a dim dusk still + film grain + vignette so the
+     Brain feels like the product, not a form. All overlays are inert. --- */
+  .cine-bg{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:#05090b url("/panel-assets/still-dusk.webp") center/cover no-repeat;
+    opacity:.16;filter:blur(2px) saturate(1.06)}
+  .cine-bg::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(180deg,rgba(3,6,8,.4),rgba(3,6,8,.9) 64%)}
+  .grain{position:fixed;inset:0;z-index:1;opacity:.05;mix-blend-mode:overlay;pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  .vignette{position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(120% 85% at 50% -5%,transparent 55%,rgba(0,0,0,.55))}
+  .wrap{position:relative;z-index:2}
+  /* cinematic header band — a visible dusk still behind the title, faded out */
+  .head-cine{position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:100vw;height:360px;z-index:-1;pointer-events:none;
+    background:#05090b url("/panel-assets/still-dusk.webp") center 28%/cover no-repeat;
+    opacity:.62;-webkit-mask-image:linear-gradient(180deg,#000 0%,#000 34%,transparent 96%);
+    mask-image:linear-gradient(180deg,#000 0%,#000 34%,transparent 96%)}
+  .head-cine::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(180deg,rgba(3,6,8,.15),rgba(3,6,8,.6) 68%,var(--bg))}
+  .bar,h1,.sub{position:relative}
+  h1{text-shadow:0 2px 30px rgba(0,0,0,.6)}
+  /* stronger glass on cards so the backdrop reads clearly through them */
+  main>section{background:linear-gradient(180deg,rgba(18,29,33,.68),rgba(12,18,20,.8));
+    border-color:rgba(120,180,180,.16);
+    -webkit-backdrop-filter:blur(16px) saturate(1.18);backdrop-filter:blur(16px) saturate(1.18)}
+  @media (prefers-reduced-motion:reduce){.grain{display:none}}
+  /* feature explainers — a chip grid that opens an illustrated drawer */
+  .xgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:6px}
+  .xchip{display:flex;align-items:center;gap:9px;text-align:left;cursor:pointer;
+    background:var(--surf2);border:1px solid var(--line);border-radius:var(--r-sm);
+    padding:11px 13px;color:var(--text);font:inherit;font-size:.92rem;transition:border-color .15s,transform .15s var(--ease)}
+  .xchip:hover{border-color:var(--memory);transform:translateY(-1px)}
+  .xchip .xdot{width:7px;height:7px;border-radius:50%;background:var(--memory);flex:none}
+  .xmodal{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    padding:24px;background:rgba(3,6,8,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  .xmodal.on{display:flex}
+  .xcard{max-width:440px;width:100%;background:linear-gradient(180deg,var(--surf2),var(--surf));
+    border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .xcard img{display:block;width:100%;background:#05090b;border-bottom:1px solid var(--line)}
+  .xcard .xbody{padding:18px 20px}
+  .xcard .xbody h3{margin:2px 0 8px;font-size:1.3rem;letter-spacing:-.02em}
+  .xcard .xbody p{margin:0;color:var(--muted);line-height:1.6}
+  .xcard .xclose{margin:0 20px 20px;padding:9px 16px}
 </style></head><body>
+<div class="cine-bg" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
 <div class="wrap">
+  <div class="head-cine" aria-hidden="true"></div>
   <div class="bar"><span class="brand"><b>Dream</b>Layer</span>
     <span class="live"><span class="dot"></span><span id="livetext">Brain online</span></span></div>
   <h1>Brain</h1>
@@ -188,6 +237,13 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
   <section>
     <div class="eyebrow">System</div><h2>What's connected</h2>
     <div id="sysrows"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Learn</div><h2>How it works</h2>
+    <p class="lead">The glasses show cards; this Brain makes them. Tap a feature to see what it does
+      and the card it draws.</p>
+    <div class="xgrid" id="xgrid"></div>
   </section>
 
   <section>
@@ -272,8 +328,18 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
 
   <section>
     <div class="eyebrow">Cloud provider</div><h2>Wire the cloud tier</h2>
-    <p class="lead">The Cloud switch decides whether the cloud is <i>allowed</i>. To make it actually
-      answer, point it at an OpenAI-compatible provider. The key is stored only on this Mac mini and never shown again.</p>
+    <p class="lead">Pick a provider — OpenAI, Anthropic, Gemini, or OpenRouter — or run a model
+      locally with <b>Ollama</b> (free, no key, nothing leaves your Mac). Custom points at any
+      OpenAI-compatible endpoint. Any key is stored only on this Mac mini and never shown again.</p>
+    <div class="row" style="margin-bottom:12px">
+      <select id="cprov" onchange="provPreset(true)" style="max-width:220px">
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="ollama">Ollama · local (free)</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select></div>
     <div class="row">
       <input type="text" id="cbase" placeholder="https://api.openai.com" style="max-width:230px">
       <input type="password" id="ckey" placeholder="API key" style="max-width:200px">
@@ -282,6 +348,17 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
       <button class="sm ghost" onclick="testCloud()">Test connection</button>
       <button class="sm" onclick="saveCloud()">Save cloud</button></div>
     <div id="cloudStatus"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Plan</div><h2>Free · local &amp; open</h2>
+    <p class="lead">DreamLayer runs entirely on your own hardware, on code you can read. Every feature
+      here is free — bring your own AI key, or run a model locally with Ollama and pay nothing at all.</p>
+    <div class="conn">
+      <div><div class="conn-t">DreamLayer&nbsp;Cloud <span style="color:var(--amber)">· coming soon</span></div>
+        <div class="conn-s">An optional hosted tier: managed AI with no key to wire, cross-device sync,
+          and a private relay for the glasses mesh. The local app always stays free and open.</div></div>
+      <button class="ghost" disabled style="opacity:.55;cursor:default">Notify me</button></div>
   </section>
 
   <section>
@@ -330,10 +407,13 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
         <input type="text" id="ovis" placeholder="vision model" style="max-width:170px"></div>
     </div>
     <div id="modelStatus"></div>
-    <div class="row" style="margin-top:16px;justify-content:space-between">
-      <label class="tog" style="display:flex;gap:10px;align-items:center;color:var(--muted);cursor:pointer">
-        <input type="checkbox" id="email" style="accent-color:var(--memory)"> Read email &amp; iMessage</label>
+    <div class="row" style="margin-top:16px;justify-content:flex-end">
       <button class="sm" onclick="saveModel()">Save</button></div>
+    <div class="conn" style="margin-top:14px">
+      <div><div class="conn-t">Read email &amp; iMessage</div>
+        <div class="conn-s">Let the Brain read Mail and Messages so a glance can catch a reply you owe.
+          Nothing is sent; it stays on this Mac. Saves the moment you flip it.</div></div>
+      <label class="sw"><input type="checkbox" id="email" onchange="saveEmail()"><span class="track"></span></label></div>
   </section>
 
   <section>
@@ -407,6 +487,14 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
   </main>
 </div>
 
+<div class="xmodal" id="xmodal" onclick="if(event.target===this)closeX()">
+  <div class="xcard">
+    <img id="ximg" alt="" src="">
+    <div class="xbody"><div class="eyebrow" id="xkick"></div><h3 id="xtitle"></h3><p id="xtext"></p></div>
+    <button class="ghost xclose" onclick="closeX()">Done</button>
+  </div>
+</div>
+
 <div class="overlay" id="browser">
   <div class="modal">
     <h3>Choose a folder</h3>
@@ -431,6 +519,24 @@ const esc=s=>(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'
 const $=id=>document.getElementById(id);
 let modelSel="keyword", ollamaOK=null, browsePath="";
 
+/* feature explainers — each pairs a real HUD card image with what it does */
+const EXPLAINERS=[
+  {t:"Oracle",img:"oracle_reply.png",b:"Ask anything out loud. Oracle answers on the glass in a line or two — drawn from your own memory first, the web only when it must."},
+  {t:"Morning brief",img:"morning_brief.png",b:"Each morning, a short synthesis of what's new and what's on you: messages, mail, calendar, and anything you're tracking."},
+  {t:"Truth gauge",img:"truth_gauge.png",b:"When a claim sounds off, a quiet gauge shows how well it holds up — sourced and checked, never guessed."},
+  {t:"Face recall",img:"person_dossier.png",b:"Glance at someone you've met and their name, how you know them, and your last note surface — privately, only to you."},
+  {t:"Object recall",img:"object_recall.png",b:"“Where are my keys?” The card shows where you last saw the thing, as a place you can walk back to."},
+  {t:"Proactive memory",img:"proactive_memory.png",b:"The layer surfaces what you'd want before you ask — the doc due Friday, the promise you made, the name you'll need."},
+  {t:"Live caption",img:"live_caption.png",b:"Speech becomes text on the glass in real time — for a loud room, a fast talker, or a language you're still learning."},
+  {t:"Privacy veil",img:"privacy_veil.png",b:"Drop the veil and the whole layer goes dark — nothing captured, nothing shown — until you lift it. Yours to command."},
+];
+function renderExplainers(){const g=$("xgrid");if(!g)return;
+  g.innerHTML=EXPLAINERS.map((x,i)=>`<button class="xchip" onclick="openX(${i})"><span class="xdot"></span>${esc(x.t)}</button>`).join("");}
+function openX(i){const x=EXPLAINERS[i];$("ximg").src="/panel-assets/"+x.img;$("xkick").textContent="How it works";
+  $("xtitle").textContent=x.t;$("xtext").textContent=x.b;$("xmodal").classList.add("on");}
+function closeX(){$("xmodal").classList.remove("on");}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeX();});
+
 let toastT; function toast(m){const t=$("toast");t.innerHTML='<span class="dot"></span>'+esc(m);
   t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),1900);}
 
@@ -451,8 +557,10 @@ async function load(){
   const cloud=$("cloud");cloud.checked=!incog&&!!c.config.cloud_enabled;cloud.disabled=incog;
   $("incognito").checked=incog;
   // cloud provider
+  $("cprov").value=c.config.cloud_provider||"openai";
   $("cbase").value=c.config.cloud_base_url||"";$("cmodel").value=c.config.cloud_model||"";
   $("ckey").placeholder=c.config.cloud_api_key==="set"?"key saved — leave blank to keep":"API key";
+  provPreset(false);   // reflect key-field visibility without clobbering saved values
   // knowledge filters
   $("semantic").checked=!!c.config.semantic_search;
   $("exts").value=(c.config.index_extensions||[]).join(",");
@@ -706,8 +814,13 @@ async function pullModel(name){const o=$("pullOut");
 async function saveModel(silent){
   await api("/dreamlayer/config",{method:"POST",body:JSON.stringify({model:modelSel,
     ollama_url:$("ourl").value,ollama_chat_model:$("ochat").value,
-    ollama_vision_model:$("ovis").value,email_enabled:$("email").checked})});
+    ollama_vision_model:$("ovis").value})});
   if(!silent)toast("Saved"); if(modelSel==="ollama")checkModel(); load();
+}
+async function saveEmail(){   // the email/iMessage switch saves instantly, like the other toggles
+  await api("/dreamlayer/config",{method:"POST",
+    body:JSON.stringify({email_enabled:$("email").checked})});
+  toast($("email").checked?"Reading email & iMessage":"Email & iMessage off"); load();
 }
 async function ask(){const q=$("q").value.trim();if(!q)return;
   $("answer").innerHTML='<div class="ans"><div class="shimmer"></div><div class="shimmer s2"></div></div>';
@@ -745,8 +858,22 @@ async function loadHistory(){const h=await api("/dreamlayer/history");
     ||'<li class="empty">Nothing yet — add a folder, ask a question, pair your phone.</li>';
 }
 
-/* cloud provider */
-async function saveCloud(){const body={cloud_base_url:$("cbase").value,cloud_model:$("cmodel").value};
+/* cloud provider — presets mirror backends.PROVIDER_PRESETS */
+const CPROV={
+  openai:{base:"https://api.openai.com",model:"gpt-4o-mini",key:true},
+  anthropic:{base:"https://api.anthropic.com",model:"claude-3-5-haiku-latest",key:true},
+  gemini:{base:"https://generativelanguage.googleapis.com",model:"gemini-1.5-flash",key:true},
+  openrouter:{base:"https://openrouter.ai/api",model:"openai/gpt-4o-mini",key:true},
+  ollama:{base:"http://localhost:11434",model:"llama3.2",key:false},
+  custom:{base:"",model:"",key:true},
+};
+function provPreset(apply){const p=CPROV[$("cprov").value]||CPROV.custom;
+  if(apply){$("cbase").value=p.base;$("cmodel").value=p.model;}      // manual switch → fill
+  $("cbase").placeholder=p.base||"https://…";$("cmodel").placeholder=p.model||"model name";
+  $("ckey").style.display=p.key?"":"none";                          // Ollama-local needs no key
+}
+async function saveCloud(){const body={cloud_provider:$("cprov").value,
+    cloud_base_url:$("cbase").value,cloud_model:$("cmodel").value};
   const k=$("ckey").value.trim(); if(k) body.cloud_api_key=k;
   await api("/dreamlayer/config",{method:"POST",body:JSON.stringify(body)});$("ckey").value="";
   toast("Cloud provider saved");load();}
@@ -896,6 +1023,7 @@ window.removePlugin=removePlugin;
 
 load();
 loadPlugins();
+renderExplainers();
 setInterval(refreshStatus,4000);
 setInterval(()=>{if(modelSel==="ollama")checkModel();},15000);
 </script></body></html>"""
