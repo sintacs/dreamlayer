@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DreamLayer — A layer of intelligence for your glasses</title>
+    <meta
+      name="description"
+      content="DreamLayer is an intelligence and memory layer for capable smart glasses. It fact-checks the room, answers before you speak, and remembers what you owe — and it all stays on your devices. Runs on Brilliant Labs Halo today."
+    />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:title" content="DreamLayer — A layer of intelligence for your glasses" />
+    <meta
+      property="og:description"
+      content="Live fact-checking, answers before you speak, and a memory that stays on your devices. Runs on Brilliant Labs Halo today."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="preload"
+      as="image"
+      type="image/avif"
+      href="assets/plates/hero-wide.avif"
+      media="(min-aspect-ratio: 1/1)"
+      fetchpriority="high"
+    />
+    <link
+      rel="preload"
+      as="image"
+      type="image/avif"
+      href="assets/plates/hero-tall.avif"
+      media="(max-aspect-ratio: 1/1)"
+      fetchpriority="high"
+    />
+    <link rel="preload" as="image" type="image/webp" href="assets/scenes/answer_ahead/beat_01.webp" />
+
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="DreamLayer, back to top">dream<span>layer</span></a>
+      <a class="header-cta link" href="#close">Early access</a>
+    </header>
+
+    <main id="main">
+      <!-- 1. Hero -->
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/hero-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/hero-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/hero-tall.avif" />
+            <img src="assets/plates/hero-tall.webp" alt="" width="810" height="1440" fetchpriority="high" />
+          </picture>
+          <canvas id="dreamfield" class="dreamfield"></canvas>
+          <div class="stage-vignette"></div>
+          <div class="hero-halo"></div>
+          <div class="stage-frame">
+            <img
+              class="beat hero-card"
+              src="assets/scenes/answer_ahead/beat_01.webp"
+              alt=""
+              width="561"
+              height="561"
+            />
+          </div>
+        </div>
+        <p class="sr-only">
+          A first-person view of a dim room. A translucent heads-up card floats in the waveguide,
+          showing an answer the wearer is about to need, drawn in glowing teal light.
+        </p>
+        <div class="hero-copy">
+          <p class="eyebrow">An intelligence and memory layer for smart glasses</p>
+          <h1 class="display" id="hero-title">
+            <span class="hero-line">A layer of intelligence</span>
+            <span class="hero-line">for your glasses.</span>
+          </h1>
+          <p class="lede hero-lede">
+            DreamLayer listens with you, remembers for you, and tells you the truth — and it all
+            stays on your devices. The cloud is a choice, not a default.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#close" data-waitlist-jump>Request early access</a>
+            <p class="caption">Runs on Brilliant Labs Halo today. Built for whatever you wear next.</p>
+          </div>
+        </div>
+        <div class="scroll-cue" aria-hidden="true"></div>
+      </section>
+
+      <!-- 2. The shift -->
+      <section class="shift" aria-label="Why DreamLayer exists">
+        <div class="shift-inner">
+          <p class="shift-line headline">You were in the room. You heard the number. You shook the hand.</p>
+          <p class="shift-line headline">
+            By Thursday the number has changed, the name is gone, and the promise is yours alone to
+            carry.
+          </p>
+          <p class="shift-line headline shift-turn">
+            Your glasses were there too. DreamLayer makes sure one of you remembers.
+          </p>
+          <p class="shift-kicker lede">
+            Not another gadget. A layer that runs on the glasses you already chose.
+          </p>
+        </div>
+      </section>
+
+      <!-- 3. Act I: Veritas -->
+      <section class="act" id="act-veritas" data-scene="veritas" aria-labelledby="veritas-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/veritas-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/veritas-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/veritas-tall.avif" />
+            <img src="assets/plates/veritas-tall.webp" alt="" width="810" height="1440" loading="lazy" />
+          </picture>
+          <div class="stage-vignette"></div>
+          <div class="stage-frame">
+            <img
+              class="beat beat-hold"
+              src="assets/scenes/veritas/beat_02.webp"
+              alt=""
+              width="561"
+              height="561"
+              loading="lazy"
+              style="left: 50%; top: 42%; width: 52%"
+            />
+          </div>
+        </div>
+        <p class="sr-only">
+          Across a table, someone restates a deal figure. A heads-up card quietly flags that the
+          claim contradicts what he said earlier: two million then, three million now.
+        </p>
+        <div class="act-copy">
+          <p class="eyebrow">Act I — Veritas</p>
+          <h2 class="headline" id="veritas-title">The number that didn't add up.</h2>
+          <div class="act-lines">
+            <p data-t="1.2" class="lede">Tuesday, he told you the deal settled at two million.</p>
+            <p data-t="4.8" class="lede">Thursday, it has grown to three.</p>
+            <p data-t="8.2" class="lede">Veritas noticed. Quietly, in your eye only.</p>
+            <p data-t="11.0" class="caption act-note">
+              A live fact-checker that remembers what people tell you — and catches the moment it
+              stops holding up.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Act II: Answer-ahead -->
+      <section class="act" id="act-answer" data-scene="answer_ahead" aria-labelledby="answer-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/answer_ahead-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/answer_ahead-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/answer_ahead-tall.avif" />
+            <img src="assets/plates/answer_ahead-tall.webp" alt="" width="810" height="1440" loading="lazy" />
+          </picture>
+          <div class="stage-vignette"></div>
+          <div class="stage-frame">
+            <img
+              class="beat beat-hold"
+              src="assets/scenes/answer_ahead/beat_01.webp"
+              alt=""
+              width="561"
+              height="561"
+              loading="lazy"
+              style="left: 50%; top: 44%; width: 52%"
+            />
+          </div>
+        </div>
+        <p class="sr-only">
+          A colleague asks when the team last shipped to Denver. Before the wearer says a word, a
+          heads-up card surfaces the answer: March 14th, two pallets, from their own files.
+        </p>
+        <div class="act-copy">
+          <p class="eyebrow">Act II — Answer-ahead</p>
+          <h2 class="headline" id="answer-title">The answer, before you speak.</h2>
+          <div class="act-lines">
+            <p data-t="1.2" class="lede">Priya asks the room: when did we last ship to Denver?</p>
+            <p data-t="3.8" class="lede">The answer is already floating at the edge of your eye.</p>
+            <p data-t="6.8" class="lede">You say it like you never forgot. No phone. No pause.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Act III: Memory -->
+      <section class="act" id="act-memory" data-scene="owe_someone" aria-labelledby="memory-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/owe_someone-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/owe_someone-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/owe_someone-tall.avif" />
+            <img src="assets/plates/owe_someone-tall.webp" alt="" width="810" height="1440" loading="lazy" />
+          </picture>
+          <div class="stage-vignette"></div>
+          <div class="stage-frame">
+            <img
+              class="beat beat-hold"
+              src="assets/scenes/owe_someone/beat_01.webp"
+              alt=""
+              width="561"
+              height="561"
+              loading="lazy"
+              style="left: 50%; top: 44%; width: 52%"
+            />
+          </div>
+        </div>
+        <p class="sr-only">
+          A quiet alert notes that Marcus is two minutes away and the wearer owes him a signed
+          lease. A commitment card surfaces the promise, then confirms it was handed off.
+        </p>
+        <div class="act-copy">
+          <p class="eyebrow">Act III — Memory</p>
+          <h2 class="headline" id="memory-title">It remembers what you owe.</h2>
+          <div class="act-lines">
+            <p data-t="1.4" class="lede">Marcus is two minutes away. A quiet tap: you owe him the lease.</p>
+            <p data-t="6.0" class="lede">You said you'd send it. DreamLayer heard you say it.</p>
+            <p data-t="11.0" class="lede">Handed off before he reaches the door.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Act IV: Oracle -->
+      <section class="act" id="act-oracle" data-scene="oracle" aria-labelledby="oracle-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/oracle-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/oracle-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/oracle-tall.avif" />
+            <img src="assets/plates/oracle-tall.webp" alt="" width="810" height="1440" loading="lazy" />
+          </picture>
+          <div class="stage-vignette"></div>
+          <div class="stage-frame">
+            <img
+              class="beat beat-hold"
+              src="assets/scenes/oracle/beat_02.webp"
+              alt=""
+              width="561"
+              height="561"
+              loading="lazy"
+              style="left: 50%; top: 44%; width: 52%"
+            />
+          </div>
+        </div>
+        <p class="sr-only">
+          The wearer asks out loud to book a table and let Priya know. A listening indicator
+          appears, then a reply card confirms: booked for 7:30, and Priya has the time.
+        </p>
+        <div class="act-copy">
+          <p class="eyebrow">Act IV — Oracle</p>
+          <h2 class="headline" id="oracle-title">Ask it to do anything.</h2>
+          <div class="act-lines">
+            <p data-t="1.0" class="lede">Say the word. It hears you — and only for you.</p>
+            <p data-t="3.4" class="lede">One sentence, both errands.</p>
+            <p data-t="6.0" class="lede">The table is booked and Priya knows the time. The reply is the receipt.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. Catalog -->
+      <section class="catalog" aria-labelledby="catalog-title">
+        <div class="catalog-head">
+          <p class="eyebrow">The whole layer</p>
+          <h2 class="headline" id="catalog-title">Everything it holds.</h2>
+          <p class="lede">
+            One layer, a day's worth of quiet help. Every card below is the actual interface,
+            drawn by the product's own renderer.
+          </p>
+        </div>
+        <ul class="tile-grid">
+          <li class="tile">
+            <img src="assets/cards/fact_check.webp" alt="Veritas HUD card flagging a self-contradiction in a spoken claim" loading="lazy" width="256" height="256" />
+            <h3 class="title">Veritas</h3>
+            <p class="caption">Claims checked live, against what you were told before.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/answer_ahead.webp" alt="Answer-ahead HUD card surfacing an answer to the room's question" loading="lazy" width="256" height="256" />
+            <h3 class="title">Answer-ahead</h3>
+            <p class="caption">The room's question, answered before you reach for a phone.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/oracle_reply.webp" alt="Oracle reply HUD card confirming a completed request" loading="lazy" width="256" height="256" />
+            <h3 class="title">Oracle</h3>
+            <p class="caption">Ask for anything; the reply is the receipt.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/hark.webp" alt="Hark HUD card tapping the wearer about something timely" loading="lazy" width="256" height="256" />
+            <h3 class="title">Hark</h3>
+            <p class="caption">A tap on the shoulder at exactly the right moment.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/commitment_recall.webp" alt="Commitment recall HUD card showing a promise that is due" loading="lazy" width="256" height="256" />
+            <h3 class="title">Commitments</h3>
+            <p class="caption">What you owe, surfaced before it's overdue.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/commitment_drift.webp" alt="Commitment drift HUD card showing a promise starting to slip" loading="lazy" width="256" height="256" />
+            <h3 class="title">Commitment Drift</h3>
+            <p class="caption">Promises glow before they slip.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/object_recall.webp" alt="Object recall HUD card showing where the keys were left" loading="lazy" width="256" height="256" />
+            <h3 class="title">Object Recall</h3>
+            <p class="caption">Where you left it, down to the detail beside it.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/morning_brief.webp" alt="Morning brief HUD card listing the day's meetings and tasks" loading="lazy" width="256" height="256" />
+            <h3 class="title">Morning Brief</h3>
+            <p class="caption">Your day, waiting, the moment you put them on.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/person_dossier.webp" alt="Person dossier HUD card recalling who someone is and the last conversation" loading="lazy" width="256" height="256" />
+            <h3 class="title">Person Dossier</h3>
+            <p class="caption">Who this is, and what you last talked about.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/truth_gauge.webp" alt="Truth gauge HUD card weighing the credibility of a claim" loading="lazy" width="256" height="256" />
+            <h3 class="title">Truth Gauge</h3>
+            <p class="caption">How much weight a claim deserves.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/live_caption.webp" alt="Live caption HUD card transcribing conversation in real time" loading="lazy" width="256" height="256" />
+            <h3 class="title">Live Captions</h3>
+            <p class="caption">The conversation, readable as it happens.</p>
+          </li>
+          <li class="tile">
+            <img src="assets/cards/saved_memory.webp" alt="Saved memory HUD card confirming a moment was kept" loading="lazy" width="256" height="256" />
+            <h3 class="title">Saved Memory</h3>
+            <p class="caption">One word saves the moment for good.</p>
+          </li>
+          <li class="tile tile-motion">
+            <picture>
+              <source media="(prefers-reduced-motion: reduce)" srcset="assets/motion/wake_and_aurora-still.webp" />
+              <img src="assets/motion/wake_and_aurora.webp" alt="The real wake ring and aurora idle animation from the glasses display" loading="lazy" width="256" height="256" />
+            </picture>
+            <h3 class="title">Wake</h3>
+            <p class="caption">The wake ring, drawn by the device itself.</p>
+          </li>
+          <li class="tile tile-motion">
+            <picture>
+              <source media="(prefers-reduced-motion: reduce)" srcset="assets/motion/save_moment-still.webp" />
+              <img src="assets/motion/save_moment.webp" alt="The real save-moment burst animation from the glasses display" loading="lazy" width="256" height="256" />
+            </picture>
+            <h3 class="title">Save</h3>
+            <p class="caption">A memory, kept, with a flourish you can feel.</p>
+          </li>
+          <li class="tile tile-motion">
+            <picture>
+              <source media="(prefers-reduced-motion: reduce)" srcset="assets/motion/promise_shatter-still.webp" />
+              <img src="assets/motion/promise_shatter.webp" alt="The real promise-shatter animation from the glasses display" loading="lazy" width="256" height="256" />
+            </picture>
+            <h3 class="title">Broken Promise</h3>
+            <p class="caption">A promise, broken — and shown breaking.</p>
+          </li>
+        </ul>
+        <div class="marquee" aria-hidden="true">
+          <div class="marquee-track">
+            <img src="assets/cards/morning_brief.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/query_listening.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/answer_ahead.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/fact_check.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/hark.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/object_recall.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/commitment_recall.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/person_dossier.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/truth_gauge.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/saved_memory.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/privacy_veil.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/forget_last.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/morning_brief.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/query_listening.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/answer_ahead.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/fact_check.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/hark.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/object_recall.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/commitment_recall.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/person_dossier.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/truth_gauge.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/saved_memory.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/privacy_veil.webp" alt="" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/forget_last.webp" alt="" loading="lazy" width="256" height="256" />
+          </div>
+        </div>
+        <p class="caption marquee-note">Drawn by the shipping renderer — 256 pixels, one eye.</p>
+      </section>
+
+      <!-- 8. Privacy -->
+      <section class="privacy" aria-labelledby="privacy-title">
+        <div class="privacy-inner">
+          <div class="privacy-copy">
+            <p class="eyebrow">Yours alone</p>
+            <h2 class="headline" id="privacy-title">Local first. Yours to keep.</h2>
+            <p class="lede">
+              Your memories live on your devices — the glasses, your phone, a machine you own.
+              Nothing leaves them unless you send it. The cloud is a switch you own, not a default
+              you accept.
+            </p>
+            <ul class="privacy-rows">
+              <li class="mono">On-device by default</li>
+              <li class="mono">Cloud strictly opt-in</li>
+              <li class="mono">Forget on command</li>
+            </ul>
+            <p class="caption">
+              One gesture and the glasses go fully deaf and blind. Say forget, and the last minutes
+              are gone for good.
+            </p>
+          </div>
+          <div class="privacy-cards">
+            <img src="assets/cards/privacy_veil.webp" alt="Privacy veil HUD card showing the glasses fully paused, seeing and hearing nothing" loading="lazy" width="256" height="256" />
+            <img src="assets/cards/forget_last.webp" alt="Forget HUD card confirming the last minutes were erased" loading="lazy" width="256" height="256" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. Hardware -->
+      <section class="hardware" aria-labelledby="hardware-title">
+        <div class="hardware-inner">
+          <picture class="hardware-visual">
+            <source media="(prefers-reduced-motion: reduce)" srcset="assets/motion/prism_bloom-still.webp" />
+            <img src="assets/motion/prism_bloom.webp" alt="The real prism bloom animation from the glasses' round display" loading="lazy" width="256" height="256" />
+          </picture>
+          <p class="eyebrow">Hardware</p>
+          <h2 class="headline" id="hardware-title">Halo today. Any capable glasses next.</h2>
+          <p class="lede">
+            DreamLayer runs on Brilliant Labs Halo right now. And because it is a layer — not a
+            pair of glasses — when the next capable pair arrives, your memory comes with you.
+          </p>
+        </div>
+      </section>
+
+      <!-- 10. Close -->
+      <section class="close" id="close" aria-labelledby="close-title">
+        <div class="stage" aria-hidden="true">
+          <picture class="stage-plate">
+            <source type="image/avif" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/close-wide.avif" />
+            <source type="image/webp" media="(min-aspect-ratio: 1/1)" srcset="assets/plates/close-wide.webp" />
+            <source type="image/avif" srcset="assets/plates/close-tall.avif" />
+            <img src="assets/plates/close-tall.webp" alt="" width="810" height="1440" loading="lazy" />
+          </picture>
+          <div class="stage-vignette"></div>
+        </div>
+        <div class="close-halo" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="close-copy">
+          <h2 class="display" id="close-title">Be first in line.</h2>
+          <p class="lede">Early access opens in waves. Join the list, and we'll write when it's your turn.</p>
+          <div class="close-actions" data-waitlist>
+            <a
+              class="button"
+              href="mailto:info@labyrinth.vision?subject=DreamLayer%20early%20access&body=I%27d%20like%20early%20access%20to%20DreamLayer.%0A%0AGlasses%20I%20wear%20today%20(if%20any)%3A%20"
+              >Request early access</a
+            >
+          </div>
+          <p class="caption">No hardware required to join.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <p class="wordmark">dream<span>layer</span></p>
+        <p class="lede">A memory layer for the real world.</p>
+        <p class="caption">Built for Brilliant Labs Halo. Yours to run, yours to keep.</p>
+        <nav class="footer-links" aria-label="Footer">
+          <a class="link" href="mailto:info@labyrinth.vision">info@labyrinth.vision</a>
+          <a class="link" href="https://github.com/LetsGetToWorkBro/dreamlayer">Source on GitHub</a>
+        </nav>
+        <p class="caption footer-note">
+          Every HUD card on this page is real output from the DreamLayer renderer — nothing is a
+          mockup.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

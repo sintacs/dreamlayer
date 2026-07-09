@@ -1,0 +1,53 @@
+/*
+ * Design tokens, derived 1:1 from the product:
+ *   host-python/src/dreamlayer/hud/themes.py  (Meridian HUD palette)
+ *   phone-app/src/ui/theme/*                  (phone surfaces, type, motion)
+ *   phone-app/DESIGN.md                       (motion vocabulary)
+ * The site and the glasses share one visual language; do not invent values here.
+ */
+
+:root {
+  /* Grounds */
+  --bg: #000000;
+  --surface: #0e1416;
+  --surface-elevated: #141f23;
+
+  /* Ink */
+  --text: #ecf0f1;
+  --text-secondary: #a8b8c0;
+  --text-ghost: #58686f;
+
+  /* Accents. One accent per surface; color is meaning, not garnish. */
+  --accent: #2cc79a;
+  --accent-dim: #1a7a60;
+  --attention: #e06b52;
+  --success: #56d364;
+  --amber: #ffaa00;
+  --mint: #b8ffe9;
+
+  /* Lines */
+  --border: #2a3c44;
+  --border-dim: #1f2a2e;
+
+  /* Motion: "Nothing pops, everything arrives." */
+  --ease-signature: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 180ms;
+  --dur-base: 240ms;
+  --dur-slow: 400ms;
+
+  /* Type. The product ships no brand font; the system stack is the brand. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* Layout rhythm */
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2.5rem;
+  --space-5: 4rem;
+  --space-6: 7rem;
+  --content-max: 72rem;
+  --copy-max: 34ch;
+}

@@ -1,0 +1,797 @@
+/* ---------- Header ---------- */
+
+.site-header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem clamp(1.25rem, 4vw, 3rem);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent);
+  pointer-events: none;
+}
+
+.site-header > * {
+  pointer-events: auto;
+}
+
+.wordmark {
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.wordmark span {
+  color: var(--accent);
+}
+
+.header-cta {
+  font-size: 0.875rem;
+}
+
+/* ---------- Stage: the waveguide compositor ---------- */
+
+.stage {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg);
+  contain: layout paint;
+}
+
+.stage-plate,
+.stage-plate img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stage-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 90% at 50% 42%,
+    transparent 42%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+}
+
+/* An invisible 9:16 frame centered in the stage: the demo manifests' fractional
+   anchors are relative to this box, so beat placement is viewport-independent. */
+.stage-frame {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  aspect-ratio: 9 / 16;
+  left: 50%;
+  translate: -50% 0;
+}
+
+/* Emissive HUD overlays: additive light, exactly like the renderer's add_over.
+   plus-lighter matches; screen is the near-identical fallback. Never put a
+   filter on a beat: it would isolate it from the blend group. */
+.beat {
+  position: absolute;
+  translate: -50% -50%;
+  height: auto;
+  mix-blend-mode: screen;
+  mix-blend-mode: plus-lighter;
+  pointer-events: none;
+}
+
+html.motion .beat-hold {
+  visibility: hidden;
+}
+
+/* Static presentation only: the hold pose breathes like the device idle. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.motion) .beat-hold {
+    animation: hold-breathe 3.2s ease-in-out infinite;
+  }
+}
+
+@keyframes hold-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+/* The living sky behind the hero (DreamCanvas line field, ported). */
+.dreamfield {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.85;
+}
+
+/* A soft breathing halo behind the hero card — light, not theater. */
+.hero-halo {
+  --halo-x: 50%;
+  --halo-y: 26%;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    28% 24% at var(--halo-x) var(--halo-y),
+    rgba(44, 199, 154, 0.16),
+    transparent 70%
+  );
+}
+
+@media (min-aspect-ratio: 1/1) {
+  .hero-halo {
+    --halo-x: 71%;
+    --halo-y: 40%;
+  }
+}
+
+@media (max-aspect-ratio: 1/1) and (max-height: 46rem) {
+  .hero-halo {
+    --halo-y: 16%;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-halo {
+    animation: halo-breathe 3.2s ease-in-out infinite;
+  }
+}
+
+@keyframes halo-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: flex-end;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 2;
+  padding: 0 clamp(1.25rem, 4vw, 3rem) clamp(4.5rem, 9vh, 7rem);
+  max-width: 44rem;
+}
+
+.hero-copy > * + * {
+  margin-top: var(--space-3);
+}
+
+.hero-line {
+  display: block;
+}
+
+.hero-lede {
+  max-width: 38ch;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.hero-card {
+  left: 50%;
+  top: 24%;
+  width: 74%;
+}
+
+/* Short portrait viewports (in-app browsers, small phones): compact the copy
+   and lift the card so both fit without touching. */
+@media (max-aspect-ratio: 1/1) and (max-height: 46rem) {
+  .hero-card {
+    top: 14%;
+    width: 50%;
+  }
+
+  .hero-copy {
+    padding-bottom: 3.25rem;
+  }
+
+  .hero-copy > * + * {
+    margin-top: var(--space-2);
+  }
+
+  .hero-copy .display {
+    font-size: 2.125rem;
+  }
+
+  .hero-lede {
+    font-size: 0.9375rem;
+    max-width: 42ch;
+  }
+
+  .hero-actions .caption {
+    font-size: 0.75rem;
+  }
+}
+
+.hero .stage::after {
+  /* readability scrim behind the copy */
+  content: "";
+  position: absolute;
+  inset: 40% 0 0 0;
+  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.72) 75%);
+}
+
+.scroll-cue {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 1.5rem;
+  width: 1px;
+  height: 2.75rem;
+  background: linear-gradient(to bottom, transparent, var(--accent));
+}
+
+@media (min-aspect-ratio: 1/1) {
+  .hero {
+    align-items: center;
+  }
+
+  .hero .stage-frame {
+    left: 71%;
+  }
+
+  .hero-card {
+    top: 40%;
+    width: 62%;
+  }
+
+  .hero .stage::after {
+    inset: 0 45% 0 0;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.6), transparent);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-copy > * {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: arrive var(--dur-slow) var(--ease-signature) forwards;
+  }
+
+  .hero-copy > .eyebrow {
+    animation-delay: 120ms;
+  }
+  .hero-copy > .display {
+    animation-delay: 220ms;
+  }
+  .hero-copy > .hero-lede {
+    animation-delay: 340ms;
+  }
+  .hero-copy > .hero-actions {
+    animation-delay: 460ms;
+  }
+
+  .hero-card {
+    opacity: 0;
+    animation: card-arrive 600ms var(--ease-signature) 500ms forwards,
+      card-float 7s ease-in-out 1.1s infinite alternate;
+  }
+
+  .scroll-cue {
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+}
+
+@keyframes arrive {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(1.5%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-1.2%);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ---------- The shift ---------- */
+
+.shift {
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+  display: flex;
+  justify-content: center;
+}
+
+.shift-inner {
+  max-width: 44rem;
+}
+
+.shift-line {
+  color: var(--text-ghost);
+  max-width: 24ch;
+}
+
+.shift-line + .shift-line {
+  margin-top: var(--space-5);
+}
+
+.shift-turn {
+  color: var(--text);
+}
+
+.shift-kicker {
+  margin-top: var(--space-5);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--accent);
+  max-width: 36ch;
+}
+
+/* ---------- Acts (pinned scenes) ---------- */
+
+.act {
+  position: relative;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.act-copy {
+  position: absolute;
+  z-index: 2;
+  inset: auto 0 0 0;
+  padding: var(--space-4) clamp(1.25rem, 4vw, 3rem) var(--space-4);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 55%, transparent);
+}
+
+.act-copy .headline {
+  margin-top: 0.6rem;
+  max-width: 18ch;
+}
+
+.act-lines {
+  margin-top: var(--space-3);
+  display: grid;
+}
+
+.act-lines p {
+  grid-area: 1 / 1;
+  max-width: 34ch;
+  align-self: end;
+}
+
+.act-note {
+  max-width: 44ch;
+}
+
+@media (min-aspect-ratio: 1/1) {
+  /* Give the HUD more presence on wide screens: the anchor frame runs a fifth
+     taller than the viewport, so cards render larger while fractional anchors
+     stay valid (caption beats at y=0.82 still land inside the viewport). */
+  .act .stage-frame {
+    left: 66%;
+    height: 122%;
+    top: -11%;
+  }
+
+  .act-copy {
+    inset: 0 auto 0 0;
+    width: min(44vw, 34rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: var(--space-4) clamp(1.5rem, 5vw, 4.5rem);
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.6) 55%, transparent);
+  }
+
+  .act-lines {
+    min-height: 12rem;
+  }
+
+  .act-lines p {
+    align-self: start;
+  }
+}
+
+/* Static fallback (no JS or reduced motion): lines stack normally. */
+html:not(.motion) .act-lines {
+  display: block;
+}
+
+html:not(.motion) .act-lines p + p {
+  margin-top: var(--space-2);
+}
+
+/* In the static presentation on portrait screens, the full copy stack claims
+   the lower half, so the hold beat moves up out of its way. The inline
+   manifest position only matters when the timeline is driving. */
+@media (max-aspect-ratio: 1/1) {
+  html:not(.motion) .act .beat-hold {
+    top: 25% !important;
+    width: 46% !important;
+  }
+}
+
+/* ---------- Catalog ---------- */
+
+.catalog {
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.catalog-head {
+  max-width: 44rem;
+}
+
+.catalog-head .headline {
+  margin-top: 0.6rem;
+}
+
+.catalog-head .lede {
+  margin-top: var(--space-2);
+  max-width: 48ch;
+}
+
+.tile-grid {
+  list-style: none;
+  margin-top: var(--space-5);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+@media (min-width: 48rem) {
+  .tile-grid {
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  }
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border-dim);
+  border-radius: 1rem;
+  padding: 1rem 1rem 1.25rem;
+}
+
+.tile img {
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.tile .title {
+  margin-top: 0.75rem;
+  font-size: 1rem;
+}
+
+.tile .caption {
+  margin-top: 0.25rem;
+}
+
+/* Marquee of real HUD renders — always quietly in motion. */
+.marquee {
+  margin-top: var(--space-5);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+.marquee-track {
+  display: flex;
+  gap: 1.5rem;
+  width: max-content;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .marquee-track {
+    animation: marquee 64s linear infinite;
+  }
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee img {
+  width: 8rem;
+  height: 8rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-dim);
+  background: var(--surface);
+}
+
+.marquee-note {
+  margin-top: var(--space-2);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* ---------- Privacy ---------- */
+
+.privacy {
+  background: var(--bg);
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+}
+
+.privacy-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-5);
+  align-items: center;
+}
+
+@media (min-width: 54rem) {
+  .privacy-inner {
+    grid-template-columns: 1.2fr 1fr;
+  }
+}
+
+.privacy-copy .headline {
+  margin-top: 0.6rem;
+}
+
+.privacy-copy .lede {
+  margin-top: var(--space-3);
+  max-width: 44ch;
+}
+
+.privacy-copy .caption {
+  margin-top: var(--space-3);
+  max-width: 44ch;
+}
+
+.privacy-rows {
+  list-style: none;
+  margin-top: var(--space-4);
+  max-width: 26rem;
+}
+
+.privacy-rows li {
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--border-dim);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.privacy-rows li:last-child {
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.privacy-rows li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.privacy-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.privacy-cards img {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border-dim);
+  border-radius: 1rem;
+  padding: 0.75rem;
+}
+
+/* ---------- Hardware ---------- */
+
+.hardware {
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+  text-align: center;
+}
+
+.hardware-inner {
+  max-width: 44rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hardware-visual img {
+  width: 9.5rem;
+  height: 9.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-dim);
+  background: var(--surface);
+  margin-bottom: var(--space-4);
+}
+
+.hardware .headline {
+  margin-top: 0.6rem;
+}
+
+.hardware .lede {
+  margin-top: var(--space-3);
+  max-width: 52ch;
+}
+
+/* ---------- Close ---------- */
+
+.close {
+  position: relative;
+  min-height: 92vh;
+  min-height: 92svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+}
+
+.close .stage-plate img {
+  opacity: 0.45;
+}
+
+/* Rising halo rings behind the closing call — the pairing wake. */
+.close-halo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.close-halo i {
+  position: absolute;
+  border: 1px solid rgba(44, 199, 154, 0.16);
+  border-radius: 50%;
+  width: min(58vw, 34rem);
+  aspect-ratio: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .close-halo i {
+    animation: swell 7.2s var(--ease-signature) infinite;
+  }
+
+  .close-halo i:nth-child(2) {
+    animation-delay: 2.4s;
+  }
+
+  .close-halo i:nth-child(3) {
+    animation-delay: 4.8s;
+  }
+}
+
+@keyframes swell {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.close-copy {
+  position: relative;
+  z-index: 2;
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.close-copy .lede {
+  max-width: 40ch;
+}
+
+/* Waitlist form (rendered when an endpoint is configured) */
+.waitlist-form {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.waitlist-form input[type="email"] {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  padding: 0.875rem 1.25rem;
+  min-width: 16rem;
+}
+
+.waitlist-form input[type="email"]::placeholder {
+  color: var(--text-ghost);
+}
+
+.waitlist-status {
+  width: 100%;
+  min-height: 1.5rem;
+}
+
+.waitlist-status[data-state="ok"] {
+  color: var(--success);
+}
+
+.waitlist-status[data-state="error"] {
+  color: var(--attention);
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--border-dim);
+  padding: var(--space-5) clamp(1.25rem, 4vw, 3rem) var(--space-6);
+}
+
+.footer-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.footer-links {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.footer-note {
+  margin-top: var(--space-2);
+}
