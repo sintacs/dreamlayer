@@ -1,0 +1,27 @@
+{
+  "name": "dreamlayer-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Marketing landing page for DreamLayer. Every HUD pixel is real renderer output.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "assets:render": "python3 scripts/render_scenes.py .asset-src",
+    "assets:build": "node scripts/generate-assets.mjs .asset-src public/assets",
+    "assets": "npm run assets:render && npm run assets:build",
+    "artifact": "vite build --mode artifact && node scripts/build-artifact.mjs",
+    "shoot": "playwright test e2e/screenshots.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "gsap": "^3.12.5",
+    "lenis": "^1.1.18"
+  }
+}

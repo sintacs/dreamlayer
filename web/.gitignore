@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.asset-src/
+e2e/shots/
+test-results/

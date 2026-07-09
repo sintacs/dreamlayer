@@ -17,3 +17,4 @@ out/
 .pytest_cache/
 site/
 _site/
+test-results/

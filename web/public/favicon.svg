@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The Meridian horizon: a rim of light with the now-notch at twelve o'clock. -->
+  <rect width="64" height="64" rx="14" fill="#000000"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#2CC79A" stroke-width="3.5"
+          stroke-linecap="round" stroke-dasharray="104 16" stroke-dashoffset="-8"
+          transform="rotate(-90 32 32)"/>
+  <circle cx="32" cy="11" r="3.4" fill="#B8FFE9"/>
+</svg>
