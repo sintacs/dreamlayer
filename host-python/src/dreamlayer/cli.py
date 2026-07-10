@@ -292,6 +292,54 @@ def cmd_install(args) -> int:
     return 1
 
 
+def _store_banner(card_img, size=(640, 340)):
+    """Compose a 256 device card, alpha-masked, centred on a dark store banner."""
+    from PIL import Image
+    bg = Image.new("RGB", size, (10, 15, 16))
+    card = card_img.convert("RGBA")
+    x = (size[0] - card.width) // 2
+    y = (size[1] - card.height) // 2
+    bg.paste(card, (x, y), card)
+    return bg
+
+
+def cmd_preview(args) -> int:
+    from dreamlayer.sdk import render_card
+    try:
+        pkg = _load_package(args.path)
+    except Exception as e:
+        _err(f"{BAD} {e}")
+        return 2
+    card = None
+    if args.card:
+        try:
+            card = json.loads(args.card)
+        except Exception as e:
+            _err(f"{BAD} --card is not valid JSON: {e}")
+            return 2
+    elif Path(args.path).is_dir():                # honour a plugin.json preview_card
+        try:
+            meta = json.loads((Path(args.path) / "plugin.json").read_text(encoding="utf-8"))
+            card = meta.get("preview_card")
+        except Exception:
+            card = None
+    from dreamlayer.plugins.store import load_plugin_object
+    try:
+        img = render_card(load_plugin_object(pkg), card)
+    except ValueError as e:
+        _err(f"{BAD} {e}")
+        return 2
+    if args.shot:
+        img = _store_banner(img)
+    elif args.scale and args.scale > 1:
+        from PIL import Image
+        img = img.resize((img.width * args.scale, img.height * args.scale), Image.NEAREST)
+    out = Path(args.output) if args.output else Path(f"{pkg.manifest.name}-preview.png")
+    img.save(out)
+    _p(f"{OK} rendered {pkg.manifest.name}'s card through the device renderer → {out}")
+    return 0
+
+
 def _watch_sig(d: Path):
     sig = []
     for f in ("plugin.py", "plugin.json"):
@@ -420,6 +468,14 @@ def build_parser() -> argparse.ArgumentParser:
     inst.add_argument("--brain", help="Brain base URL (or set DREAMLAYER_BRAIN)")
     inst.add_argument("--token", help="Brain token (or set DREAMLAYER_TOKEN)")
     inst.set_defaults(func=cmd_install)
+
+    prev = sub.add_parser("preview", help="render the plugin's HUD card through the real device renderer")
+    prev.add_argument("path", nargs="?", default=".", help="plugin directory or package .json")
+    prev.add_argument("--card", help="sample card as JSON (else plugin.json preview_card, else default)")
+    prev.add_argument("--shot", action="store_true", help="compose a 640×340 store banner")
+    prev.add_argument("--scale", type=int, default=1, help="nearest-neighbour upscale for the 256px card")
+    prev.add_argument("-o", "--output", help="output PNG (default: <name>-preview.png)")
+    prev.set_defaults(func=cmd_preview)
 
     dev = sub.add_parser("dev", help="watch a plugin and re-check (+ reload) on every save")
     dev.add_argument("path", nargs="?", default=".", help="plugin directory (default: .)")

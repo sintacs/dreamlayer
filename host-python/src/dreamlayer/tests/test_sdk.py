@@ -108,6 +108,38 @@ def test_discover_returns_a_list():
     assert isinstance(sdk.discover(), list)
 
 
+def test_render_card_through_the_real_device_renderer():
+    import numpy as np
+    from dreamlayer.plugins.filler import filler_plugin
+    img = sdk.render_card(filler_plugin(), {"type": "FillerCard", "count": 3})
+    assert img.size == (256, 256)
+    # the card actually drew text (not a blank frame): bright pixels + the
+    # antialiasing that a real font render produces
+    rgb = np.asarray(img.convert("RGB"))
+    assert int((rgb.sum(axis=-1) > 60).sum()) > 50
+    assert len(set(map(tuple, rgb.reshape(-1, 3)))) > 10
+
+
+def test_render_card_is_deterministic_and_data_sensitive():
+    # deterministic render = snapshot/visual-regression testable; and the card
+    # data actually changes the pixels.
+    from dreamlayer.plugins.filler import filler_plugin
+    a = sdk.render_card(filler_plugin(), {"type": "FillerCard", "count": 3}).tobytes()
+    b = sdk.render_card(filler_plugin(), {"type": "FillerCard", "count": 3}).tobytes()
+    c = sdk.render_card(filler_plugin(), {"type": "FillerCard", "count": 9}).tobytes()
+    assert a == b and a != c
+
+
+def test_render_card_provider_only_raises_and_types():
+    import pytest
+    from dreamlayer.plugins.currency import currency_plugin
+    from dreamlayer.plugins.filler import filler_plugin
+    assert sdk.registered_card_types(filler_plugin()) == ["FillerCard"]
+    assert sdk.registered_card_types(currency_plugin()) == []
+    with pytest.raises(ValueError):
+        sdk.render_card(currency_plugin())
+
+
 def test_package_from_dir_builds_a_valid_package(tmp_path):
     # the helper the CLI and every scaffold test use
     (tmp_path / "plugin.py").write_text(SDK_ONLY_SRC, encoding="utf-8")

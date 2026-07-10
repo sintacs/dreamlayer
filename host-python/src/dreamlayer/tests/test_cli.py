@@ -79,6 +79,23 @@ def test_list_registry_catalogue(tmp_path, capsys):
     assert rc == 0 and "face-synth" in out and "[free]" in out and "official" in out
 
 
+def test_preview_writes_a_device_png(tmp_path):
+    _, d = _new(tmp_path)
+    out = tmp_path / "shot.png"
+    rc = cli.main(["plugins", "preview", str(d), "-o", str(out)])
+    assert rc == 0 and out.exists() and out.stat().st_size > 0
+    from PIL import Image
+    assert Image.open(out).size == (256, 256)
+
+
+def test_preview_shot_makes_a_store_banner(tmp_path):
+    _, d = _new(tmp_path)
+    out = tmp_path / "banner.png"
+    assert cli.main(["plugins", "preview", str(d), "--shot", "-o", str(out)]) == 0
+    from PIL import Image
+    assert Image.open(out).size == (640, 340)
+
+
 def test_dev_once_validates_the_scaffold(tmp_path, capsys):
     _, d = _new(tmp_path)
     rc = cli.main(["plugins", "dev", str(d), "--once"])

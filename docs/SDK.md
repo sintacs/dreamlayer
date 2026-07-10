@@ -100,6 +100,30 @@ SDK refuses it *at the gate* with a clear message instead of failing at runtime:
 
 `dreamlayer plugins new` fills in the current `min_sdk` for you.
 
+## See it on-glass: `plugins preview`
+
+Because DreamLayer runs the exact device render path in software, you can see —
+and snapshot-test — **precisely what your card looks like on the glasses**, with
+no hardware:
+
+```bash
+dreamlayer plugins preview .                      # → <name>-preview.png (256×256, the device output)
+dreamlayer plugins preview . --shot               # a 640×340 store banner
+dreamlayer plugins preview . --card '{"type":"HelloCard","text":"hi"}'
+```
+
+The same thing programmatically, for **visual-regression tests** — the render is
+deterministic, so assert against a committed golden:
+
+```python
+from dreamlayer.sdk import render_card
+img = render_card(my_plugin, {"type": "HelloCard", "text": "hi"})   # a PIL image
+assert img.tobytes() == golden.tobytes()          # pixel-exact regression
+```
+
+Set a `preview_card` in `plugin.json` to give `preview`/the store a representative
+sample. Provider-only plugins (no card) report that there's nothing to preview.
+
 ## Iterate fast: `plugins dev`
 
 ```bash
