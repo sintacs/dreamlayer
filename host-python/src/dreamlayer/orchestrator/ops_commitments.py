@@ -285,6 +285,7 @@ class CommitmentRecallOps:
         if not self.privacy.allow_capture():
             return None
         p = self.proactive.on_place(signature)
+        self.publish_plugin_event("place", {"signature": signature})
 
         if self.state.is_dream():
             anchors = []
@@ -319,9 +320,11 @@ class CommitmentRecallOps:
         self.privacy.pause()
         self.bridge.inject_event("privacy_pause")
         self.bridge.send_card(cards.privacy_veil(), event="privacy_pause")
+        self.publish_plugin_event("veil", {"paused": True})
 
 
     def resume(self):
         self.privacy.resume()
         self.bridge.inject_event("privacy_resume")
         self.bridge.send_command("resume")
+        self.publish_plugin_event("veil", {"paused": False})

@@ -187,19 +187,42 @@ class PluginStore:
 
     # -- load installed into a running host ----------------------------------
 
-    def load_installed(self, orchestrator) -> list:
+    def load_installed(self, orchestrator, isolate: str = "trusted") -> list:
         """Validate-then-load every installed plugin into the orchestrator.
         Re-validates on load (defence in depth), skips any that no longer pass.
-        Returns the LoadResult from the orchestrator."""
+
+        isolate="trusted" (default): everything runs in-process (the curated-
+        registry model — reviewed code you read).
+        isolate="untrusted": packages NOT signed by a trusted key are run in a
+        capability-mediated subprocess (plugins/isolation.py) instead of the
+        host; only their pure-data providers cross the jail. Signed/trusted
+        packages still load in-process. Returns the in-process LoadResult; the
+        isolated hosts are stored on `self.isolated` (call .stop() to reclaim)."""
         plugins = []
+        self.isolated = []
         for name in self.installed():
             try:
                 package = PluginPackage.load(self.dir / name)
             except Exception:
                 continue
-            if not validate(package, self.host_capabilities,
-                            trusted_keys=self.trusted_keys).ok:
+            report = validate(package, self.host_capabilities,
+                              trusted_keys=self.trusted_keys)
+            if not report.ok:
                 continue                       # was fine at install, isn't now
+            if isolate == "untrusted" and not report.signed:
+                # unreviewed/unsigned → the subprocess jail, not the host
+                from .isolation import SubprocessPluginHost
+                host = SubprocessPluginHost(
+                    self.dir / name, package.manifest.requires,
+                    health=getattr(orchestrator, "health", None),
+                    name=package.manifest.name)
+                try:
+                    if host.start():
+                        host.register_into(orchestrator)
+                        self.isolated.append(host)
+                except Exception:
+                    host.stop()
+                continue
             try:
                 plugins.append(load_plugin_object(package))
             except Exception:

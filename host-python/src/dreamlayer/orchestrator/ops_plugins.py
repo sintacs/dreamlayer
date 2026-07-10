@@ -36,7 +36,8 @@ class PluginOps:
 
     def plugin_context(self, renderer=None, config=None):
         """The narrow surface a plugin is handed, wired to this orchestrator's
-        real registries."""
+        real registries — including the v2 event bus (veil-gated) and the db
+        that backs per-plugin persisted settings."""
         from ..plugins import PluginContext
         return PluginContext(
             object_registry=self.object_lens.registry,
@@ -44,14 +45,39 @@ class PluginOps:
             brain=self.brain, perception=self.perception, renderer=renderer,
             capabilities=self._plugin_capabilities(),
             ring=self.ring, veil=self.privacy, mesh=self.mesh,
-            shop_registry=self._shop_providers, config=config)
+            shop_registry=self._shop_providers, config=config,
+            events=self.plugin_events, db=self.db)
 
 
     def load_plugins(self, plugins, renderer=None, config=None):
         """Load a list of plugins into this orchestrator. Gated by capabilities,
-        failures isolated. Returns a LoadResult (loaded / skipped / failed)."""
+        failures isolated. Registered plugins are started (v2 lifecycle).
+        Returns a LoadResult (loaded / skipped / failed)."""
         from ..plugins import PluginRegistry
-        reg = self.plugins or PluginRegistry(self.plugin_context(renderer, config))
+        reg = self.plugins or PluginRegistry(
+            self.plugin_context(renderer, config), health=self.health)
         res = reg.load_all(plugins)
+        reg.start_all()
         self.plugins = reg
         return res
+
+
+    def tick_plugins(self, now: float | None = None) -> list:
+        """Tick every loaded plugin (v2); emit their non-None commands as raw
+        frames. Safe no-op when nothing is loaded."""
+        if self.plugins is None:
+            return []
+        import time as _t
+        cmds = self.plugins.tick_all(now if now is not None else _t.monotonic())
+        for cmd in cmds:
+            if isinstance(cmd, dict):
+                self.bridge.send_raw(cmd)
+        return cmds
+
+
+    def publish_plugin_event(self, kind: str, payload: dict | None = None) -> None:
+        """Fan a host moment out to subscribed plugins (veil-gated in the bus)
+        and to plugins implementing on_event. One call, both paths."""
+        self.plugin_events.publish(kind, payload or {})
+        if self.plugins is not None:
+            self.plugins.dispatch_event(kind, payload or {})

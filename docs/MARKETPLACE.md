@@ -65,19 +65,49 @@ again before it is loaded**. Four lines of defence, cheapest first:
 On install the user sees exactly what a plugin asked for ("wants: **midi**") and
 grants it; a device that can't grant a capability refuses the plugin outright.
 
-### The honest limit
+### The honest limit — and the jail that answers it
 
 In-process Python **cannot be fully sandboxed** — a determined author can hide
-intent from a static scan. This gate is real defence-in-depth for a **curated,
-reviewed** registry (integrity + declared capabilities + screen + smoke test),
-not a jail for hostile code. The hardening path, in order:
+intent from a static scan. The static gate is real defence-in-depth for a
+**curated, reviewed** registry (integrity + declared capabilities + screen +
+smoke test), not a jail for hostile code. The hardening path, now built:
 
 - **Curated registry** — every plugin lands by reviewed PR + CI gate (below).
-- **Signatures** — authors sign packages; clients verify a trusted key
-  (`manifest.signature`, reserved and wired through, verification next).
-- **Real isolation** — run untrusted plugins in a subprocess or a wasm/
-  RestrictedPython sandbox with a capability-mediated bridge. This is the only
-  way to safely run *unreviewed* third-party code, and it's the big next step.
+- **Signatures** — authors sign packages (Ed25519); clients verify against a
+  trusted-key registry (`manifest.signature` + `pubkey`, `plugins/validate.py`
+  defence 2b). Unsigned is installable-with-warning under the curated model; a
+  *bad* signature is a hard refusal.
+- **Real isolation (built)** — an *unreviewed / unsigned* plugin can be run in a
+  capability-mediated **subprocess jail** (`plugins/isolation.py` +
+  `sandbox_child.py`): the plugin's code executes in a child process, and the
+  host holds only thin RPC proxies. What crosses the boundary is deliberately
+  tiny — object-provider `matches`/`build` and shop-provider calls, pure
+  request→data, each under the glance-panel deadline. The child never receives
+  the wearer's camera frame, never touches the display, the mesh, the
+  filesystem, or the host's network. Side-effecting extension points (card
+  renderers, glance candidates, perceptors, brain tiers) **cannot** be proxied
+  and are *rejected* for isolated loading — that refusal is the guarantee, not a
+  gap. A hung child is killed at the deadline; a crashed child is recorded to
+  the health ledger, never fatal. Route through it with
+  `PluginStore.load_installed(orchestrator, isolate="untrusted")`: signed/
+  trusted packages still load in-process; everything else goes to the jail.
+
+### API v2 — what a plugin may do
+
+A plugin declaring `"api": "2"` gets, in addition to `register(ctx)`:
+
+- **Lifecycle** — optional `start(ctx)` / `stop()` / `tick(now)` /
+  `on_event(kind, payload)`; each call isolated and health-recorded. `tick`
+  formalises the ambient-reactor pattern.
+- **Events** — `ctx.subscribe(kind, fn)` over a **veil-gated** bus
+  (`card_shown`, `glance`, `place`, `dream_enter`, `dream_exit`, `veil`,
+  `mesh`). While the Privacy Veil is down, only `veil` events flow. Each kind
+  requires the matching capability to subscribe.
+- **Settings** — `ctx.settings`, a per-plugin persisted dict.
+
+v1 plugins keep loading unchanged. Both surfaces are dogfooded first-party:
+`filler` uses lifecycle + settings (a persisted lifetime tally, a tunable
+threshold); `reactions` uses lifecycle + `on_event("mesh", …)`.
 
 ---
 

@@ -24,6 +24,7 @@ class DreamRemOps:
         self.state.enter_dream()
         self.dream.start()
         self.bridge.send_raw({"t": "dream_enter"})
+        self.publish_plugin_event("dream_enter", {})
 
 
     def exit_dream(self) -> None:
@@ -33,6 +34,7 @@ class DreamRemOps:
         self.state.exit_dream()
         self.bridge.send_raw({"t": "dream_exit"})
         self.bridge.send_command("show_ready")
+        self.publish_plugin_event("dream_exit", {})
 
 
     def maybe_dream_tonight(self, charging: bool):

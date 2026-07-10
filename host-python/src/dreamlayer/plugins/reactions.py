@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-from dreamlayer.plugins import make_plugin
 
 # the closed set of reactions — a small symbol is all that crosses the wire
 REACTIONS = {"party": "🎉", "clap": "👏", "love": "❤️", "fire": "🔥",
@@ -76,10 +75,40 @@ def _draw_reaction_card(draw, card) -> None:
         pass
 
 
-def reactions_plugin():
-    """Register the reaction card + the mesh helper. requires=('cards','mesh')."""
-    def register(ctx):
-        ctx.config["reactions"] = Reactions(ctx)
+class ReactionsPlugin:
+    """API v2 plugin (lifecycle + events). register() wires the card + helper as
+    v1; on receipt of a ``mesh`` event it folds a peer's reaction into a pending
+    queue the host drains — reacting to a host moment through the supported event
+    surface instead of the host having to poll the helper. Dogfoods on_event."""
+    name = "hud-reactions"
+    version = "0.1.0"
+    requires = ("cards", "mesh")
+
+    def __init__(self):
+        self.helper: Optional[Reactions] = None
+        self.pending: list = []            # received-reaction cards, host-drained
+
+    def register(self, ctx):
+        self.helper = Reactions(ctx)
+        ctx.config["reactions"] = self.helper
         ctx.add_card_renderer("ReactionCard", _draw_reaction_card)
-    return make_plugin("hud-reactions", register,
-                       requires=("cards", "mesh"), version="0.1.0")
+
+    def start(self, ctx):
+        self.pending.clear()
+
+    def stop(self):
+        self.pending.clear()
+
+    def on_event(self, kind: str, payload: dict) -> None:
+        # a mesh packet arrived — if it's a reaction, queue a card for the host
+        if kind != "mesh" or self.helper is None:
+            return
+        card = self.helper.received(payload or {})
+        if card is not None:
+            self.pending.append(card)
+
+
+def reactions_plugin():
+    """HUD Reactions as an API v2 plugin (lifecycle + events).
+    requires=('cards','mesh')."""
+    return ReactionsPlugin()

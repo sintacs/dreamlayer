@@ -91,6 +91,8 @@ class WorldLensOps:
             dwell_ms=dwell_ms, focus=self.focus_active(),
             veiled=not self.privacy.allow_capture())
         decision = self.glance_arbiter.arbitrate(reading, ctx)
+        self.publish_plugin_event("glance", {"scene": getattr(reading, "scene", ""),
+                                             "kind": decision.kind})
         if decision.kind == "fire" and decision.winner is not None:
             self._run_glance_action(decision.winner.action, frame,
                                     decision.winner.args)

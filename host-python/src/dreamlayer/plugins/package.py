@@ -30,7 +30,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-API_VERSION = "1"
+API_VERSION = "1"                    # default a manifest gets if it omits `api`
+SUPPORTED_API = frozenset({"1", "2"})  # v1 (register-only) and v2 (lifecycle+events)
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,48}$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+([\-+][0-9A-Za-z.\-]+)?$")
 ENTRY_RE = re.compile(r"^[A-Za-z_][\w]*:[A-Za-z_][\w]*$")
@@ -111,8 +112,9 @@ class PluginManifest:
             out.append(f"bad version: {self.version!r} (expected semver x.y.z)")
         if not ENTRY_RE.match(self.entry or ""):
             out.append(f"bad entry: {self.entry!r} (expected module:factory)")
-        if self.api != API_VERSION:
-            out.append(f"unsupported api {self.api!r} (this host speaks {API_VERSION})")
+        if self.api not in SUPPORTED_API:
+            out.append(f"unsupported api {self.api!r} "
+                       f"(this host speaks {sorted(SUPPORTED_API)})")
         unknown = [c for c in self.requires if c not in KNOWN_CAPABILITIES]
         if unknown:
             out.append("unknown capabilities: " + ", ".join(map(str, unknown)))

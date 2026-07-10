@@ -14,7 +14,6 @@ import re
 from typing import Optional
 
 from dreamlayer.ai_brain.perception import AudioPercept
-from dreamlayer.plugins import make_plugin
 
 # multi-word fillers first so they win over their own words ("you know" before
 # a bare "know" — which isn't a filler anyway)
@@ -69,14 +68,42 @@ def _draw_filler_card(draw, card) -> None:
         pass
 
 
-def filler_plugin():
-    """Register the counter perceptor + its card. requires=('perception','cards').
-    prefer=False so it never shadows the real wake/vision tiers — it only adds a
-    tally, deferring (returns None) on everything else."""
-    def register(ctx):
-        counter = FillerCounter()
-        ctx.config["filler_counter"] = counter
-        ctx.add_perceptor(counter, prefer=False)
+class FillerPlugin:
+    """API v2 plugin (lifecycle + settings). register() wires the perceptor and
+    card exactly as v1; start()/stop() carry a persisted lifetime total across
+    sessions via ctx.settings, and the alert threshold is a setting a wearer can
+    tune — the same doorway a third-party plugin uses, dogfooded first-party."""
+    name = "filler-word-counter"
+    version = "0.1.0"
+    requires = ("perception", "cards")
+
+    def __init__(self):
+        self.counter = FillerCounter()
+        self._ctx = None
+
+    def register(self, ctx):
+        self._ctx = ctx
+        ctx.config["filler_counter"] = self.counter
+        ctx.add_perceptor(self.counter, prefer=False)
         ctx.add_card_renderer("FillerCard", _draw_filler_card)
-    return make_plugin("filler-word-counter", register,
-                       requires=("perception", "cards"), version="0.1.0")
+
+    def start(self, ctx):
+        # resume the lifetime tally the wearer built up before
+        self.counter.total = int(ctx.settings.get("lifetime_total", 0))
+
+    def stop(self):
+        if self._ctx is not None:
+            self._ctx.settings.set("lifetime_total", int(self.counter.total))
+
+    def threshold(self) -> float:
+        """Fillers-per-line alert threshold; a tunable setting (default 2.0)."""
+        if self._ctx is None:
+            return 2.0
+        return float(self._ctx.settings.get("threshold", 2.0))
+
+
+def filler_plugin():
+    """The Filler-Word Counter as an API v2 plugin (lifecycle + settings).
+    requires=('perception','cards'); the perceptor runs prefer=False so it never
+    shadows the real wake/vision tiers."""
+    return FillerPlugin()

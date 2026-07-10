@@ -333,6 +333,11 @@ class Orchestrator(
         # until load_plugins() wires extensions (third-party or first-party)
         # into the object-lens / glance / brain / perception registries.
         self.plugins = None
+        # v2 plugin event bus: typed, veil-gated moments (card/glance/place/
+        # dream/veil/mesh) that subscribed plugins react to. Always present so
+        # publish sites need no None-guard; cheap when nothing subscribes.
+        from ..plugins.events import PluginEventBus
+        self.plugin_events = PluginEventBus(veil=self.privacy, health=self.health)
 
         # Wire vision pipeline into SceneDescriber if LLM available
         if getattr(cfg, "openai_api_key", "") or os.environ.get("OPENAI_API_KEY"):
@@ -581,6 +586,10 @@ class Orchestrator(
             p = payload or {}
             if p.get("event") == "CARD_DISMISSED":
                 self.maturity.observe_card(dismissed=p.get("method") == "tap")
+            elif p.get("event") == "CARD_SHOWN":
+                # a card actually reached the glass — the moment plugins react to
+                self.publish_plugin_event(
+                    "card_shown", {"card_type": p.get("card_type", "")})
             return
         # the wearer banished a figment on-glass — honor it durably: never
         # re-deploy it, and revoke it in the vault when a deployer is wired
