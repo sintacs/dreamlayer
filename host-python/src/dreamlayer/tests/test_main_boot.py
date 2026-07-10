@@ -59,8 +59,13 @@ class Device:
         return r[0] if isinstance(r, tuple) else r
 
     def send(self, envelope: dict):
-        """Deliver a host envelope through the real 4-byte framing."""
-        self._push(transport.frame(envelope).decode("latin1"))
+        """Deliver a host envelope through the real 4-byte framing.
+
+        Pass bytes, never str: lupa UTF-8-encodes str crossing into Lua,
+        which mangles length-header bytes > 127 — frames only survived the
+        old .decode("latin1") path by size luck.
+        """
+        self._push(transport.frame(envelope))
 
     def ticks(self, n: int):
         for _ in range(n):

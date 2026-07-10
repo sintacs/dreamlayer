@@ -34,6 +34,9 @@ telemetry.PRIVACY_VEIL  = "PRIVACY_VEIL"
 telemetry.PRIVACY_RESUMED = "PRIVACY_RESUMED"
 telemetry.QUERY_CANCELLED = "QUERY_CANCELLED"
 telemetry.BLE_ERROR       = "BLE_ERROR"
+telemetry.TICK_ERROR      = "TICK_ERROR"       -- tick loop crashed (pcall caught)
+telemetry.HEAP            = "HEAP"             -- periodic Lua heap watermark (kb)
+telemetry.FIGMENT_BANISHED = "FIGMENT_BANISHED" -- wearer killed a figment locally
 
 -- ---------------------------------------------------------------------------
 -- Internal state

@@ -357,6 +357,27 @@ function M.bind(deps)
   _random  = deps.random or _random
 end
 
+-- ---------------------------------------------------------------------------
+-- banish()
+-- The wearer's local kill switch: stop the active figment WITHOUT waiting
+-- for the host. Removes it from the on-device library, clears the display,
+-- and tells the host so it can revoke durably in the vault. Returns the
+-- banished figment id, or nil when nothing was running.
+-- Reserved for the double-long-press gesture in main.lua — a figment can
+-- consume single long-presses, but it can never swallow its own escape hatch.
+-- ---------------------------------------------------------------------------
+function M.banish()
+  if not _active then return nil end
+  local id = _active.id
+  _stored[id] = nil
+  _stop()
+  if _display then _display.clear(); _display.show() end
+  if _send then
+    _send({ t = MT.FIGMENT_EVENT, id = id, tag = "banished" })
+  end
+  return id
+end
+
 function M.active_id()
   return _active and _active.id or nil
 end

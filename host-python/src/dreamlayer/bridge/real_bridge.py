@@ -70,6 +70,34 @@ _KIND_DATA: object = (
 # handle MTU segmentation internally we chunk manually.
 _MTU_PAYLOAD_BYTES = 128
 
+# Largest frame the device-side reassembler accepts (halo-lua/ble/protocol.lua
+# MAX_FRAME) — refuse to send anything the glasses would drop.
+_MAX_FRAME_BYTES = 16384
+
+
+def frame_payload(obj: dict) -> bytes:
+    """JSON-encode obj with the on-wire framing ble/protocol.lua reassembles.
+
+    Every frame — regardless of size — carries the 4-byte big-endian
+    total-length header, and the total INCLUDES the header itself
+    (lockstep with protocol.lua M.frame and reality_compiler.v2.transport).
+    A headerless "small frame" shape does not exist on this wire.
+    """
+    body = json.dumps(obj, sort_keys=True,
+                      separators=(",", ":")).encode("utf-8")
+    total = len(body) + 4
+    if total > _MAX_FRAME_BYTES:
+        raise ValueError(
+            f"frame of {total} bytes exceeds device MAX_FRAME "
+            f"({_MAX_FRAME_BYTES}); split the payload"
+        )
+    return total.to_bytes(4, "big") + body
+
+
+def chunk_frame(framed: bytes, chunk_size: int = _MTU_PAYLOAD_BYTES) -> list[bytes]:
+    """Split a framed payload into MTU-sized chunks for transmission."""
+    return [framed[i:i + chunk_size] for i in range(0, len(framed), chunk_size)]
+
 
 class HardwareNotConnectedError(RuntimeError):
     pass
@@ -265,35 +293,19 @@ class RealBridge(BridgeBase):
         self._run(self._send_raw(obj))
 
     async def _send_raw(self, obj: dict) -> None:
-        """JSON-encode obj and send over BLE, chunking at _MTU_PAYLOAD_BYTES.
+        """Frame obj (4-byte length header, always) and send over BLE,
+        chunking at _MTU_PAYLOAD_BYTES.
 
         brilliant-msg may handle fragmentation internally.  We chunk
         conservatively here so the Lua protocol.lua length-prefix reassembly
         layer is exercised and we never silently truncate large payloads.
+        The header is mandatory on every frame: protocol.lua implements one
+        reassembly shape, and a headerless small frame would be misread as
+        a garbage length and wedge the link.
         """
-        data = json.dumps(obj, separators=(",", ":"))
-        encoded = data.encode()
-        chunk_size = _MTU_PAYLOAD_BYTES
-
-        if len(encoded) <= chunk_size:
-            # Fast path: single frame
-            msg = Message(kind=_KIND_DATA, payload=data)
-            await self._client.send(msg)
-            return
-
-        # Multi-frame: prefix the first chunk with total-length header so
-        # the Lua protocol.lua reassembly layer can detect completeness.
-        # Header format (4 bytes, big-endian): total payload byte length
-        total = len(encoded)
-        header = total.to_bytes(4, "big")
-        payload_with_header = header + encoded
-
-        offset = 0
-        while offset < len(payload_with_header):
-            chunk = payload_with_header[offset : offset + chunk_size]
+        for chunk in chunk_frame(frame_payload(obj)):
             msg = Message(kind=_KIND_DATA, payload=chunk)
             await self._client.send(msg)
-            offset += chunk_size
 
     # ------------------------------------------------------------------
     # Inbound event handling

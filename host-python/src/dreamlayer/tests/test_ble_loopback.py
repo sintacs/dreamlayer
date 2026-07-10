@@ -1,0 +1,158 @@
+"""Rig 0 — BLE framing loopback: Python bytes through the REAL Lua reassembler.
+
+The framing layer had two latent interop defects that 1,800 tests never saw,
+because Python framing and Lua reassembly were only ever tested against
+themselves:
+
+  1. real_bridge sent small (<= MTU) frames with NO length header while
+     protocol.lua implements exactly one shape — length-prefixed. The first
+     bytes of the JSON would be read as a garbage 32-bit length.
+  2. real_bridge's multi-frame header excluded the 4 header bytes while
+     protocol.lua's total INCLUDES them — truncating every large frame's
+     last 4 bytes.
+
+This suite drives real_bridge.frame_payload/chunk_frame output through the
+real halo-lua/ble/protocol.lua under lupa, fuzzing sizes and fragmentation,
+so the wire contract can never silently fork again.
+"""
+import json
+from pathlib import Path
+
+import pytest
+from hypothesis import given, settings, strategies as st
+
+lupa = pytest.importorskip("lupa")
+
+from dreamlayer.bridge.real_bridge import (  # noqa: E402
+    _MAX_FRAME_BYTES, _MTU_PAYLOAD_BYTES, chunk_frame, frame_payload,
+)
+from dreamlayer.reality_compiler.v2 import transport  # noqa: E402
+
+HALO_LUA = Path(__file__).resolve().parents[4] / "halo-lua"
+
+
+def make_protocol():
+    rt = lupa.LuaRuntime(unpack_returned_tuples=True)
+    rt.execute(f'package.path = "{HALO_LUA}/?.lua;" .. package.path')
+    proto = rt.eval('require("ble.protocol")')
+    if isinstance(proto, tuple):        # require returns (module, path)
+        proto = proto[0]
+    return rt, proto
+
+
+def feed_bytes(proto, data: bytes):
+    """Feed raw bytes, returning every completed frame (drained).
+
+    Pass Python bytes, never str: lupa UTF-8-encodes str on the way into
+    Lua, which mangles header bytes > 127; bytes cross byte-exact.
+    """
+    out = []
+    payload = proto["feed"](data)
+    while payload is not None:
+        out.append(payload.encode("utf-8") if isinstance(payload, str)
+                   else bytes(payload))
+        payload = proto["feed"](b"")
+    return out
+
+
+@pytest.fixture()
+def proto():
+    return make_protocol()[1]
+
+
+class TestFramingContract:
+    def test_small_frame_has_header(self):
+        """The headerless small-frame shape must not exist on this wire."""
+        framed = frame_payload({"t": "command", "kind": "wake"})
+        total = int.from_bytes(framed[:4], "big")
+        assert total == len(framed)
+
+    def test_matches_v2_transport_framing(self):
+        obj = {"t": "figment_swap", "id": "fig-1"}
+        assert frame_payload(obj) == transport.frame(obj)
+
+    def test_small_frame_reassembles(self, proto):
+        obj = {"t": "command", "kind": "wake", "payload": {}}
+        frames = feed_bytes(proto, frame_payload(obj))
+        assert [json.loads(f) for f in frames] == [obj]
+
+    def test_large_frame_reassembles_exactly(self, proto):
+        """The last 4 bytes used to be truncated by the off-by-header bug."""
+        obj = {"t": "card", "payload": {"text": "x" * 900}}
+        framed = frame_payload(obj)
+        collected = b""
+        decoded = []
+        for chunk in chunk_frame(framed):
+            assert len(chunk) <= _MTU_PAYLOAD_BYTES
+            collected += chunk
+            for f in feed_bytes(proto, chunk):
+                decoded.append(json.loads(f))
+        assert collected == framed
+        assert decoded == [obj]
+
+    def test_oversize_frame_refused_host_side(self):
+        with pytest.raises(ValueError):
+            frame_payload({"t": "card", "payload": {"x": "y" * _MAX_FRAME_BYTES}})
+
+
+class TestReassemblerDefense:
+    def test_two_frames_in_one_chunk_both_drain(self, proto):
+        a = frame_payload({"t": "command", "kind": "a"})
+        b = frame_payload({"t": "command", "kind": "b"})
+        frames = feed_bytes(proto, a + b)
+        assert [json.loads(f)["kind"] for f in frames] == ["a", "b"]
+
+    def test_garbage_header_drops_and_recovers(self, proto):
+        # A huge bogus length must not wedge the link buffering forever.
+        bogus = (10**9).to_bytes(4, "big") + b'{"t":"junk"}'
+        assert feed_bytes(proto, bogus) == []
+        assert proto["stats"]()["dropped"] == 1
+        # The link recovers: the next well-formed frame decodes.
+        obj = {"t": "command", "kind": "after"}
+        assert [json.loads(f) for f in feed_bytes(proto, frame_payload(obj))] == [obj]
+
+    def test_tiny_header_drops(self, proto):
+        assert feed_bytes(proto, (2).to_bytes(4, "big") + b"xx") == []
+        assert proto["stats"]()["dropped"] == 1
+
+    def test_buffer_never_exceeds_max_frame_wait(self, proto):
+        # While a legal frame is in flight the reassembler buffers at most
+        # MAX_FRAME bytes — feed a max-size frame one byte at a time.
+        body = json.dumps({"t": "card", "pad": "p" * 8000},
+                          separators=(",", ":")).encode()
+        framed = (len(body) + 4).to_bytes(4, "big") + body
+        got = []
+        for i in range(len(framed)):
+            got += feed_bytes(proto, framed[i:i + 1])
+        assert len(got) == 1 and json.loads(got[0])["t"] == "card"
+
+
+class TestFramingProperty:
+    @settings(max_examples=60, deadline=None)
+    @given(
+        text=st.text(
+            alphabet=st.characters(codec="utf-8",
+                                   blacklist_categories=("Cs",)),
+            max_size=2000),
+        chunk_size=st.integers(min_value=1, max_value=400),
+    )
+    def test_roundtrip_any_payload_any_fragmentation(self, text, chunk_size):
+        obj = {"t": "card", "payload": {"text": text}}
+        framed = frame_payload(obj)
+        rt, proto = make_protocol()
+        decoded = []
+        for chunk in chunk_frame(framed, chunk_size):
+            for f in feed_bytes(proto, chunk):
+                decoded.append(json.loads(f))
+        assert decoded == [obj]
+
+    @settings(max_examples=30, deadline=None)
+    @given(objs=st.lists(
+        st.fixed_dictionaries({"t": st.just("command"),
+                               "kind": st.text(max_size=40)}),
+        min_size=1, max_size=6))
+    def test_back_to_back_frames_never_bleed(self, objs):
+        stream = b"".join(frame_payload(o) for o in objs)
+        rt, proto = make_protocol()
+        decoded = [json.loads(f) for f in feed_bytes(proto, stream)]
+        assert decoded == objs

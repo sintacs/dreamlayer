@@ -55,7 +55,10 @@ end
 -- or nil while still accumulating fragments.
 -- ---------------------------------------------------------------------------
 function M.on_receive(raw)
-  if not raw or raw == "" then return nil end
+  -- raw == "" is a legal "drain" call: extract the next already-buffered
+  -- frame (two frames can arrive concatenated in one BLE chunk).
+  if raw == nil then return nil end
+  if raw == "" and not protocol.pending() then return nil end
   local complete = protocol.feed(raw)
   if not complete then return nil end
   local ok, msg = pcall(M._decode, complete)

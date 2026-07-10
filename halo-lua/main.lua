@@ -19,6 +19,7 @@ local Particles  = require("display.particles") -- Lumen hero pool
 local PalAnim    = require("display.palette_animator")
 local Parallax   = require("display.parallax")
 local Anim       = require("display.animations")
+local Telemetry  = require("ble.telemetry")
 
 -- figment_put/swap/revoke/text arrive as BLE envelopes → stage handlers
 Figment.register(HostComm)
@@ -88,6 +89,14 @@ local CARD_PRIORITY = {
 }
 
 -- ---------------------------------------------------------------------------
+-- Tick clock — declared ahead of process_inbound so the banish gesture can
+-- close over it (Lua upvalues must be in scope at function definition).
+-- ---------------------------------------------------------------------------
+local _tick_ms   = 0     -- monotonic tick clock (50ms per tick)
+local BANISH_WINDOW_MS = 2000
+local _last_long_ms = -BANISH_WINDOW_MS  -- last long-press (banish gesture)
+
+-- ---------------------------------------------------------------------------
 -- BLE event handlers
 -- ---------------------------------------------------------------------------
 local function process_inbound(msg)
@@ -122,9 +131,23 @@ local function process_inbound(msg)
     Horizon.wake()
 
   elseif t == "button" and Figment.is_running() then
-    -- while a figment holds the stage, physical buttons drive it
+    -- while a figment holds the stage, physical buttons drive it —
+    -- EXCEPT the escape hatch: two long-presses within BANISH_WINDOW_MS
+    -- banish the figment locally, no host required. A figment may consume
+    -- single long-presses, but it can never swallow its own kill switch.
     local ev = msg.ev or ""
-    if ev == "single" or ev == "double" or ev == "long" then
+    if ev == "long" then
+      if _tick_ms - _last_long_ms <= BANISH_WINDOW_MS then
+        local id = Figment.banish()
+        if id then
+          Telemetry.emit(Telemetry.FIGMENT_BANISHED, { id = id })
+        end
+        _last_long_ms = -BANISH_WINDOW_MS
+      else
+        _last_long_ms = _tick_ms
+        Figment.on_event(ev)
+      end
+    elseif ev == "single" or ev == "double" then
       Figment.on_event(ev)
     end
 
@@ -158,11 +181,10 @@ end
 -- ---------------------------------------------------------------------------
 -- Main tick  (called by halo.runloop or a while-true loop at ~20fps)
 -- ---------------------------------------------------------------------------
-local _tick_ms   = 0     -- monotonic tick clock (50ms per tick)
 local _shown     = nil   -- card instance currently owned by the renderer
 local _dreaming  = false -- last seen dream state (Lumen warp trigger)
 
-local function tick()
+local function tick_body()
   _tick_ms = _tick_ms + 50
 
   -- Lumen dream door: entering/leaving Dream Mode is a starfield breath
@@ -181,12 +203,16 @@ local function tick()
     })
   end
 
-  -- Receive BLE
+  -- Receive BLE — drain every complete frame (two frames can arrive
+  -- concatenated in a single chunk; leaving one queued adds a tick of lag)
   local raw = (_G.halo and _G.halo.bluetooth and _G.halo.bluetooth.receive
                and _G.halo.bluetooth.receive()) or nil
   if raw then
     local msg = HostComm.on_receive(raw)
-    if msg then process_inbound(msg) end
+    while msg do
+      process_inbound(msg)
+      msg = HostComm.on_receive("")
+    end
   end
 
   -- Render
@@ -233,6 +259,50 @@ local function tick()
     end
     Renderer.tick()
   end
+
+  -- Heap watermark: one telemetry event a minute so the host learns the
+  -- real on-device memory ceiling (Rig-1 data). collectgarbage may be
+  -- absent on device firmware — pcall-guarded, and cheap when it is.
+  if _tick_ms % 60000 == 0 then
+    local ok, kb = pcall(collectgarbage, "count")
+    if ok and type(kb) == "number" then
+      Telemetry.emit(Telemetry.HEAP, { kb = math.floor(kb) })
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Crash guard: the tick is pcall-wrapped so one bad frame can never kill the
+-- display until reboot. On failure we render the never-black fallback (a bare
+-- dim ring at the safe radius) and emit ONE rate-limited TICK_ERROR so the
+-- host sees the crash instead of silence. "The display is a place, not a
+-- stage" is a guarantee here, not a policy.
+-- ---------------------------------------------------------------------------
+local _tick_errors      = 0
+local _last_err_tel_ms  = -60000
+
+local function _render_fallback()
+  local d = _G.halo and _G.halo.display
+  if not d then return end
+  pcall(function()
+    d.clear(0x000000)
+    if d.circle then d.circle(128, 128, 112, { color = 0x223344 }) end
+    d.show()
+  end)
+end
+
+local function tick()
+  local ok, err = pcall(tick_body)
+  if ok then return end
+  _tick_errors = _tick_errors + 1
+  -- _tick_ms already advanced inside tick_body before any failure point
+  if _tick_ms - _last_err_tel_ms >= 60000 then
+    _last_err_tel_ms = _tick_ms
+    Telemetry.emit(Telemetry.TICK_ERROR,
+                   { error = string.sub(tostring(err), 1, 120),
+                     count = _tick_errors })
+  end
+  _render_fallback()
 end
 
 -- ---------------------------------------------------------------------------
@@ -242,6 +312,23 @@ end
 -- actually leave the device — HostComm.send drops silently when unbound.
 if _G.halo and _G.halo.bluetooth then
   HostComm.bind(_G.halo.bluetooth)
+end
+
+-- Wire telemetry to the same channel. Without this bind every emit is a
+-- silent no-op and the host's feedback loops (adaptive confidence, crash
+-- and heap reports) never see the device.
+Telemetry.bind(HostComm.send)
+
+-- Physical buttons: route through the SAME path as host-mirrored button
+-- events so on-device and host-driven input behave identically (and the
+-- figment banish gesture works with no host connected).
+if _G.halo and _G.halo.button then
+  local function _button(ev)
+    return function() process_inbound({ t = "button", ev = ev }) end
+  end
+  if _G.halo.button.single then _G.halo.button.single(_button("single")) end
+  if _G.halo.button.double then _G.halo.button.double(_button("double")) end
+  if _G.halo.button.long   then _G.halo.button.long(_button("long"))     end
 end
 
 -- Give the figment stage its whitelisted effects: display, host send,

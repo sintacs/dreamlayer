@@ -10,23 +10,48 @@
 
 local M = {}
 
+-- Largest frame we will ever reassemble.  The biggest legitimate frame is a
+-- figment_put or sprite envelope (a few KB); anything larger is a corrupt or
+-- hostile header.  Without this cap a garbage 4-byte header would leave the
+-- reassembler buffering forever on a heap measured in tens of KB.
+-- Keep in lockstep with real_bridge.py _MAX_FRAME_BYTES.
+M.MAX_FRAME = 16384
+
 -- Reassembly state
 local _buf   = ""   -- accumulated bytes (as Lua string / byte string)
 local _need  = nil  -- total expected bytes for current frame, or nil
+
+-- Counters for telemetry/diagnostics (read via M.stats())
+local _stats = { frames = 0, dropped = 0 }
+
+local function _drop_corrupt(why)
+  _buf, _need = "", nil
+  _stats.dropped = _stats.dropped + 1
+  if _G.halo and _G.halo.log then
+    _G.halo.log("[protocol] dropped corrupt frame: " .. why)
+  end
+end
 
 -- ---------------------------------------------------------------------------
 -- feed(chunk)
 -- Append chunk to the internal buffer and attempt to extract a complete frame.
 -- Returns the JSON string when a complete frame is available, otherwise nil.
+-- A corrupt header (length < 5 or > MAX_FRAME) drops the whole buffer and
+-- starts clean — a wedged link is worse than a lost frame.
 -- ---------------------------------------------------------------------------
 function M.feed(chunk)
-  _buf = _buf .. chunk
+  _buf = _buf .. (chunk or "")
 
   -- Try to read the 4-byte length header if we don't have it yet
   while true do
     if _need == nil then
       if #_buf < 4 then return nil end  -- still waiting for header
       _need = M._read_u32be(_buf, 1)
+      -- Header total includes the 4 header bytes: minimum legal frame is 5.
+      if _need < 5 or _need > M.MAX_FRAME then
+        _drop_corrupt("length header " .. tostring(_need))
+        return nil
+      end
     end
 
     if #_buf < _need then return nil end  -- still buffering payload
@@ -35,8 +60,26 @@ function M.feed(chunk)
     local payload = _buf:sub(5, _need)   -- bytes 5.._need (1-indexed)
     _buf  = _buf:sub(_need + 1)          -- remainder for next frame
     _need = nil
+    _stats.frames = _stats.frames + 1
     return payload
   end
+end
+
+-- ---------------------------------------------------------------------------
+-- pending()
+-- True when the buffer may hold (the start of) another frame — callers can
+-- drain queued frames by calling feed("") until it returns nil.
+-- ---------------------------------------------------------------------------
+function M.pending()
+  return #_buf >= 4
+end
+
+-- ---------------------------------------------------------------------------
+-- stats()
+-- { frames = <complete frames delivered>, dropped = <corrupt drops> }
+-- ---------------------------------------------------------------------------
+function M.stats()
+  return { frames = _stats.frames, dropped = _stats.dropped }
 end
 
 -- ---------------------------------------------------------------------------

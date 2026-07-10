@@ -200,6 +200,13 @@ class Orchestrator:
         self.social = SocialLens(privacy=self.privacy)
         self._last_person: dict | None = None    # who you last looked at (for on-the-spot notes)
         self._active_figment: str | None = None  # native timer/clock on the glasses stage
+        # Figments the wearer killed on-glass (double long-press). The banish
+        # gesture works with no host; when the event does arrive we honor it
+        # durably. rc_deployer is an optional seam — whoever owns a vault-backed
+        # StageDeployer (the Brain's rc/* endpoints) wires it so a banished
+        # figment lands on the revocation list, not just off the stage.
+        self._banished_figments: set[str] = set()
+        self.rc_deployer = None                  # seam: StageDeployer or None
         # Oracle — the assistant. "Hey Oracle" wakes it; tap / gaze / raise are
         # multimodal alternatives. On wake it shows a Listening ring + (device
         # seams) an earcon and a haptic tick, then stays open a short session so
@@ -2132,6 +2139,20 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def _on_event(self, name, payload):
+        # the wearer banished a figment on-glass — honor it durably: never
+        # re-deploy it, and revoke it in the vault when a deployer is wired
+        if name == "figment_event" and (payload or {}).get("tag") == "banished":
+            fid = (payload or {}).get("id")
+            if fid:
+                self._banished_figments.add(fid)
+                if self._active_figment == fid:
+                    self._active_figment = None
+                if self.rc_deployer is not None:
+                    try:
+                        self.rc_deployer.revoke(fid)
+                    except Exception:
+                        pass  # revocation retries when the deployer reappears
+            return
         # in Dream Mode with a live bond, single taps feed the tin can
         if name == "single_click" and self.state.is_dream() \
                 and self.tincan is not None:
