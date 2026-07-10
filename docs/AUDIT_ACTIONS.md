@@ -130,8 +130,10 @@ not.
 Pillar 2 (`docs/PLATFORM.md`: LE Coded PHY, S=8, ~125 kbps, the Beacon). The
 `MeshManager`/`Beacon` seams sit in Confluence and the figment `bond:` events
 now exist (B10), but a radio mesh cannot be demoed in a rasterizer.
-- [ ] write and publish the mesh transport spec *now* — as openly as the
-      figment grammar (buildable today; the doc is the deliverable)
+- [x] write and publish the mesh transport spec *now* — **done**:
+      `docs/GHOSTMODE_PROTOCOL.md` v1.0 (wire format, key derivation, a normative
+      test vector pinned to the code, receive rules, the Beacon, privacy
+      invariants, security model, conformance checklist)
 - [ ] the mesh itself lights up only with silicon on the desk
 
 ### 8.5 ESP32 physical-events kit (1.6)

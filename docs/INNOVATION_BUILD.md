@@ -41,7 +41,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | O1 | NPU: `.tflite` + Vela recipe + candidate zoo (C8#3, 1.4 tail) | **REGISTERED** | new `models/` + `AUDIT_ACTIONS.md` | register recipe, no silicon |
 | O2 | Live WASM e2e (needs wasmtime + python.wasm) (3.4) | **REGISTERED** | `plugins/wasm_host.py` | seam done; runtime is operator's |
 | O3 | Custom wake-word model for the chosen brand phrase (C8#8) | **REGISTERED** | `orchestrator/wakeword.py` | brand decision + training run |
-| O4 | GhostMode radio mesh (coda) | **REGISTERED** | publish protocol spec now; build on silicon | spec is the buildable half |
+| O4 | GhostMode radio mesh (coda) | **SPEC DONE** | `docs/GHOSTMODE_PROTOCOL.md` | ✅ v1.0 wire spec published (layering, keys, frame + normative test vector, receive rules, Beacon, privacy invariants, security model, conformance) — pinned to the code by 4 tests. Mesh itself still needs silicon. |
 | O5 | ESP32 physical-events kit sketch (1.6) | **REGISTERED** | `examples/esp32/` sketch + one host route | sketch is owner hardware; host route is BUILD |
 | V1 | Proof-carrying / signing / isolation tiers (3.2, 3.4) | DONE | `plugins/*`, this session's SDK arc | verify only |
 
