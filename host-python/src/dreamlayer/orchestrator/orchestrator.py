@@ -96,6 +96,13 @@ class Orchestrator(
                          else ResidentGate())
         self.last_retention = None      # last nightly RetentionReport
 
+        # Adaptive confidence: per-card-type dismissal tracking. Real installs
+        # persist the window; ephemeral (:memory:) sessions keep it in RAM so
+        # tests stay deterministic. ProactiveEngine reads its suggested lift.
+        from .adaptive_confidence import DismissalTracker
+        self.dismissals = DismissalTracker(persist=(db_path != ":memory:"))
+        self.proactive.dismissals = self.dismissals
+
         # Camera frames cost capture + BLE transfer + battery on hardware —
         # ambient frames are duty-cycled here (deliberate looks always pass).
         from .frame_budget import FrameBudget
@@ -244,7 +251,15 @@ class Orchestrator(
         # Object Lens: look at a thing -> a contextual panel (objects, not
         # people). Ships with the memory provider + the (inert) AI explainer;
         # register integration seams (laptop/car/plant) at the app layer.
-        self.object_lens = ObjectLens(ring=self.ring, privacy=self.privacy)
+        # Tier-1 recognizer: the best real vision backend that's installed
+        # (YOLO → moondream → CLIP), else None so the recognizer's deterministic
+        # mock stays authoritative — the suite runs unchanged with no vision deps.
+        from ..object_lens.recognizer import ObjectRecognizer
+        from ..object_lens.classify_backends import default_classifier
+        _clf = default_classifier()
+        _recognizer = ObjectRecognizer(classify_fn=_clf) if _clf else None
+        self.object_lens = ObjectLens(ring=self.ring, privacy=self.privacy,
+                                      recognizer=_recognizer)
         self.object_lens.registry.register(AIProvider(self.brain))
         # Label (your own facts about a product) + Rosetta (translate seen text)
         self.dietary = DietaryProfile()
@@ -584,6 +599,9 @@ class Orchestrator(
         # how much proactive output the system has earned)
         if name == "TEL":
             p = payload or {}
+            # per-card-type adaptive confidence (both SHOWN and DISMISSED feed
+            # the sliding window; on_telemetry_event wants the raw TEL shape)
+            self.dismissals.on_telemetry_event({"t": "TEL", **p})
             if p.get("event") == "CARD_DISMISSED":
                 self.maturity.observe_card(dismissed=p.get("method") == "tap")
             elif p.get("event") == "CARD_SHOWN":

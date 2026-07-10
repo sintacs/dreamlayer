@@ -14,6 +14,18 @@ class ProactiveEngine:
         self.db = db
         self.min_conf = min_conf
         self._privacy = privacy  # optional PrivacyGate
+        self.dismissals = None   # optional DismissalTracker (set by the orchestrator)
+
+    def _effective_min(self) -> float:
+        """The confidence floor, lifted for card types the wearer keeps
+        swatting away (adaptive_confidence). Falls back to the static floor."""
+        if self.dismissals is None:
+            return self.min_conf
+        try:
+            return self.dismissals.suggested_threshold(
+                "ProactiveMemoryCard", self.min_conf)
+        except Exception:
+            return self.min_conf
 
     def on_place(self, signature: str):
         # Privacy-first: if capture is paused, never surface proactive cards
@@ -26,11 +38,12 @@ class ProactiveEngine:
         if not place:
             return None
 
+        floor = self._effective_min()
         best = None
         for m in self.db.memories():
             if (
                 m.get("place_id") == place["id"]
-                and (m.get("confidence") or 0) >= self.min_conf
+                and (m.get("confidence") or 0) >= floor
             ):
                 if best is None or m["confidence"] > best["confidence"]:
                     best = m
