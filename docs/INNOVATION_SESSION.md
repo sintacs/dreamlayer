@@ -212,17 +212,21 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 
 **Wow moment:** It says "kitchen counter, 8:40" — then you open Memory Grep (1.8) and see that the *entire evidence trail* is one text row. Nothing was filmed.
 
-### 2.7 Candor Mirror
+### 2.7 Candor Mirror — the self-coach, live and after *(absorbs the former "Stage Whisper" lens)*
 
-**One-line pitch:** After every meeting, your glasses quietly tell you about *you*: pace, filler, interruptions, the moment your story drifted from last week's version.
+**One-line pitch:** Your glasses coach *you* about *you* — a single calm pace-arc at the edge of your eye while you're talking, and a quiet after-the-fact card on what your speech (and your story) actually did.
 
-**How it works:** Aim the Truth Lens inward. `truth_lens/analyzer.py`'s pipeline stages — prosody, linguistic features, narrative-baseline deltas (`narrative_store` keeps your own story baselines) — plus the shipped `plugins/filler.py` and faster-whisper WPM. Skip the other-people stages (AU/face detection stays off; those are stubs awaiting NPU anyway). Output: a post-conversation KeptCard — "162 wpm (↑), 9 'basically's, you told the project story differently than Tuesday" — delivered *after*, never live, via the conversation ledger's session-end event. The `orchestrator/consistency.py` (Candor) module is already named for this.
+**How it works:** One inward-aimed pipeline, two output registers. The shared front-end: phone mic → silero VAD → faster-whisper (`small.en` on Mac) → the shipped `plugins/filler.py` + WPM, over `truth_lens/analyzer.py`'s self-safe stages (prosody, linguistic features, narrative-baseline deltas via `narrative_store`; the other-people AU/face stages stay off — stubs awaiting NPU anyway). Then:
+
+- **Live (the old Stage Whisper):** a rolling 30s transcript window normalizes WPM to the Cinema `amp` message (`{v: 0..99}`, ~15 bytes — designed for exactly this), one BLE frame/second, rendered as a *single quiet arc length* on the ring; a `notice` haptic when you sustain >165 wpm; filler count revealed on GLANCE_PEEK only, never unrequested. Minimal by design — for talks, standups, lectures.
+- **Post-mortem (Candor proper):** at the conversation ledger's session-end event, a KeptCard — "162 wpm (↑), 9 'basically's, you told the project story differently than Tuesday." Never live, always after. `orchestrator/consistency.py` (Candor) is already named for this.
 
 **Why only DreamLayer:** A deception pipeline pointed at others is a scandal; pointed at *yourself* it's a coach — and only an open codebase can prove which one it is. The 9-stage analyzer is right there to read.
 
-**Build time:** 3–4 days of rewiring existing stages + card design.
+**Build time:** Live arc ~2 days; the post-mortem depth another 3–4 (rewiring existing stages + card design). Ship the live half first — it's the demo.
 
-**Wow moment:** It quotes the drift: "Last Tuesday this anecdote had a different ending." You go cold, check your own memory, and realize the glasses are right — and that they'd tell you the same about anyone *you're* becoming.
+**Wow moment (live):** You feel yourself rushing, glance at nothing, see the arc near the top, breathe, and watch it settle — the audience saw you *pause meaningfully*.
+**Wow moment (after):** It quotes the drift — "Last Tuesday this anecdote had a different ending" — you go cold, check your own memory, and realize the glasses are right, and that they'd tell you the same about anyone *you're* becoming.
 
 ### 2.8 Inner Weather, Outer Light
 
@@ -318,7 +322,7 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 
 ## Category 4 — New Lens Concepts
 
-*Ten fully specced lenses. Each names its inputs, outputs, dataflow, the moment it turns magical, and the existing lens it composes with best. Two are marked as ideas a designer would invent; two as ideas only a Lua/embedded developer would think of.*
+*Eight specced lenses (consolidated from an original ten — the live speech-coach folded up into Candor Mirror at 2.7, and the two timer/metronome lenses merged into one family at 4.2). Each names its inputs, outputs, dataflow, the moment it turns magical, and the existing lens it composes with best. Three are marked 🎨 as ideas a designer would invent; two 🔧 as ideas only a Lua/embedded developer would think of.*
 
 ### 4.1 Thread Lens 🎨 *(designer-brained)*
 
@@ -330,15 +334,17 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **Magic moment:** The display itself *becomes the color you're looking at* — the swatch preview isn't on a screen, it's painted in the actual waveguide palette, which no phone mockup can imitate.
 - **Composes with:** Dream Mode (its palette machinery is the renderer) and Memory (palettes are recallable by place: "the colors from the market in Oaxaca").
 
-### 4.2 Sous Lens
+### 4.2 Sous & Session — the timer/metronome family *(merges the former "Sous" and "Session" lenses)*
 
-**Purpose:** A chef's expediter: every pan gets its own timer machine, and the lens watches doneness with you.
+**Purpose:** One mechanism — a rehearsed figment timer/metronome on the ring, plus optional phone-mic sensing that fills a display slot — expressed as two profiles. **Sous** is the chef's expediter (every pan its own timer; watch doneness with you); **Session** is the musician's practice companion (tempo on the rim, a tuner in the luma, a practice log that writes itself). They're the same lens pointed at two crafts, so build the shared core once.
 
-- **Inputs:** rehearsed interval figments (one per station), deliberate snapshots of the pan, voice ("Hey Oracle, four minutes on the sear").
-- **Outputs:** stacked micro-timers on the ring (figment counters, ≤5 lines), phone `warn` haptic at T-10s, amber pulse (≤4Hz) at zero.
-- **Dataflow:** voice → `parse_intent` timer/interval intents → `v2/native.py: interval_figment` deployed inline (this path exists: `orchestrator._native_behavior` → `bridge.send_raw`). Optional: snapshot → moondream prompt "is the crust golden or pale? one word" → `figment_text` slot fill ("PALE" / "GOLDEN").
-- **Magic moment:** Saying "flip in ninety" *while your hands are full of raw chicken* and having the machine just exist — no screen touched.
-- **Composes with:** Reality Compiler (it *is* figments) and Oracle/Object Lens for the doneness read.
+**The shared core:** voice/intent → `parse_intent` timer/interval intents → `v2/native.py: interval_figment` deployed inline (`orchestrator._native_behavior` → `bridge.send_raw`); the realtime path is pure on-glass figment (offline-total like Kiln). A phone-mic analysis path optionally fills a `figment_text`/amp slot. IMU DOUBLE_NOD (2.1) marks a moment (a station flip, a take).
+
+- **Sous profile — inputs/outputs:** rehearsed interval figments (one per station) + deliberate pan snapshots + voice ("four minutes on the sear"); stacked micro-timers (≤5 lines), phone `warn` at T-10s, amber pulse (≤4Hz) at zero. *Optional doneness read:* snapshot → moondream "crust golden or pale? one word" → slot fill ("PALE"/"GOLDEN").
+- **Session profile — inputs/outputs:** phone mic → beat/pitch tracking (dep: `aubio` realtime / `librosa` offline), figment metronome (pulse ≤4Hz covers up to 240bpm as eighth-note flashes at 2Hz — work with the constraint); metronome pulse in a reserved slot, cents-off-pitch as luma tilt on one arc, per-session KeptCard (minutes, tempo drift, takes), practice streak via a saturating counter → a `taught`/practice memory row nightly.
+- **Magic moment (Sous):** saying "flip in ninety" *while your hands are full of raw chicken* and having the machine just exist — no screen touched.
+- **Magic moment (Session):** the tuner arc settles as you bend into the note — pitch feedback in your *eye line with the neck of the instrument*, which no clip-on tuner or phone app can occupy.
+- **Composes with:** Reality Compiler (both *are* figments; a music teacher can deploy the week's *tempo map* to a student as a signed figment, Category 5), Oracle/Object Lens (the doneness read), and Kiln (4.3 — the same offline-total, radios-off discipline).
 
 ### 4.3 Kiln Lens 🔧 *(embedded-brained)*
 
@@ -360,17 +366,7 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **The genuinely new build over 1.6:** a bonded partner's Wake events crossing the Confluence bond — "his workshop door opened" as an ambient mark on your Horizon ring — which turns two homes' sensors into one shared, still-rate-limited surface. *Only an embedded developer thinks of the display this way.*
 - Everything else (the sketch, the LAN POST route, MAIL/DOOR/KETTLE) is 1.6 verbatim — build it there, not twice.
 
-### 4.5 Stage Whisper
-
-**Purpose:** A performance coach living at the edge of your eye: pace, filler, time remaining — for talks, standup sets, and lectures.
-
-- **Inputs:** phone mic → silero VAD → faster-whisper (`small.en` on Mac); the shipped `plugins/filler.py`; a talk-length figment timer.
-- **Outputs:** the Cinema `amp` message (`{v: 0..99}`, ~15 bytes — designed for exactly this) as a pace bar; `notice` haptic when sustained >165 wpm; filler count on GLANCE_PEEK only (never unrequested); final KeptCard with the arc of the talk.
-- **Dataflow:** rolling 30s transcript window → WPM + filler regex → normalize to amp 0–99 → one BLE frame/second (well under budget) → ring renders a single quiet arc length. Peek gesture (2.1) reveals detail; otherwise it's one moving line.
-- **Magic moment:** You feel yourself rushing, glance at nothing, see the arc near the top, breathe, and watch it settle — the audience saw you *pause meaningfully*.
-- **Composes with:** Candor Mirror (2.7) — Stage Whisper is live and minimal; Candor is the post-mortem depth.
-
-### 4.6 Docent Lens
+### 4.5 Docent Lens
 
 **Purpose:** Any museum, factory floor, or campus can publish a place-keyed knowledge layer; look at the exhibit, hear the curator.
 
@@ -380,7 +376,7 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **Magic moment:** The whisper cites the *placard you can't see from here* — the knowledge is the venue's own docs, not a hallucination, and it worked offline because the collection synced when you bought the ticket.
 - **Composes with:** Oracle/Object Lens (it's a scoped RAG provider behind the same glance arbiter).
 
-### 4.7 Rosetta Live
+### 4.6 Rosetta Live
 
 **Purpose:** Subtitles for the world, fully offline: someone speaks Spanish; the English fades in at font `sm`.
 
@@ -390,7 +386,7 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **Magic moment:** Airplane mode is ON — you show the person the phone's status bar — and their words still land in your eyes in English. Offline translation *on your face* is the whole pitch in one gesture.
 - **Composes with:** Scholar (`orchestrator` scholar ops) for "what did that phrase mean" follow-ups.
 
-### 4.8 Waypath Lens 🎨 *(designer-brained)*
+### 4.7 Waypath Lens 🎨 *(designer-brained)*
 
 **Purpose:** Navigation with zero map: the world's calmest breadcrumb — a single point of light that leans where you should go.
 
@@ -400,7 +396,7 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **Magic moment:** You stop looking at it. Ten minutes later you're there. Navigation without a single instruction, arrow, or street name — a designer's argument that less bandwidth *is* the better product.
 - **Composes with:** Memory/places (the dot can lead to "where I parked" from Retrace 2.6). *A designer invents this by asking what the minimum viable graphic for "that way" is; the answer is one pixel with good manners.*
 
-### 4.9 Ember Lens 🎨 *(designer-brained, sensitive by design)*
+### 4.8 Ember Lens 🎨 *(designer-brained, sensitive by design)*
 
 **Purpose:** A gentle anniversary layer: on days that matter, the ring warms with a memory you chose to keep — never a surprise ambush, always opt-in per-entity.
 
@@ -409,16 +405,6 @@ Before the ideas: the codebase was read end-to-end for this session, and a few t
 - **Dataflow:** nightly REM cycle checks pinned dates/entities → composes a Yesterlight-style card from year-old structured summaries (`rem/reel.py` + `poet.py` exist for exactly this composition register) → morning delivery gated by Inner Weather (a storm-state morning suppresses it — the reactors already expose that scalar).
 - **Magic moment:** A year after the funeral, one quiet line: the thing your father said that you nodded at (2.1) and asked it to keep. You cry, and you're grateful, and you understand what a *memory layer* is for.
 - **Composes with:** REM + Dream Mode. This is the lens that makes journalists write about the platform's soul instead of its specs.
-
-### 4.10 Session Lens
-
-**Purpose:** A musician's practice companion: tempo on the rim, a tuner in the luma, and a practice log that writes itself.
-
-- **Inputs:** phone mic → beat/pitch tracking (named dep: `librosa` for offline analysis or `aubio` for realtime), figment metronome (pulse ≤4Hz covers up to 240bpm as eighth-note flashes at 2Hz — work with the constraint), IMU DOUBLE_NOD to mark takes.
-- **Outputs:** metronome pulse in a reserved slot; cents-off-pitch as luma tilt on one arc; per-session KeptCard (minutes, tempo drift, takes marked); practice streak via a saturating figment counter.
-- **Dataflow:** realtime path is pure figment (metronome machine, offline-total like Kiln); analysis path is phone-mic → host `aubio` → amp frames for the tuner arc → session summary into memory as a `taught`/practice row nightly.
-- **Magic moment:** The tuner arc settles as you bend into the note — pitch feedback in your *eye line with the neck of the instrument*, which no clip-on tuner or phone app can occupy.
-- **Composes with:** Reality Compiler (metronome machines are shareable signed figments — a teacher deploys the week's exercise *tempo map* to a student, Category 5).
 
 ---
 
@@ -522,37 +508,32 @@ Community propagation then composes: install from registry → it joins your pri
 
 ## Category 7 — The Magic Demos
 
-*Five stage scripts, each under two minutes on the current stack (simulator projected large + phone in hand; swap in real Halo the day silicon arrives — the code paths are identical).*
+*Four stage scripts, each around two minutes on the current stack (simulator projected large + phone in hand; swap in real Halo the day silicon arrives — the code paths are identical). Demos 1 and 2 of the original five are merged: creation and the kill switch are the same arc — you should never show one without the other.*
 
-### Demo 1 — "Rehearse It Into Existence"
+### Demo 1 — "Rehearse It Into Existence, Then Banish It"
 
-**Script (90s):** "I'm going to make software exist by *performing it*." Presenter taps the rehearsal start, then acts: tap — "three minute rounds" — tap — "thirty second rest" — "warn at ten" — done. The Choreographer's inference appears; the budget proof prints line by line (scenes: 3, max pulse 2Hz, cannot emit faster than 1/s); presenter hits KEEP, then DEPLOY. The round timer is running on the (projected) glasses four seconds later. Presenter boxes two beats with the bell.
-**Behind the scenes:** `v2/rehearsal.py` beats → `parse_utterance` closed grammar → `Choreographer.infer` → `budgets.verify` → `Vault.keep` (signs canonical JSON) → `StageDeployer.deploy` → `figment_put/swap` envelopes → `figment_stage.lua` hot-swaps between ticks.
-**Audience sees:** a person miming a workout, then a proof, then working software.
-**Reveal:** "No code was generated. No code was *shipped*. That's a machine made of data, and your device just re-proved it can't hurt you. Try that, App Store."
+**Script (~2 min), two beats:**
+- *Beat one — make software by performing it (90s):* "I'm going to make software exist by *performing it*." Presenter taps the rehearsal start, then acts: tap — "three minute rounds" — tap — "thirty second rest" — "warn at ten" — done. The Choreographer's inference appears; the budget proof prints line by line (scenes: 3, max pulse 2Hz, cannot emit faster than 1/s); presenter hits KEEP, then DEPLOY. The round timer is running on the (projected) glasses four seconds later. Presenter boxes two beats with the bell. *"No code was generated. No code was shipped. That's a machine made of data, and your device just re-proved it can't hurt you."*
+- *Beat two — and it can't hold you hostage (45s):* "But if I can install a behavior, the only question that matters is: can I *kill* it?" Presenter invites the audience to shout an annoying behavior, builds it live ("pulse red, say HELLO, every second, forever"), deploys it — the ring pulses obnoxiously. "Now, the most important feature we ship." Two long presses. Dead. Forever. The phone shows `FIGMENT_BANISHED` arriving and the figment landing on the local revocation list; a redeploy attempt fails the gate.
+**Behind the scenes:** *(beat one)* `v2/rehearsal.py` beats → `parse_utterance` closed grammar → `Choreographer.infer` → `budgets.verify` → `Vault.keep` (signs canonical JSON) → `StageDeployer.deploy` → `figment_put/swap` → `figment_stage.lua` hot-swaps between ticks. *(beat two)* `main.lua` BANISH_WINDOW_MS=2000 double-long-press handled *above* the figment stage; `figment_event {tag:"banished"}` → host `rc_deployer` durable revocation; redeploy fails gate 2 of 3.
+**Audience sees:** a person miming a workout → a proof → working software → then a two-gesture execution and proof it can never return.
+**Reveal:** "You watched a behavior be *authored* and *killed* in ninety seconds — and the kill couldn't be swallowed. Not 'promised not to' — *could not*. The kill switch lives below everything you can install. Try that, App Store."
 
-### Demo 2 — "The Banish"
-
-**Script (60s):** Presenter invites the audience to shout an annoying behavior. Builds it live in rehearsal ("pulse red, say HELLO, every second, forever") — deploys it. The ring pulses obnoxiously. "Now — the most important feature we ship." Two long presses. Dead. Forever. The phone shows `FIGMENT_BANISHED` telemetry arriving and the figment landing on the local revocation list.
-**Behind the scenes:** `main.lua` BANISH_WINDOW_MS=2000 double-long-press handled *above* the figment stage; `figment_event {tag:"banished"}` → host `rc_deployer` durable revocation; redeploy attempts now fail gate 2 of 3.
-**Audience sees:** annoyance, then a two-gesture execution, then proof it can never return.
-**Reveal:** "The behavior could not swallow that gesture. Not 'promised not to' — *could not*. The kill switch lives below everything you can install."
-
-### Demo 3 — "Airplane Mode"
+### Demo 2 — "Airplane Mode"
 
 **Script (100s):** Presenter does a normal Oracle exchange ("what's on my plate today?"), then theatrically enables airplane mode on the router — kills the venue wifi — and flips the Mac Mini brain switch on the phone. Asks again. Everything works. Then the twist: opens the Brain panel and swaps the model backend live — cloud GPT → local Ollama — mid-conversation. Answers keep coming, tier badge changes.
 **Behind the scenes:** `ops_brain_switches.py` (`connect_mac_mini`, `use_cloud`), `BrainRouter` tier failover with the HealthLedger recording the dead cloud tier silently, `OllamaBackend.chat` serving locally.
 **Audience sees:** the internet dying and the product not noticing.
 **Reveal:** "The intelligence is a cartridge. You just watched me swap it. Whose glasses let you choose the brain?"
 
-### Demo 4 — "What Did I Nod At?"
+### Demo 3 — "What Did I Nod At?"
 
 **Script (110s):** Before the talk, presenter walked the green room nodding at three objects (phone Look snapshots + NOD_SAVE pins; footage plays on screen, 20 seconds). On stage: "Hey Oracle, what did I nod at?" Three items, with places and times. Then the reveal: opens Memory Grep (Datasette) on the projector and runs `SELECT kind, summary, created_at FROM memories WHERE json_extract(meta,'$.pinned')=1;` — three text rows. "That's the *entire* record. Scroll up — no photos table. There isn't one."
 **Behind the scenes:** IMU NOD_SAVE (wired per 2.1) → `meta.pinned` on ring entries → ingest → `Retriever` recall via the `locate`/recall intents → Datasette read-only over the SQLite file.
 **Audience sees:** perfect recall, then the shockingly small truth of what was kept.
 **Reveal:** "Glasses that remember everything are a nightmare. Glasses that remember what you *chose*, as a sentence you can read and delete — that's a memory."
 
-### Demo 5 — "Tin Can"
+### Demo 4 — "Tin Can"
 
 **Script (80s):** A volunteer gets the second phone (bonded backstage). Presenter: "There is no message app here. Tap me a rhythm." Volunteer taps something jaunty. One second later the presenter's phone buzzes it back *in the volunteer's exact timing* — the audience watches the presenter's glasses ring pulse the same rhythm on the projector. Then the kicker on screen: the relay server's log for the exchange — one line, an opaque room id and a byte count.
 **Behind the scenes:** `TinCan` tap capture (6 taps/1.5s clamp) → bond → `CloudRelayTransport` HMAC envelope → `playTinCan(tapOffsetsMs)` haptic replay + palette pulse frames.
@@ -566,7 +547,7 @@ Community propagation then composes: install from registry → it joins your pri
 *The brutal section: the gap between what the code can do and what it shows.*
 
 1. **The IMU gesture classifier is finished and does nothing.** `halo-lua/app/imu_gesture.lua`: five tuned gestures, EMA smoothing, cooldowns, confidence scores — never instantiated in `main.lua`'s boot path. This is the platform's entire *interaction language* sitting in a drawer. The 10x version is Category 2.1 + gesture events in the figment grammar (5.1) — days of work, and it becomes the thing every demo leans on.
-2. **The Datasette memory explorer is the best trust artifact in wearables, and it's unlaunched.** `memory/datasette_app.py` exists; no command exposes it. Every privacy claim the platform makes becomes *demonstrable* the day this ships (1.8, Demo 4). Half a day.
+2. **The Datasette memory explorer is the best trust artifact in wearables, and it's unlaunched.** `memory/datasette_app.py` exists; no command exposes it. Every privacy claim the platform makes becomes *demonstrable* the day this ships (1.8, Demo 3). Half a day.
 3. **46 GOPS at zero utilization.** The Ethos-U55 has no model on it and the host `NpuPerceptor` seam answers with heuristics. Pre-hardware, fine — but there's no `.tflite` in the repo, no Vela pipeline, no candidate zoo. The 10x version: adopt the 350ms Club (1.4) as the funnel and commit a `models/` directory with the quantization recipe now, so day-one silicon has a day-one model.
 4. **The "LLM parser" is regex in a trenchcoat.** `reality_compiler/intent_parser_llm.py: _llm_parse()` concatenates the model hint and re-runs the deterministic matcher; outlines/instructor are imported and unused. What's there now is the worst option: an aspiration that reads like a capability. **The two options are not equal — delete it.** The deterministic grammar *is* the safety story (5.4); a non-deterministic model in the parse/decode path reintroduces exactly the unpredictability the whole budget-proof architecture exists to eliminate. Wiring constrained decoding is the seductive wrong move; owning "the grammar is closed, and that's the point" is the right one. (If a fuzzy front-end is ever wanted, it belongs *above* the closed grammar as a suggestion layer, never *inside* it.)
 5. **Device telemetry has no audience.** The glasses dutifully emit `TEL` (CARD_SHOWN/DISMISSED, HEAP watermarks every 60s, TICK_ERROR, PRIVACY_VEIL, FIGMENT_BANISHED) and the phone's `HaloBridge` routes it to an optional callback nobody registers. The 10x version: a "Device Vitals" card in the phone settings (heap trend, crash count, dismissal heatmap) — and the marketplace's banish-rate stat (5.2) is *already being broadcast* by every device.
@@ -584,11 +565,11 @@ Ranked across all categories by (impact on what DreamLayer is remembered for) ×
 
 1. **Proof-Carrying Behaviors + the Behavior Marketplace** (3.2 + 5.2) — This is the platform's singular idea: user-authored reality, provably safe, signed, revocable, with an 85/15 economy. Nobody else *can* build it, because nobody else made behaviors into data. Every other idea gets stronger if this exists.
 2. **Nod to Remember + gesture events** (2.1 + 5.1) — The cheapest transformative build in the repo (the classifier is already tuned). It gives the platform an interaction language that photographs beautifully, and it turns memory from ambient surveillance into deliberate authorship — the ethical position, embodied in a gesture.
-3. **Airplane Mode / Bring-Your-Own-Brain** (3.1 + Demo 3) — The open-platform thesis compressed into one stage moment. It converts "open source" from a values statement into a visceral capability difference no closed vendor can perform.
+3. **Airplane Mode / Bring-Your-Own-Brain** (3.1 + Demo 2) — The open-platform thesis compressed into one stage moment. It converts "open source" from a values statement into a visceral capability difference no closed vendor can perform.
 4. **Overnight Self** (2.2) — "A different model every morning, trained on your day, on your desk, while you sleep" is the first headline about *personal* AI hardware that cloud platforms structurally cannot write. The REM architecture was built for exactly this; `nightly_mlx.py` is waiting.
-5. **Tin Can Telegraph + blind Confluence** (2.4 + Demo 5) — The emotional killer app. Presence with provably zero content is the feature that makes non-developers cry in demos and gives DreamLayer Cloud its reason to exist (the relay) without breaking a single privacy invariant.
+5. **Tin Can Telegraph + blind Confluence** (2.4 + Demo 4) — The emotional killer app. Presence with provably zero content is the feature that makes non-developers cry in demos and gives DreamLayer Cloud its reason to exist (the relay) without breaking a single privacy invariant.
 
-> **Editor's amendment to this ranking.** Two changes after reading the whole doc against what's actually built: **(a) Overnight Self (#4) is over-ranked** — it's a research bet with no eval gate (see 2.2); demote it below Tin Can and don't headline it until the quality gate exists. **(b) Memory Grep / Datasette (1.8, Demo 4) belongs in this list.** It's ~half a day, the code already exists, and it's the single highest *trust-per-hour* item in the document — it turns every privacy claim into something a journalist can run a `SELECT` against, live, on stage. On the "what DreamLayer is remembered for" axis, a demonstrable privacy claim beats a fourth flavor of on-device intelligence. Ranked by buildability, **Nod to Remember (#2) is really #1** — the classifier is finished and tuned; it's the cheapest transformative build in the repo.
+> **Editor's amendment to this ranking.** Two changes after reading the whole doc against what's actually built: **(a) Overnight Self (#4) is over-ranked** — it's a research bet with no eval gate (see 2.2); demote it below Tin Can and don't headline it until the quality gate exists. **(b) Memory Grep / Datasette (1.8, Demo 3) belongs in this list.** It's ~half a day, the code already exists, and it's the single highest *trust-per-hour* item in the document — it turns every privacy claim into something a journalist can run a `SELECT` against, live, on stage. On the "what DreamLayer is remembered for" axis, a demonstrable privacy claim beats a fourth flavor of on-device intelligence. Ranked by buildability, **Nod to Remember (#2) is really #1** — the classifier is finished and tuned; it's the cheapest transformative build in the repo.
 
 ---
 
