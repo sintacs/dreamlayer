@@ -88,14 +88,44 @@ class RealityCompilerV2:
             self.ranker.observe(figment_id, "deploy", hour)
         return record
 
-    def record_outcome(self, figment_id: str, outcome: str) -> None:
+    def record_outcome(self, figment_id: str, outcome: str,
+                       scene: Optional[str] = None,
+                       elapsed: Optional[float] = None) -> None:
         """Log how a deployed figment ended — "complete" (reached its terminal
-        scene) or "banish" (killed). Feeds the repertoire ranker's completion
-        rate and is kept in the vault log so the lesson survives a restart."""
+        scene) or "banish" (killed). For a banish, `scene`/`elapsed` say where it
+        was killed, which drives rehearsal refinement (5.3). Feeds the ranker
+        and is kept in the vault log so the lesson survives a restart."""
         if outcome not in ("complete", "banish"):
             return
-        self.vault.record_performance(figment_id, {"action": outcome})
+        ctx = {"action": outcome}
+        if scene is not None:
+            ctx["scene"] = scene
+        if elapsed is not None:
+            ctx["elapsed"] = round(float(elapsed), 1)
+        self.vault.record_performance(figment_id, ctx)
         self.ranker.observe(figment_id, outcome)
+
+    def refine_proposal(self, figment_id: str, min_banishes: int = 2):
+        """If a figment keeps getting banished at the same scene, propose the
+        edit — "you end this around 20:00 of 25:00, shorten it?" Returns a
+        RefineProposal or None."""
+        from .refine import propose_refinement
+        try:
+            entry = self.vault.load(figment_id)
+        except KeyError:
+            return None
+        return propose_refinement(entry.figment,
+                                  self.vault.performance_history(figment_id),
+                                  min_banishes=min_banishes)
+
+    def apply_refinement(self, proposal) -> VaultEntry:
+        """Materialise a proposed refinement: a budget-verified, re-signed
+        variant with the offending scene shortened and the lineage recorded.
+        Both the original and the variant stay in the vault."""
+        from .refine import build_variant
+        variant = build_variant(self.vault.load(proposal.figment_id).figment,
+                                proposal.scene, proposal.suggested_sec)
+        return self.keep(variant)      # verifies budgets + signs
 
     def suggest(self, hour: Optional[int] = None) -> Optional[dict]:
         """The best machine for right now, or None. "Gym? Start the usual?" """

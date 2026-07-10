@@ -367,6 +367,25 @@ class Brain:
             self._rc_active = None
         return {"ok": True, **self.rc_repertoire()}
 
+    def rc_refine_suggestion(self, figment_id: str) -> dict:
+        """If you keep quitting this figment at the same scene, the compiler's
+        proposed edit — "you end this around 20:00 of 25:00, shorten it?" (5.3).
+        Returns {proposal: null} when there's nothing to tune."""
+        p = self.rc.refine_proposal(figment_id)
+        return {"proposal": p.as_dict() if p is not None else None}
+
+    def rc_refine_apply(self, figment_id: str) -> dict:
+        """One tap: materialise the proposed refinement as a budget-verified,
+        re-signed variant (lineage kept). Returns the new entry + repertoire."""
+        from ...reality_compiler.v2 import present
+        p = self.rc.refine_proposal(figment_id)
+        if p is None:
+            return {"ok": False, "error": "nothing to refine"}
+        entry = self.rc.apply_refinement(p)
+        self.activity.add("rc", f"Refined {figment_id} → {entry.figment.id}")
+        return {"ok": True, "entry": present.repertoire_entry(entry, self._rc_active),
+                **self.rc_repertoire()}
+
     def rc_event(self, name: str) -> dict:
         """Forward a physical-world signal to the figment on stage (the $6
         ESP32 kit path, INNOVATION 1.6): a reed switch / thermistor / button
