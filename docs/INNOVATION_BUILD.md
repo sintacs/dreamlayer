@@ -23,7 +23,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B3 | Capability catalog surfaced (C8#10) | BUILD | `capabilities.py` CLI (done) → phone screen (later) | partial |
 | B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | **DONE** | `plugins/os_sandbox.py` | ✅ verified wired via isolation.py; corrected stale "WASM not yet wired" line |
 | B5 | Glass Desk devkit — `simulator --watch` (1.1) | BUILD | `simulator/` + `orchestrator/fs_watch.py` | queued |
-| B6 | Figment Golf CLI — `golf verify/score` (1.3) | BUILD | new `reality_compiler/v2/golf.py` + CLI | queued |
+| B6 | Figment Golf CLI — `golf verify` (1.3) | **DONE** | `reality_compiler/v2/golf.py` + `cli.py` `golf` group | ✅ referees budgets + scores expressiveness/byte; bare + wrapped listings; 5 tests |
 | B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |
 | B8 | Earcon/Haptic pack manifest + validator (1.5) | BUILD | `plugins/package.py` + `plugins/validate.py` | queued |
 | B9 | Proof-carrying install safety card (3.2) | BUILD | `reality_compiler/v2/budgets.py` report → render | queued |

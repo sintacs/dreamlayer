@@ -531,6 +531,44 @@ def cmd_mem_browse(args) -> int:
     return 0
 
 
+# --- figment golf: the compiler is the referee -------------------------------
+
+def _load_figment(path_str: str):
+    """Load a figment from a bare figment .json or a {figment: ...} listing."""
+    from dreamlayer.reality_compiler.v2.figment import Figment
+    d = json.loads(Path(path_str).read_text(encoding="utf-8"))
+    if isinstance(d.get("figment"), dict):
+        d = d["figment"]
+    return Figment.from_dict(d)
+
+
+def cmd_golf_verify(args) -> int:
+    """Verify a figment against the sandbox budgets and score it per byte."""
+    try:
+        fig = _load_figment(args.path)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        _err(f"{BAD} not a figment: {exc}")
+        return 2
+    from dreamlayer.reality_compiler.v2.golf import referee
+    r = referee(fig)
+    if getattr(args, "json", False):
+        _p(json.dumps(r, indent=2))
+        return 0 if r["ok"] else 1
+    sc = r["score"]
+    _p(f"{OK if r['ok'] else BAD} "
+       f"{'BUDGETS OK' if r['ok'] else 'BUDGETS VIOLATED'}  "
+       f"(display ≤{r['proof']['worst_display_hz']:g}Hz, "
+       f"emit ≤{r['proof']['worst_emit_per_sec']:g}/s)")
+    for v in r["violations"]:
+        _p(f"  {BAD} {v}")
+    _p(f"{ARROW} golf score {sc['golf_score']}  "
+       f"(expressiveness {sc['expressiveness']} in {sc['bytes']} bytes)")
+    _p(f"    scenes={sc['scenes']}  events={sc['distinct_events']}  "
+       f"counters={sc['counters']}  pulses={sc['pulses']}  "
+       f"emits={sc['emits']}  lines={sc['lines']}")
+    return 0 if r["ok"] else 1
+
+
 # --- parser ------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -607,6 +645,14 @@ def build_parser() -> argparse.ArgumentParser:
     mbrowse.add_argument("--print", dest="print_cmd", action="store_true",
                          help="print the launch command instead of serving")
     mbrowse.set_defaults(func=cmd_mem_browse)
+
+    # golf — score a figment's expressiveness per byte; the compiler referees
+    golf = groups.add_parser("golf", help="score a figment's expressiveness per byte (budgets are the referee)")
+    gsub = golf.add_subparsers(dest="cmd")
+    gv = gsub.add_parser("verify", help="verify a figment against the sandbox budgets and score it")
+    gv.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
+    gv.add_argument("--json", action="store_true", help="machine-readable output")
+    gv.set_defaults(func=cmd_golf_verify)
 
     return parser
 
