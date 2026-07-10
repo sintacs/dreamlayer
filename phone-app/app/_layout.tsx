@@ -103,6 +103,7 @@ export default function Layout() {
       {/* reachable from Settings → Labs, kept out of the bar */}
       <Tabs.Screen name="brief" options={{ href: null }} />
       <Tabs.Screen name="plugins" options={{ href: null }} />
+      <Tabs.Screen name="capabilities" options={{ href: null }} />
       <Tabs.Screen name="rewind" options={{ href: null }} />
       <Tabs.Screen name="saga" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />

@@ -20,7 +20,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 |---|---|---|---|---|
 | B1 | Memory Grep — browse your memory as a file (1.8, 3.3, C8#2) | **DONE** | `cli.py` `memories` group + `memory/datasette_app.py` | ✅ `memories path` / `browse` (read-only, veil-gated, canned queries); 8 tests |
 | B2 | Data trinity — `memories export/import/burn` (3.3) | **DONE** | `cli.py` `memories` group | ✅ export (copy out), import (restore, `--force` to clobber), burn (delete, guarded behind `--yes`); 5 tests |
-| B3 | Capability catalog surfaced (C8#10) | BUILD | `capabilities.py` CLI (done) → phone screen (later) | partial |
+| B3 | Capability catalog surfaced (C8#10) | **DONE** | `capabilities.py` CLI + phone `app/capabilities.tsx` + `useCapabilityStore` | ✅ phone screen fetches `/dreamlayer/capabilities`, renders the "your Brain can also learn to…" upgrade path (impact-sorted), linked from settings; 5 tests (store + screen) |
 | B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | **DONE** | `plugins/os_sandbox.py` | ✅ verified wired via isolation.py; corrected stale "WASM not yet wired" line |
 | B5 | Glass Desk devkit — `simulator --watch` (1.1) | **DONE** | `simulator/glass_desk.py` + `simulator/server.py` | ✅ live-renders a plugin card through the real 256px renderer + safe-radius overlay on save; watchdog + poll fallback; `--once`; 3 tests; SDK.md |
 | B6 | Figment Golf CLI — `golf verify` (1.3) | **DONE** | `reality_compiler/v2/golf.py` + `cli.py` `golf` group | ✅ referees budgets + scores expressiveness/byte; bare + wrapped listings; 5 tests |
