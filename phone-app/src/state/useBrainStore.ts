@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { decodePairing } from "../services/pairing";
+import { useConnectionStore } from "./useConnectionStore";
 import * as demo from "../demo/fixtures";
 
 /** A Brain just paired — complete any plugin installs queued while offline.
@@ -96,6 +97,9 @@ type BrainState = {
   onboardingSeen: boolean; // first-run tour shown once
   setOnboardingSeen: (v: boolean) => void;
   hydrated: boolean;
+  outbox: Record<string, unknown>; // config patches awaiting a reachable Brain
+  unsynced: () => boolean; // the UI's honest "pending sync" marker
+  flushOutbox: () => void; // drain queued patches (reconnect / pair)
 
   // derived
   brainKind: () => BrainKind;
@@ -120,6 +124,8 @@ type BrainState = {
   // pairing + recall
   pairFromCode: (code: string) => { brain: boolean; glasses: boolean };
   ask: (query: string) => Promise<AskResult>;
+  // the deliberate camera tier: a phone photo through the Brain's vision path
+  explain: (imageB64: string, label?: string) => Promise<AskResult>;
 
   // one-glance morning brief synthesized by the Brain
   getBrief: (agenda?: string[]) => Promise<{ text: string; missed?: { texts: number; emails: number } } | null>;
@@ -182,6 +188,7 @@ function persist(s: BrainState) {
     demoMode: s.demoMode,
     onboardingSeen: s.onboardingSeen,
     longBrief: s.longBrief,
+    outbox: s.outbox,
   };
   AsyncStorage.setItem(KEY, JSON.stringify(snap)).catch(() => {});
 }
@@ -197,29 +204,70 @@ function headers(m: MacMini): Record<string, string> {
  * (reach-anywhere) when the LAN address can't be reached — so recall and
  * messages keep working when you're out. The relay *server* is infra you host;
  * this is the client that uses it.
+ *
+ * Every outcome is reported to useConnectionStore, so the app has ONE truth
+ * about reachability instead of a guess per call.
  */
 async function brainFetch(m: MacMini, path: string, opts: RequestInit = {}): Promise<Response> {
+  const conn = useConnectionStore.getState();
   const o: RequestInit = { ...opts, headers: { ...headers(m), ...(opts.headers as object) } };
   try {
-    return await fetch(m.url + path, o);
+    const r = await fetch(m.url + path, o);
+    conn.noteLan();
+    return r;
   } catch (e) {
-    if (m.relayUrl) return await fetch(m.relayUrl + path, o);
+    if (m.relayUrl) {
+      try {
+        const r = await fetch(m.relayUrl + path, o);
+        conn.noteRelay();
+        return r;
+      } catch (e2) {
+        conn.noteFailure();
+        throw e2;
+      }
+    }
+    conn.noteFailure();
     throw e;
   }
 }
 
-// best-effort push of the current switches to the paired Brain
-function syncToBrain(s: BrainState) {
+/**
+ * The config outbox: switch changes the Brain must learn about are pushed
+ * through here. A failed push is not swallowed anymore — the patch is kept
+ * (merged, persisted) and drained the moment the connection store reports
+ * the Brain back, so a toggle flipped in a tunnel still lands. The UI can
+ * read `unsynced` and mark the pending state honestly.
+ */
+function pushConfig(get: () => BrainState, set: (p: Partial<BrainState>) => void,
+                    patch: Record<string, unknown>) {
+  const s = get();
   const m = s.macMini;
-  if (!m.connected || !m.url) return;
-  fetch(m.url + "/dreamlayer/config", {
+  const merged = { ...s.outbox, ...patch };
+  if (!m.connected || !m.url) {
+    set({ outbox: merged });
+    persist(get());
+    return;
+  }
+  brainFetch(m, "/dreamlayer/config", {
     method: "POST",
-    headers: headers(m),
-    body: JSON.stringify({
-      cloud_enabled: s.effectiveCloud(),
-      network_mode: s.incognito ? "lan_only" : "connected",
-    }),
-  }).catch(() => {});
+    body: JSON.stringify(merged),
+  })
+    .then(() => {
+      set({ outbox: {} });
+      persist(get());
+    })
+    .catch(() => {
+      set({ outbox: merged });
+      persist(get());
+    });
+}
+
+// the switches the Brain mirrors, derived from current state
+function switchPatch(s: BrainState): Record<string, unknown> {
+  return {
+    cloud_enabled: s.effectiveCloud(),
+    network_mode: s.incognito ? "lan_only" : "connected",
+  };
 }
 
 export const useBrainStore = create<BrainState>((set, get) => ({
@@ -243,30 +291,38 @@ export const useBrainStore = create<BrainState>((set, get) => ({
   onboardingSeen: false,
   longBrief: null,
   hydrated: false,
+  outbox: {},
 
   brainKind: () => (get().macMini.connected ? "mac_mini" : "phone"),
   effectiveCloud: () => (get().incognito ? false : get().cloud),
+  unsynced: () => Object.keys(get().outbox).length > 0,
+
+  flushOutbox: () => {
+    const s = get();
+    if (Object.keys(s.outbox).length === 0) return;
+    pushConfig(get, set, {});          // pushes the merged outbox as-is
+  },
 
   connectMacMini: (on) => {
     set((s) => ({ macMini: { ...s.macMini, connected: on } }));
     const s = get();
     persist(s);
-    syncToBrain(s);
-    if (on) flushPendingPlugins(s.macMini);
+    if (on) {
+      pushConfig(get, set, switchPatch(s));
+      flushPendingPlugins(s.macMini);
+    }
   },
 
   setCloud: (on) => {
     set({ cloud: on });
-    const s = get();
-    persist(s);
-    syncToBrain(s);
+    persist(get());
+    pushConfig(get, set, switchPatch(get()));
   },
 
   setIncognito: (on) => {
     set({ incognito: on, capturePaused: on ? true : get().capturePaused });
-    const s = get();
-    persist(s);
-    syncToBrain(s);
+    persist(get());
+    pushConfig(get, set, switchPatch(get()));
   },
 
   setCapturePaused: (on) => {
@@ -286,17 +342,9 @@ export const useBrainStore = create<BrainState>((set, get) => ({
 
   setSummarizeEmails: (on) => {
     set({ summarizeEmails: on });
-    const s = get();
-    persist(s);
-    // this one lives on the Brain (it has the model) — push it there
-    const m = s.macMini;
-    if (m.connected && m.url) {
-      fetch(m.url + "/dreamlayer/config", {
-        method: "POST",
-        headers: headers(m),
-        body: JSON.stringify({ summarize_emails: on }),
-      }).catch(() => {});
-    }
+    persist(get());
+    // this one lives on the Brain (it has the model) — outboxed like the rest
+    pushConfig(get, set, { summarize_emails: on });
   },
 
   connectGlasses: (id) => {
@@ -339,8 +387,10 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     }
     const s = get();
     persist(s);
-    syncToBrain(s);
-    if (b.brainUrl) flushPendingPlugins(s.macMini);
+    if (b.brainUrl) {
+      pushConfig(get, set, switchPatch(s));   // drains the outbox too
+      flushPendingPlugins(s.macMini);
+    }
     return { brain: !!b.brainUrl, glasses: !!b.glassesId };
   },
 
@@ -363,6 +413,33 @@ export const useBrainStore = create<BrainState>((set, get) => ({
       return { text: j.text ?? "", tier: j.tier ?? "", sources: j.sources ?? [] };
     } catch {
       return { text: "Couldn't reach your Brain. Is the Mac mini awake and reachable (LAN or relay)?", tier: "", sources: [] };
+    }
+  },
+
+  explain: async (imageB64, label = "") => {
+    // The deliberate camera tier: pulling out the phone IS consent and
+    // intent, the sensor is 10x the Halo snapshot, and there's no BLE tax.
+    // Same pipeline the glasses use — POST /dreamlayer/brain/explain.
+    if (get().demoMode) {
+      return {
+        text: "Snake plant — water every 2–3 weeks; yours looks thirsty. (demo)",
+        tier: "device",
+        sources: ["demo"],
+      };
+    }
+    const m = get().macMini;
+    if (!m.connected || !m.url) {
+      return { text: "Pair your Brain to explain what you see.", tier: "", sources: [] };
+    }
+    try {
+      const r = await brainFetch(m, "/dreamlayer/brain/explain", {
+        method: "POST",
+        body: JSON.stringify({ label, image: imageB64, want: "rich" }),
+      });
+      const j = await r.json();
+      return { text: j.text ?? "", tier: j.tier ?? "", sources: j.sources ?? [] };
+    } catch {
+      return { text: "Couldn't reach your Brain — try again when it's back.", tier: "", sources: [] };
     }
   },
 
@@ -649,6 +726,13 @@ export const useBrainStore = create<BrainState>((set, get) => ({
       if (raw) {
         const snap = JSON.parse(raw);
         set({ ...snap, hydrated: true });
+        // settle the connection pill (and drain any outbox) right away
+        const m = get().macMini;
+        if (m.connected && m.url) {
+          useConnectionStore.getState().probe(m).catch(() => {});
+        } else {
+          useConnectionStore.getState().noteUnpaired();
+        }
         return;
       }
     } catch {
@@ -657,3 +741,13 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     set({ hydrated: true });
   },
 }));
+
+// The Brain coming back is the moment queued config lands — one listener,
+// registered once at module scope.
+useConnectionStore.getState().onReconnect(() => {
+  try {
+    useBrainStore.getState().flushOutbox();
+  } catch {
+    /* never let a drain error break the connection machine */
+  }
+});

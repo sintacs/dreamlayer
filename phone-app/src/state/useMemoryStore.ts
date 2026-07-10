@@ -10,7 +10,14 @@
  * alive before a Halo has ever been worn / before a Brain is paired.
  */
 import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useBrainStore } from "./useBrainStore";
+
+// Offline read-cache: the last successful fetch, with a staleness stamp.
+// "Offline-first" has to be true where the user actually feels it — an
+// unreachable Brain shows what you knew (and WHEN you knew it), not
+// fixtures or an empty screen.
+const CACHE_KEY = "dreamlayer.memories.cache.v1";
 
 type MacTarget = { url: string; token: string; relayUrl?: string };
 
@@ -57,6 +64,7 @@ export type HaloCard = {
 
 type MemoryState = {
   memories: Memory[];
+  fetchedAt: number; // epoch ms of the last successful Brain fetch (0 = never)
   service: {
     lastCard: HaloCard;
     purgeAll: () => void;
@@ -64,6 +72,7 @@ type MemoryState = {
   };
   refresh: () => Promise<void>;
   ingest: (m: Memory) => void;
+  hydrateCache: () => Promise<void>;
 };
 
 const HOUR = 3_600_000;
@@ -79,6 +88,7 @@ const SEED: Memory[] = [
 
 export const useMemoryStore = create<MemoryState>((set, get) => ({
   memories: SEED,
+  fetchedAt: 0,
   service: {
     lastCard: { kind: "Promise", primary: "You owe Marcus the signed lease", lines: ["due Friday", "tap to open the thread"] },
     purgeAll: () => {
@@ -100,10 +110,29 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
       const r = await req(m, "/dreamlayer/memories");
       // only a well-formed answer replaces the list — an error body (e.g. a
       // stale token's {"error":"unauthorised"}) must not wipe local memories
-      if (Array.isArray(r?.memories)) set({ memories: r.memories.map(normalizeMemory) });
+      if (Array.isArray(r?.memories)) {
+        const memories = r.memories.map(normalizeMemory);
+        const fetchedAt = Date.now();
+        set({ memories, fetchedAt });
+        AsyncStorage.setItem(CACHE_KEY,
+          JSON.stringify({ memories, fetchedAt })).catch(() => {});
+      }
     } catch {
-      /* unreachable → keep current */
+      /* unreachable → keep current (the cache, or what's been ingested) */
     }
   },
   ingest: (m) => set((s) => ({ memories: [m, ...s.memories] })),
+  hydrateCache: async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const snap = JSON.parse(raw);
+      if (Array.isArray(snap?.memories) && snap.memories.length) {
+        set({ memories: snap.memories.map(normalizeMemory),
+              fetchedAt: Number(snap.fetchedAt) || 0 });
+      }
+    } catch {
+      /* a corrupt cache never blocks boot */
+    }
+  },
 }));

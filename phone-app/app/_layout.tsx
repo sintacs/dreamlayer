@@ -37,7 +37,14 @@ export default function Layout() {
   const hydrate = useBrainStore((s) => s.hydrate);
   const hydrated = useBrainStore((s) => s.hydrated);
   React.useEffect(() => {
-    if (!hydrated) hydrate();
+    if (!hydrated) {
+      hydrate();
+      // offline read-caches: show what you knew (and when) before any network
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require("../src/state/useMemoryStore").useMemoryStore.getState().hydrateCache();
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require("../src/state/usePeopleStore").usePeopleStore.getState().hydrateCache();
+    }
   }, [hydrated, hydrate]);
   if (!loaded) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
 
@@ -97,6 +104,7 @@ export default function Layout() {
       <Tabs.Screen name="profile" options={{ href: null }} />
       <Tabs.Screen name="rehearsal" options={{ href: null }} />
       <Tabs.Screen name="confluence" options={{ href: null }} />
+      <Tabs.Screen name="look" options={{ href: null }} />
       <Tabs.Screen name="onboarding" options={{ href: null, ...noBar }} />
       <Tabs.Screen name="index" options={{ href: null, ...noBar }} />
     </Tabs>

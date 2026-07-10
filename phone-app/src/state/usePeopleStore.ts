@@ -10,8 +10,14 @@
  * Everything is on your own device; nothing leaves it.
  */
 import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useBrainStore } from "./useBrainStore";
 import { demoPeople } from "../demo/fixtures";
+
+// Offline read-cache (same contract as useMemoryStore): the last successful
+// fetch with a staleness stamp, so an unreachable Brain still shows your
+// people — with an honest "as of" — instead of an empty screen.
+const CACHE_KEY = "dreamlayer.people.cache.v1";
 
 export type Person = {
   contact_id: string;
@@ -65,6 +71,8 @@ type PeopleState = {
   loading: boolean;
   paired: boolean;
   loaded: boolean;
+  fetchedAt: number; // epoch ms of the last successful fetch (0 = never)
+  hydrateCache: () => Promise<void>;
   fetchPeople: () => Promise<void>;
   addNote: (id: string, note: string) => Promise<void>;
   removeNote: (id: string, note: string) => Promise<void>;
@@ -94,6 +102,21 @@ export const usePeopleStore = create<PeopleState>((set, get) => ({
   loading: false,
   paired: false,
   loaded: false,
+  fetchedAt: 0,
+
+  hydrateCache: async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const snap = JSON.parse(raw);
+      if (Array.isArray(snap?.people) && snap.people.length && !get().people.length) {
+        set({ people: snap.people.map(normalize),
+              fetchedAt: Number(snap.fetchedAt) || 0, loaded: true });
+      }
+    } catch {
+      /* a corrupt cache never blocks boot */
+    }
+  },
 
   fetchPeople: async () => {
     if (useBrainStore.getState().demoMode) {
@@ -109,8 +132,12 @@ export const usePeopleStore = create<PeopleState>((set, get) => ({
     try {
       const r = await req(m, "/dreamlayer/social/people");
       const people = Array.isArray(r?.people) ? r.people.map(normalize) : [];
-      set({ people, loading: false, loaded: true });
+      const fetchedAt = Date.now();
+      set({ people, loading: false, loaded: true, fetchedAt });
+      AsyncStorage.setItem(CACHE_KEY,
+        JSON.stringify({ people, fetchedAt })).catch(() => {});
     } catch {
+      // unreachable → keep what we had (the cache); the pill says why
       set({ loading: false, loaded: true });
     }
   },

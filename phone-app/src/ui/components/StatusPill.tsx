@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors } from "../theme/colors";
 import { typography } from "../theme/typography";
+import { useConnectionStore } from "../../state/useConnectionStore";
 
 /** A small live/paused indicator for the Now header. */
 export function StatusPill({ paused }: { paused: boolean }) {
@@ -10,6 +11,23 @@ export function StatusPill({ paused }: { paused: boolean }) {
     <View style={[s.pill, { borderColor: tint }]}>
       <View style={[s.dot, { backgroundColor: tint }]} />
       <Text style={[typography.caption, { color: tint }]}>{paused ? "Paused" : "Live"}</Text>
+    </View>
+  );
+}
+
+/** The Brain's three honest reachability truths — home / away via relay /
+ * unreachable — rendered from the single connection state machine, never a
+ * per-call guess. Renders nothing while no Brain is paired. */
+export function BrainPill() {
+  const state = useConnectionStore((s) => s.state);
+  const labelFn = useConnectionStore((s) => s.label);
+  if (state === "unpaired") return null;
+  const tint =
+    state === "lan" ? colors.accentSuccess : colors.statusPaused;
+  return (
+    <View style={[s.pill, { borderColor: tint }]}>
+      <View style={[s.dot, { backgroundColor: tint }]} />
+      <Text style={[typography.caption, { color: tint }]}>{labelFn()}</Text>
     </View>
   );
 }
