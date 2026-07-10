@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet } from "react-native";
 
 import { useWaypathStore } from "../src/state/useWaypathStore";
 import { type Dot, type LatLng } from "../src/nav/waypath";
+import { simulateWalk } from "../src/nav/sim";
 import { Screen } from "../src/ui/components/Screen";
 import { ScreenHeader } from "../src/ui/components/ScreenHeader";
 import { PrimaryButton } from "../src/ui/components/PrimaryButton";
@@ -74,6 +75,31 @@ export default function Waypath() {
     if (a && b) navigateTo(a, b);
   }
 
+  // A virtual walk along the route — demo Waypath with no GPS. Steps the store
+  // through interpolated positions so the dot leans, closes in, and arrives.
+  const simRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  function stopSim() {
+    if (simRef.current) {
+      clearInterval(simRef.current);
+      simRef.current = null;
+    }
+  }
+  function simulate() {
+    stopSim();
+    const steps = simulateWalk(route);
+    if (!steps.length) return;
+    let i = 0;
+    simRef.current = setInterval(() => {
+      const s = steps[i++];
+      if (!s) {
+        stopSim();
+        return;
+      }
+      update(s.pos, s.heading);
+    }, 450);
+  }
+  useEffect(() => stopSim, []);
+
   // Live GPS while navigating (guarded — no-op without expo-location).
   useEffect(() => {
     if (status !== "navigating" || !Location?.watchPositionAsync) return;
@@ -121,6 +147,11 @@ export default function Waypath() {
         onChangeText={setTo}
       />
       <PrimaryButton label={route.length ? "Re-route" : "Navigate"} onPress={go} />
+      {route.length ? (
+        <Tappable onPress={simulate}>
+          <Text style={[st.link, { marginTop: space.sm }]}>▶ Simulate the walk (demo, no GPS)</Text>
+        </Tappable>
+      ) : null}
 
       <Ring dot={dot} />
 
@@ -132,7 +163,7 @@ export default function Waypath() {
         {status === "idle" && "set a destination to begin."}
       </Text>
       {route.length ? (
-        <Tappable onPress={clear}>
+        <Tappable onPress={() => { stopSim(); clear(); }}>
           <Text style={st.link}>Clear route</Text>
         </Tappable>
       ) : null}

@@ -1,6 +1,6 @@
 /** Waypath screen (4.7): the one-dot renderer + destination entry. */
 import React from "react";
-import { render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 
 import Waypath, { parseLatLng } from "../../app/waypath";
 import { useWaypathStore } from "../state/useWaypathStore";
@@ -41,5 +41,19 @@ describe("Waypath screen", () => {
     });
     render(<Waypath />);
     expect(screen.getByText("✓ arrived")).toBeTruthy();
+  });
+
+  it("offers a demo walk that moves the dot when a route exists", () => {
+    jest.useFakeTimers();
+    useWaypathStore.setState({
+      route: [{ lat: 0, lng: 0 }, { lat: 0.02, lng: 0 }],
+      status: "navigating",
+      dot: null,
+    });
+    render(<Waypath />);
+    fireEvent.press(screen.getByText(/Simulate the walk/));
+    act(() => jest.advanceTimersByTime(1500));
+    expect(useWaypathStore.getState().dot).not.toBeNull();
+    jest.useRealTimers();
   });
 });
