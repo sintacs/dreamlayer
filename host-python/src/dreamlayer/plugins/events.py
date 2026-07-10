@@ -45,9 +45,10 @@ class PluginEventBus:
     ``allow_capture()`` (the PrivacyGate); `health` is an optional
     HealthLedger for isolating and recording subscriber failures."""
 
-    def __init__(self, veil=None, health=None):
+    def __init__(self, veil=None, health=None, caplog=None):
         self._veil = veil
         self._health = health
+        self._caplog = caplog          # CapabilityLedger — records each delivery
         self._subs: dict[str, list] = {k: [] for k in KINDS}
 
     # -- subscription (called via PluginContext.subscribe) -------------------
@@ -84,6 +85,8 @@ class PluginEventBus:
             try:
                 fn(kind, data)
                 n += 1
+                if self._caplog is not None:       # transparency: host routed a kind here
+                    self._caplog.record(name, f"event:{kind}")
             except Exception as exc:               # never let a plugin break a publish
                 if self._health is not None:
                     self._health.record_failure(f"plugin:{name}", exc)

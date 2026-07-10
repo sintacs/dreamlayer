@@ -224,11 +224,15 @@ class PluginStore:
                 host = SubprocessPluginHost(
                     self.dir / name, package.manifest.requires,
                     health=getattr(orchestrator, "health", None),
-                    name=package.manifest.name)
+                    name=package.manifest.name,
+                    caplog=getattr(orchestrator, "capability_log", None))
                 try:
                     if host.start():
                         host.register_into(orchestrator)
                         self.isolated.append(host)
+                        caplog = getattr(orchestrator, "capability_log", None)
+                        if caplog is not None:
+                            caplog.grant(package.manifest.name, package.manifest.requires)
                 except Exception:
                     host.stop()
                 continue

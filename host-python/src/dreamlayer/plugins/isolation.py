@@ -35,10 +35,11 @@ class SubprocessPluginHost:
     """Owns one sandbox child and the host-side proxies for its providers."""
 
     def __init__(self, package_dir, capabilities, health=None,
-                 deadline_ms: float = GLANCE_PANEL_MS, name: str = ""):
+                 deadline_ms: float = GLANCE_PANEL_MS, name: str = "", caplog=None):
         self.package_dir = Path(package_dir)
         self.capabilities = list(capabilities or [])
         self.health = health
+        self.caplog = caplog               # CapabilityLedger (transparency)
         self.deadline_ms = deadline_ms
         self.name = name or self.package_dir.name
         self._proc: Optional[subprocess.Popen] = None
@@ -92,6 +93,8 @@ class SubprocessPluginHost:
         such failure is recorded to the plugin's health seam."""
         if self._proc is None or self._dead:
             return None
+        if self.caplog is not None and req.get("op") in ("build", "shop"):
+            self.caplog.record(self.name, f"rpc:{req['op']}")   # isolated provider call
         proc = self._proc
 
         def _exchange():

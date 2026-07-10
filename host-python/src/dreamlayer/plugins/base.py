@@ -265,12 +265,13 @@ class PluginRegistry:
     and drives them; every lifecycle call is isolated and (optionally) recorded
     to a HealthLedger under seam ``plugin:<name>``."""
 
-    def __init__(self, context: PluginContext, health=None):
+    def __init__(self, context: PluginContext, health=None, caplog=None):
         self.ctx = context
         self.result = LoadResult()
         self._seen: set = set()
         self._objs: dict[str, object] = {}   # name -> live plugin (for lifecycle)
         self._health = health
+        self._caplog = caplog                # CapabilityLedger (transparency)
 
     def _name(self, plugin) -> str:
         return getattr(plugin, "name", repr(plugin))
@@ -341,8 +342,11 @@ class PluginRegistry:
     def dispatch_event(self, kind: str, payload: dict) -> None:
         """Deliver a lifecycle-style event to plugins that implement
         ``on_event`` (distinct from bus subscriptions, which are per-callback)."""
-        for p in list(self._objs.values()):
-            self._call(p, "on_event", kind, payload)
+        for name, p in list(self._objs.items()):
+            if callable(getattr(p, "on_event", None)):
+                self._call(p, "on_event", kind, payload)
+                if self._caplog is not None:      # transparency: event routed here
+                    self._caplog.record(name, f"event:{kind}")
 
     def reload(self, plugin) -> bool:
         """Hot-reload: stop + forget the old instance of this name, then load

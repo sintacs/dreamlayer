@@ -169,6 +169,13 @@ declaring `network`/`fs` fails validation. Known capabilities: `cards`,
   widen its capabilities or redirect its entry point. Store-detail copy stays
   free to edit without re-signing. Unsigned packages remain installable under the
   curated-registry trust model (surfaced with a warning).
+- **Transparency log** — the host keeps a per-plugin record of what each plugin
+  was *granted* and what it actually *did* with it — host events routed to it and
+  calls into an isolated plugin's providers — surfaced in `health_snapshot()`
+  under `plugins`. Honest scope: an in-process plugin's raw network/file access
+  isn't intercepted (the host isn't in that path); run untrusted plugins in the
+  isolation tier and their activity shows up. So it's complete for isolated +
+  mediated surfaces, and honest about the in-process gap.
 - **Isolation tiers** — reviewed first-party plugins run in-process. *Untrusted*
   plugins run in a capability-mediated subprocess jail; where `bwrap`/`nsjail`
   are present, that child is additionally wrapped in an **OS sandbox** — no

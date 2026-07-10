@@ -82,6 +82,10 @@ class Orchestrator(
         # silent for the wearer, visible to the builder (health_snapshot()).
         from .health import HealthLedger
         self.health = HealthLedger()
+        from .capability_log import CapabilityLedger
+        # what each plugin actually does with its capabilities — a log the
+        # wearer can inspect (see ops_plugins.capability_report).
+        self.capability_log = CapabilityLedger()
 
         self.retriever = Retriever(self.db, self.embedder,
                                    ann=self._build_ann(db_path))
@@ -352,7 +356,8 @@ class Orchestrator(
         # dream/veil/mesh) that subscribed plugins react to. Always present so
         # publish sites need no None-guard; cheap when nothing subscribes.
         from ..plugins.events import PluginEventBus
-        self.plugin_events = PluginEventBus(veil=self.privacy, health=self.health)
+        self.plugin_events = PluginEventBus(veil=self.privacy, health=self.health,
+                                            caplog=self.capability_log)
 
         # Wire vision pipeline into SceneDescriber if LLM available
         if getattr(cfg, "openai_api_key", "") or os.environ.get("OPENAI_API_KEY"):
@@ -391,7 +396,8 @@ class Orchestrator(
         per-seam failure ledger, the maturity arc, and the frame budget."""
         return {"seams": self.health.snapshot(),
                 "maturity": self.maturity.summary(),
-                "frames": self.frame_budget.stats()}
+                "frames": self.frame_budget.stats(),
+                "plugins": self.capability_log.report()}
 
 
     def ask_oracle(self, text: str) -> dict:

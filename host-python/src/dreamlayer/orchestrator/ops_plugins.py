@@ -55,11 +55,26 @@ class PluginOps:
         Returns a LoadResult (loaded / skipped / failed)."""
         from ..plugins import PluginRegistry
         reg = self.plugins or PluginRegistry(
-            self.plugin_context(renderer, config), health=self.health)
+            self.plugin_context(renderer, config), health=self.health,
+            caplog=self.capability_log)
         res = reg.load_all(plugins)
         reg.start_all()
         self.plugins = reg
+        # transparency: record what each loaded plugin was granted
+        for name, obj in reg.plugins.items():
+            self.capability_log.grant(name, getattr(obj, "requires", ()))
         return res
+
+
+    def capability_report(self, name: str | None = None):
+        """The plugin capability-transparency log the wearer can read: what each
+        loaded plugin was granted and what it has actually done with it (host
+        events routed to it, isolated-provider calls). Pass a name for one
+        plugin, else every plugin seen. See orchestrator/capability_log.py for
+        the honest scope (in-process raw network isn't intercepted)."""
+        if name is not None:
+            return self.capability_log.summary(name)
+        return self.capability_log.report()
 
 
     def tick_plugins(self, now: float | None = None) -> list:

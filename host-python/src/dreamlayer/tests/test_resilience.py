@@ -161,4 +161,4 @@ class TestFrameBudget:
     def test_health_snapshot_shape(self):
         orch = Orchestrator(EmulatorBridge())
         snap = orch.health_snapshot()
-        assert set(snap) == {"seams", "maturity", "frames"}
+        assert set(snap) == {"seams", "maturity", "frames", "plugins"}
