@@ -67,6 +67,15 @@ BASE_EVENTS = frozenset({"single", "double", "long", "imu_tap",
 # budget rule is needed — these are ordinary event exits.
 IMU_GESTURES = frozenset({"nod", "shake", "peek", "tilt", "double_nod"})
 
+# Place events (5.1 #2), fired by the host's place-signature engine
+# (memory/proactive.py) with a ≥60s debounce — "when I get to the gym, start the
+# circuit machine". Presence events (5.1 #3) from Confluence: a bonded partner's
+# rate-limited emit becomes your transition — "when she leaves work, my dinner
+# timer starts". bond:tag:<t> routes a specific partner emit tag. Both firing
+# sides are already rate-limited, so these stay ordinary event exits.
+PLACE_EVENTS = frozenset({"enter", "exit"})
+BOND_EVENTS = frozenset({"near"})
+
 TICKS = frozenset({"countdown", "countup"})
 
 
@@ -82,6 +91,16 @@ def _valid_event(name: str) -> bool:
         return code.isdigit() and 0 <= int(code) <= 255
     if name.startswith("imu:"):
         return name[4:] in IMU_GESTURES
+    if name.startswith("place:"):
+        return name[6:] in PLACE_EVENTS
+    if name.startswith("bond:"):
+        rest = name[5:]
+        if rest in BOND_EVENTS:
+            return True
+        if rest.startswith("tag:"):
+            tag = rest[4:]
+            return tag.isalnum() and 1 <= len(tag) <= 16
+        return False
     return False
 
 

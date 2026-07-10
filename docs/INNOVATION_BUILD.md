@@ -27,7 +27,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |
 | B8 | Earcon/Haptic pack manifest + validator (1.5) | BUILD | `plugins/package.py` + `plugins/validate.py` | queued |
 | B9 | Proof-carrying install safety card (3.2) | BUILD | `reality_compiler/v2/budgets.py` report → render | queued |
-| B10 | Figment grammar: gesture/place/presence/cadence/ledger/slot events (5.1) | partial | `reality_compiler/v2/figment.py` grammar + `budgets.py` | ✅ 5.1 #1 gesture events (`imu:<g>`) shipped with D2; place/presence/cadence/ledger/slot still queued |
+| B10 | Figment grammar: gesture/place/presence/cadence/ledger/slot events (5.1) | partial | `reality_compiler/v2/figment.py` grammar + `budgets.py` | ✅ 5.1 #1 gestures (`imu:<g>`), #2 place (`place:enter/exit`), #3 presence (`bond:near`, `bond:tag:<t>`) — all enforced at verify. Follow-on: host-firing of place/bond + #4 cadence / #5 ledger / #6 slot (interpreter work) |
 | B11 | Device Vitals surface — TEL has an audience (C8#5) | BUILD | phone settings screen + `HaloBridge` TEL callback | queued (phone) |
 | B12 | Retrace — ambient-sighting recall (2.6) | **DONE** | `orchestrator/ops_commitments.py` | ✅ `retrace(subject)` — recency-blended, place+time ("kitchen counter, 8:40am"), veil-gated, draws ObjectRecallCard; `_locate` falls back to it when no anchor; 6 tests |
 | B13 | Rosetta Live offline captions (4.6) | BUILD | wire `social_lens/rosetta_argos.py` | queued |
