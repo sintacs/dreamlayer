@@ -22,13 +22,35 @@ from .brains import VisionBrain, KnowledgeBrain
 
 
 class BrainRouter:
-    def __init__(self, cloud_opt_in: bool = False, local_only: bool = False):
+    def __init__(self, cloud_opt_in: bool = False, local_only: bool = False,
+                 health=None, deadline_ms: float = 0.0):
         self._vision: list[VisionBrain] = []
         self._knowledge: list[KnowledgeBrain] = []
         self.cloud_opt_in = cloud_opt_in
         # local_only: use ONLY on-device tiers — no Mac mini, no cloud. This
         # is "the phone is the brain" (fully offline, more limited).
         self.local_only = local_only
+        # observability + the latency contract: a dead tier is still skipped,
+        # not fatal — but the skip is RECORDED (health ledger), and each tier
+        # gets a hard per-call deadline so one hung model can't stall a glance
+        # (deadline_ms <= 0 disables; orchestrator/budgets.py has the table).
+        self.health = health
+        self.deadline_ms = deadline_ms
+
+    def _call_tier(self, brain, fn, seam_hint: str):
+        """One tier attempt under the deadline; failures recorded, never fatal."""
+        from ..orchestrator.budgets import run_with_deadline
+        seam = f"brain:{getattr(brain, 'tier', '') or seam_hint}"
+        try:
+            ans = run_with_deadline(fn, self.deadline_ms,
+                                    health=self.health, seam=seam)
+        except Exception as exc:
+            if self.health is not None:
+                self.health.record_failure(seam, exc)
+            return None
+        if ans is not None and self.health is not None:
+            self.health.record_ok(seam)
+        return ans
 
     # -- registration (in preference order) -----------------------------
 
@@ -66,10 +88,9 @@ class BrainRouter:
         for brain in self._vision:
             if not self._allowed(brain):
                 continue                      # cloud, not opted in
-            try:
-                ans = brain.explain(frame, label, want=want)
-            except Exception:
-                continue                      # a dead tier is skipped, not fatal
+            ans = self._call_tier(
+                brain, lambda b=brain: b.explain(frame, label, want=want),
+                "vision")                     # dead tier: skipped AND recorded
             if ans is not None and not ans.is_empty():
                 if not ans.tier:
                     ans.tier = getattr(brain, "tier", "")
@@ -81,10 +102,8 @@ class BrainRouter:
         for brain in self._knowledge:
             if not self._allowed(brain):
                 continue
-            try:
-                ans = brain.ask(query)
-            except Exception:
-                continue
+            ans = self._call_tier(
+                brain, lambda b=brain: b.ask(query), "knowledge")
             if ans is not None and not ans.is_empty():
                 if not ans.tier:
                     ans.tier = getattr(brain, "tier", "")

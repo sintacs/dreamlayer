@@ -209,6 +209,31 @@ def error_card(msg: str = "Try again") -> dict:
 error = error_card
 
 
+def brain_unreachable() -> dict:
+    """Designed failure, not silence: the wearer asked and no tier could
+    answer. Names what still works — the local memory never left."""
+    return {
+        "type":       "ErrorCard",
+        "kind":       "brain_unreachable",
+        "dismiss_ms": 4000,
+        "primary":    "Can't reach your Brain",
+        "lines":      ["Can't reach your Brain", "still remembering locally"],
+    }
+
+
+def couldnt_see(reason: str = "") -> dict:
+    """The never-guess rule: an unusable frame gets an honest card, never a
+    hallucinated answer."""
+    return {
+        "type":       "LowConfidenceCard",
+        "kind":       "couldnt_see",
+        "dismiss_ms": 3000,
+        "primary":    "Couldn't see that clearly",
+        "lines":      ["Couldn't see that clearly",
+                       reason or "try a steadier look"],
+    }
+
+
 def low_confidence() -> dict:
     return {
         "type":       "LowConfidenceCard",

@@ -238,8 +238,18 @@ class AIProvider(PanelProvider):
 # ---------------------------------------------------------------------------
 
 class ProviderRegistry:
-    def __init__(self, providers: Optional[list[PanelProvider]] = None):
+    """A throwing provider is skipped; a HUNG provider is abandoned at the
+    glance-panel latency budget (orchestrator/budgets.py) — one slow VLM or
+    shop API can never stall the look. `health` (optional) records both."""
+
+    def __init__(self, providers: Optional[list[PanelProvider]] = None,
+                 health=None, deadline_ms: Optional[float] = None):
         self._providers: list[PanelProvider] = list(providers or [])
+        self.health = health
+        if deadline_ms is None:
+            from ..orchestrator.budgets import GLANCE_PANEL_MS
+            deadline_ms = GLANCE_PANEL_MS
+        self.deadline_ms = deadline_ms
 
     def register(self, provider: PanelProvider) -> None:
         self._providers.append(provider)
@@ -247,6 +257,7 @@ class ProviderRegistry:
     def build_panel(self, sighting: ObjectSighting,
                     now: Optional[float] = None,
                     facets: Optional[set] = None) -> ObjectPanel:
+        from ..orchestrator.budgets import run_with_deadline
         rows: list[PanelRow] = []
         sources: list[str] = []
         for prov in self._providers:
@@ -255,8 +266,13 @@ class ProviderRegistry:
                     continue                  # this glance asked for a different facet
                 if not prov.matches(sighting):
                     continue
-                prov_rows = prov.build(sighting, now=now) or []
-            except Exception:
+                prov_rows = run_with_deadline(
+                    lambda p=prov: p.build(sighting, now=now),
+                    self.deadline_ms, health=self.health,
+                    seam=f"provider:{prov.name}") or []
+            except Exception as exc:
+                if self.health is not None:
+                    self.health.record_failure(f"provider:{prov.name}", exc)
                 continue
             if prov_rows:
                 rows.extend(prov_rows)

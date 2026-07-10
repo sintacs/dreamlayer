@@ -123,6 +123,9 @@ class Brain:
         self._sig = None
         self._last_phone_ts = 0.0        # last authed request from off-box (the phone)
         self._started_ts = time.time()
+        # per-seam failure ledger — the panel's answer to "why is it mush?"
+        from ...orchestrator.health import HealthLedger
+        self.health = HealthLedger()
         self.last_index_ts = 0.0
         self.email_docs = 0
         self.last_brief = None
@@ -526,7 +529,9 @@ class Brain:
         from .backends import cloud_chat
         try:
             text = cloud_chat(self.config, query)
-        except Exception:
+            self.health.record_ok("cloud")
+        except Exception as exc:
+            self.health.record_failure("cloud", exc)   # degrade, but on the record
             text = ""
         if not text:
             return None
@@ -1587,7 +1592,8 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                         oms = int((time.time() - t0) * 1000)
                 self._json(200, {"version": _version(), "disk_kb": du // 1000,
                                  "ollama_ms": oms,
-                                 "uptime_s": int(time.time() - brain._started_ts)})
+                                 "uptime_s": int(time.time() - brain._started_ts),
+                                 "seams": brain.health.snapshot()})
             elif path == "/dreamlayer/capabilities":
                 self._json(200, _capability_payload(brain))
             elif path == "/dreamlayer/history":

@@ -135,6 +135,11 @@ class Orchestrator:
         from ..memory.embeddings import default_embedder
         self.embedder = default_embedder(cfg)
 
+        # Per-seam failure ledger: every degrading except records here first —
+        # silent for the wearer, visible to the builder (health_snapshot()).
+        from .health import HealthLedger
+        self.health = HealthLedger()
+
         self.retriever = Retriever(self.db, self.embedder,
                                    ann=self._build_ann(db_path))
         self.privacy   = PrivacyGate()
@@ -147,6 +152,12 @@ class Orchestrator:
         self.maturity = (MaturityGate(self.db) if db_path != ":memory:"
                          else ResidentGate())
         self.last_retention = None      # last nightly RetentionReport
+
+        # Camera frames cost capture + BLE transfer + battery on hardware —
+        # ambient frames are duty-cycled here (deliberate looks always pass).
+        from .frame_budget import FrameBudget
+        self.frame_budget = FrameBudget(
+            ambient_interval_ms=cfg.capture_min_interval_ms)
 
         if getattr(cfg, "openai_api_key", "") or os.environ.get("OPENAI_API_KEY"):
             self.pipeline = IngestPipeline.with_llm(self.db, cfg)
@@ -174,7 +185,12 @@ class Orchestrator:
         #     wherever you are); nothing private ever leaves regardless.
         #   • set_incognito() is the privacy shield — forces cloud off and
         #     pauses capture for the session (replaces the old "home" mode).
-        self.brain = BrainRouter(cloud_opt_in=True, local_only=True)
+        # health: tier failures are skipped-not-fatal AND recorded; each tier
+        # call runs under the Oracle-ask latency budget (budgets.py).
+        from .budgets import ORACLE_ASK_MS
+        self.brain = BrainRouter(cloud_opt_in=True, local_only=True,
+                                 health=self.health,
+                                 deadline_ms=ORACLE_ASK_MS)
         self._cloud_pref = True               # remembered across incognito
         self.mac_mini_connected = False       # phone is the brain until paired
         self.incognito = False
@@ -394,7 +410,8 @@ class Orchestrator:
         try:
             result = await vision.describe_poetic(jpeg_bytes, prompt, config=self.config)
             return result
-        except Exception:
+        except Exception as exc:
+            self.health.record_failure("vision", exc)
             return ""
 
     # ------------------------------------------------------------------
@@ -495,10 +512,11 @@ class Orchestrator:
                 cid = self.db.add_commitment(c["person"], c["task"], c["due"], conv_mid, c["confidence"])
                 db_ids.append(cid)
         events = self.pipeline.ingest(transcript, context=context)
-        import json as _json
+        from ..memory.embeddings import pack_embedding
         for ev in events:
             emb = self.embedder.embed(ev.summary)
-            self.db.conn.execute("UPDATE memories SET embedding=? WHERE id=?", (_json.dumps(emb), ev.db_id))
+            self.db.conn.execute("UPDATE memories SET embedding=? WHERE id=?", (pack_embedding(emb), ev.db_id))
+            self.retriever.index_memory(ev.db_id, emb)
             db_ids.append(ev.db_id)
         self.db.conn.commit()
         self.bridge.send_card(cards.saved_memory(""), event="memory_saved")
@@ -509,10 +527,14 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def on_scene_frame(self, scene: dict, *, now_ms: int | None = None):
-        """Process a scene frame — feeds Dream Mode if active."""
+        """Process a scene frame — feeds Dream Mode if active. Ambient camera
+        frames ride the frame budget (one per capture interval): on real
+        hardware every frame is a capture + a multi-second BLE transfer, so
+        the duty cycle is enforced here, not assumed by each lens."""
         if self.state.is_dream():
             jpeg = scene.get("camera_jpeg") or scene.get("camera_frame")
-            if jpeg:
+            if jpeg and self.frame_budget.allow_ambient(
+                    (now_ms / 1000.0) if now_ms is not None else None):
                 self.dream.feed_camera(jpeg)
             imu_pose  = scene.get("imu_pose")
             imu_delta = scene.get("imu_delta")
@@ -763,14 +785,27 @@ class Orchestrator:
         "shop" = prices & reviews. Veil-gated; objects only (people are
         Social Lens)."""
         facets = {facet} if facet else None
+        self.frame_budget.note_deliberate()
         panel = self.object_lens.look(frame, now=now, facets=facets)
         if panel is not None:
             self.bridge.send_card(panel.to_hud_card(), event="object_panel")
+        elif frame is not None and self.privacy.allow_capture():
+            # a deliberate look that produced nothing gets an honest card,
+            # never silence and never a guess (veiled = deliberately blind,
+            # so no card then)
+            self.bridge.send_card(cards.couldnt_see(), event="couldnt_see")
         return panel
 
     def _clock(self) -> float:
         import time
         return time.monotonic()
+
+    def health_snapshot(self) -> dict:
+        """Everything the builder needs to diagnose 'why is it mush': the
+        per-seam failure ledger, the maturity arc, and the frame budget."""
+        return {"seams": self.health.snapshot(),
+                "maturity": self.maturity.summary(),
+                "frames": self.frame_budget.stats()}
 
     def glance(self, frame, dwell_ms: float = 0.0, now: float | None = None):
         """The smart look: classify what's in view, let the lenses bid, and act.
@@ -880,7 +915,8 @@ class Orchestrator:
             else:
                 # Tier 0: model-backed on the NPU, heuristic offline.
                 signals = self.perception.perceive(frame).as_signals()
-        except Exception:
+        except Exception as exc:
+            self.health.record_failure("vision", exc)
             signals = {}
         reading = classify_coarse(signals, user_language=lang)
         if self.glance_arbiter.is_ambiguous(reading) and getattr(self, "brain", None):
@@ -1417,7 +1453,12 @@ class Orchestrator:
             ans = None
             try:
                 ans = self.ask_brain(it.args.get("query", ""))
-            except Exception:
+            except Exception as exc:
+                # designed failure, never gaslight: record the seam, tell the
+                # wearer what happened and what still works
+                self.health.record_failure("brain", exc)
+                self.bridge.send_card(cards.brain_unreachable(),
+                                      event="brain_unreachable")
                 ans = None
             return {"intent": it.kind, "query": it.args.get("query", ""),
                     "answer": ans.text if ans is not None else ""}
