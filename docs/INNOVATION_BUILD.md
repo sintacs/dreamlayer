@@ -22,7 +22,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B2 | Data trinity — `memories export/import/burn` (3.3) | BUILD | `cli.py` + `ai_brain/server/cloud_sync.py` | queued (burn is destructive → confirm) |
 | B3 | Capability catalog surfaced (C8#10) | BUILD | `capabilities.py` CLI (done) → phone screen (later) | partial |
 | B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | **DONE** | `plugins/os_sandbox.py` | ✅ verified wired via isolation.py; corrected stale "WASM not yet wired" line |
-| B5 | Glass Desk devkit — `simulator --watch` (1.1) | BUILD | `simulator/` + `orchestrator/fs_watch.py` | queued |
+| B5 | Glass Desk devkit — `simulator --watch` (1.1) | **DONE** | `simulator/glass_desk.py` + `simulator/server.py` | ✅ live-renders a plugin card through the real 256px renderer + safe-radius overlay on save; watchdog + poll fallback; `--once`; 3 tests; SDK.md |
 | B6 | Figment Golf CLI — `golf verify` (1.3) | **DONE** | `reality_compiler/v2/golf.py` + `cli.py` `golf` group | ✅ referees budgets + scores expressiveness/byte; bare + wrapped listings; 5 tests |
 | B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |
 | B8 | Earcon/Haptic pack manifest + validator (1.5) | BUILD | `plugins/package.py` + `plugins/validate.py` | queued |
@@ -52,4 +52,6 @@ Categories 4 (lenses), 7 (demos), and the Top-5 are **specs/narratives**, not bu
 ## Log
 
 - *(this file created)* — triaged the doc; started **B1 Memory Grep**.
+- **B5 + B6 shipped** — Glass Desk devkit (`python -m dreamlayer.simulator --watch <plugin>` live-renders the card through the real device renderer with the safe-radius overlay) and Figment Golf (`dreamlayer golf verify` — budgets referee eligibility, score = expressiveness per byte).
+- **D1 + D2 shipped** — LLM parser kept as a documented suggestion-layer; Nod to Remember wired host+grammar+boot-flag (default OFF) with a lupa nod-injection test.
 - **B1 shipped** — `dreamlayer memories path` (where your data lives) and `dreamlayer memories browse` (Datasette over the SQLite memory file: immutable/`-i`, bound to 127.0.0.1, veil-gated via `$DREAMLAYER_VEIL`/`veil.lock`, four canned queries shipped in the metadata). Exposed the pre-existing-but-unwired `memory/datasette_app.py`. Next: **B4** (verify `os_sandbox`) and the **D1 (LLM parser)** decision.

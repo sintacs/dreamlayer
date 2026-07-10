@@ -135,6 +135,19 @@ It watches `plugin.py`/`plugin.json` and re-validates (and reinstalls, with
 `--brain`) each time you save — an instant inner loop. `--once` runs a single
 pass (handy in CI).
 
+## See the glass, no hardware: Glass Desk
+
+```bash
+python -m dreamlayer.simulator --watch my-plugin/          # re-render on every save
+python -m dreamlayer.simulator --watch my-plugin/ --once   # one frame (CI)
+```
+
+The zero-hardware devkit: it re-renders your card through the **real 256×256
+device renderer** — the exact pixels the glasses draw, with the 112px safe-radius
+circle overlaid — every time you save, to `my-plugin/.glass/glass.png` (or
+`--out`). No flashing, no glasses; the render is deterministic, so the same PNG
+doubles as a visual-regression golden.
+
 ## Two ways a host finds a plugin
 
 - **The registry** (this repo's `registry/`) — the curated, reviewed store the
