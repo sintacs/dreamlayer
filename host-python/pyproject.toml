@@ -56,6 +56,7 @@ dreamlayer = [
     "ai_brain/server/assets/*.webp",
     "ai_brain/server/assets/*.png",
     "ai_brain/server/assets/*.woff2",
+    "py.typed",                       # PEP 561: ship inline types to SDK consumers
 ]
 
 [tool.pytest.ini_options]

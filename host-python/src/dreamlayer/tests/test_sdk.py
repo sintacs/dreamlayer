@@ -83,6 +83,20 @@ def plugin():
 '''
 
 
+def test_package_from_dir_builds_a_valid_package(tmp_path):
+    # the helper the CLI and every scaffold test use
+    (tmp_path / "plugin.py").write_text(SDK_ONLY_SRC, encoding="utf-8")
+    (tmp_path / "plugin.json").write_text(
+        '{"name":"widget","version":"1.0.0","entry":"plugin:plugin",'
+        '"requires":["glance"]}', encoding="utf-8")
+    pkg = sdk.package_from_dir(tmp_path)
+    assert pkg.manifest.name == "widget" and pkg.checksum_ok()
+    assert sdk.validate(pkg, host_capabilities=frozenset({"glance"})).ok
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        sdk.package_from_dir(tmp_path / "nope")
+
+
 def test_sdk_only_plugin_validates_and_loads(tmp_path):
     pkg = sdk.PluginPackage.build(name="widget", version="1.0.0",
                                   entry="plugin:plugin", source=SDK_ONLY_SRC,

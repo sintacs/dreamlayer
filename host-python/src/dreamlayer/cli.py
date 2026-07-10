@@ -43,30 +43,13 @@ def _card_type(name: str) -> str:
 
 # --- turning a directory / file into a validated-shaped package --------------
 
-def _pkg_from_dir(d: Path):
-    """Build a PluginPackage from a plugin directory (plugin.json + plugin.py).
-    The manifest's checksum is stamped from plugin.py, which becomes the code
-    payload the gate scans and runs."""
-    from dreamlayer.sdk import PluginManifest, PluginPackage, sha256_of
-    meta_path, src_path = d / "plugin.json", d / "plugin.py"
-    if not meta_path.exists() or not src_path.exists():
-        raise FileNotFoundError(
-            f"{d} is not a plugin directory (needs plugin.json + plugin.py)")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    source = src_path.read_text(encoding="utf-8")
-    meta = dict(meta)
-    meta["checksum"] = sha256_of(source)
-    meta.setdefault("entry", "plugin:plugin")
-    return PluginPackage(manifest=PluginManifest.from_dict(meta), source=source)
-
-
 def _load_package(path_str: str):
     """Resolve a CLI target to a PluginPackage: a plugin dir, or a packaged
     ``.json`` ({manifest, source})."""
-    from dreamlayer.sdk import PluginManifest, PluginPackage
+    from dreamlayer.sdk import PluginManifest, PluginPackage, package_from_dir
     p = Path(path_str)
     if p.is_dir():
-        return _pkg_from_dir(p)
+        return package_from_dir(p)
     if p.is_file() and p.suffix == ".json":
         d = json.loads(p.read_text(encoding="utf-8"))
         if "manifest" not in d or "source" not in d:
@@ -113,8 +96,11 @@ def _scaffold(name: str, author: str) -> dict:
 Scaffolded by `dreamlayer plugins new`. This is an API v2 plugin: a HUD card
 plus one persisted setting. Edit register() to wire into the layer, then run
 `dreamlayer plugins validate .` and `pytest` as you build.
+
+For a plugin with no lifecycle or settings, a one-liner works too:
+`from dreamlayer.sdk import make_plugin` and
+`return make_plugin("{name}", register, requires=("cards",))`.
 """
-from dreamlayer.sdk import make_plugin  # noqa: F401  (handy for simple plugins)
 
 
 def _draw_card(draw, card):
@@ -174,25 +160,16 @@ def plugin():
         "screenshot": "",
     }, indent=2) + "\n"
     test_py = f'''"""Local gate for {name} — the same checks the store runs."""
-import json
 from pathlib import Path
 
-from dreamlayer.sdk import (
-    PluginManifest, PluginPackage, validate, sha256_of, KNOWN_CAPABILITIES,
-)
+from dreamlayer.sdk import package_from_dir, validate, KNOWN_CAPABILITIES
 
 HERE = Path(__file__).parent
 
 
-def _package():
-    src = (HERE / "plugin.py").read_text(encoding="utf-8")
-    meta = json.loads((HERE / "plugin.json").read_text(encoding="utf-8"))
-    meta["checksum"] = sha256_of(src)
-    return PluginPackage(manifest=PluginManifest.from_dict(meta), source=src)
-
-
 def test_passes_the_gate():
-    report = validate(_package(), host_capabilities=frozenset(KNOWN_CAPABILITIES))
+    pkg = package_from_dir(HERE)
+    report = validate(pkg, host_capabilities=frozenset(KNOWN_CAPABILITIES))
     assert report.ok, report.errors
 '''
     readme = f'''# {name}
@@ -315,6 +292,9 @@ def cmd_install(args) -> int:
 
 def cmd_list(args) -> int:
     url, tok = _brain(args)
+    if args.installed and not url:
+        _err(f"{BAD} --installed needs a Brain — pass --brain URL or set DREAMLAYER_BRAIN")
+        return 2
     if url and args.installed:
         resp = _request(url + "/dreamlayer/plugins", tok)
         installed = resp.get("installed", [])

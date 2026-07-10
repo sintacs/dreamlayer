@@ -75,6 +75,30 @@ from ..plugins.package import (
 )
 from ..plugins.validate import validate, scan_source, ValidationReport
 
+
+def package_from_dir(path):
+    """Build a :class:`PluginPackage` from a plugin project directory
+    (``plugin.json`` + ``plugin.py``). The manifest checksum is stamped from
+    ``plugin.py`` — the code payload the gate scans and runs. Handy in your own
+    tests, and what the ``dreamlayer plugins`` CLI uses::
+
+        from dreamlayer.sdk import package_from_dir, validate, KNOWN_CAPABILITIES
+        pkg = package_from_dir(".")
+        assert validate(pkg, frozenset(KNOWN_CAPABILITIES)).ok
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    d = _Path(path)
+    meta_p, src_p = d / "plugin.json", d / "plugin.py"
+    if not (meta_p.exists() and src_p.exists()):
+        raise FileNotFoundError(
+            f"{d} is not a plugin directory (needs plugin.json + plugin.py)")
+    meta = dict(_json.loads(meta_p.read_text(encoding="utf-8")))
+    source = src_p.read_text(encoding="utf-8")
+    meta["checksum"] = sha256_of(source)
+    meta.setdefault("entry", "plugin:plugin")
+    return PluginPackage(manifest=PluginManifest.from_dict(meta), source=source)
+
 # SDK contract version. Independent of the host package version: it bumps only
 # when this surface changes in a way a plugin author would notice. A future
 # standalone ``dreamlayer-sdk`` distribution inherits this number.
@@ -93,8 +117,9 @@ __all__ = [
     # events
     "PluginEventBus", "EVENT_KINDS",
     # packaging + validation
-    "PluginManifest", "PluginPackage", "sha256_of", "validate", "scan_source",
-    "ValidationReport", "KNOWN_CAPABILITIES", "API_VERSION", "SUPPORTED_API",
+    "PluginManifest", "PluginPackage", "sha256_of", "package_from_dir",
+    "validate", "scan_source", "ValidationReport",
+    "KNOWN_CAPABILITIES", "API_VERSION", "SUPPORTED_API",
     # version
     "__version__", "API",
 ]
