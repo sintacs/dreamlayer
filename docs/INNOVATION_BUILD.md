@@ -21,7 +21,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B1 | Memory Grep — browse your memory as a file (1.8, 3.3, C8#2) | **DONE** | `cli.py` `memories` group + `memory/datasette_app.py` | ✅ `memories path` / `browse` (read-only, veil-gated, canned queries); 8 tests |
 | B2 | Data trinity — `memories export/import/burn` (3.3) | BUILD | `cli.py` + `ai_brain/server/cloud_sync.py` | queued (burn is destructive → confirm) |
 | B3 | Capability catalog surfaced (C8#10) | BUILD | `capabilities.py` CLI (done) → phone screen (later) | partial |
-| B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | DONE→verify | `plugins/os_sandbox.py` | verify only |
+| B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | **DONE** | `plugins/os_sandbox.py` | ✅ verified wired via isolation.py; corrected stale "WASM not yet wired" line |
 | B5 | Glass Desk devkit — `simulator --watch` (1.1) | BUILD | `simulator/` + `orchestrator/fs_watch.py` | queued |
 | B6 | Figment Golf CLI — `golf verify/score` (1.3) | BUILD | new `reality_compiler/v2/golf.py` + CLI | queued |
 | B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |

@@ -18,9 +18,12 @@ Graceful by construction:
   * `DL_SANDBOX=none` force-disables; `DL_SANDBOX=bwrap|nsjail` pins a tool;
     `DL_SANDBOX=auto` (default) uses the best available that actually works.
 
-Roadmap (docs/SDK.md): a WASM tier (wasmtime / Pyodide) where a denied capability
-is simply a WASI import the host never provides — hard memory + CPU (fuel) limits,
-zero ambient authority. Not yet wired.
+Stronger tier (docs/SDK.md): the WASM host (`plugins/wasm_host.py`) is now wired
+as the strongest jail — a denied capability is simply a WASI grant the host never
+provides (no `fs` → no `--dir`; no `network` → no socket inheritance). Its
+capability→grant mapping and tier selection are tested; end-to-end execution is
+gated on an operator-provided `wasmtime` + `python.wasm` guest, and the store
+falls back to this OS-sandboxed subprocess tier until then.
 """
 from __future__ import annotations
 
