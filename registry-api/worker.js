@@ -63,6 +63,32 @@ async function allowed(env, request, action, max, windowS = 3600) {
 
 const rateLimited = () => json({ error: "rate limited — try later" }, 429);
 
+// A plugin name is a KV key AND is echoed back in GET /api/plugins, so it must
+// be a safe, bounded slug — the real registry names are all lowercase
+// alphanumerics + hyphens ("open-food-facts"). Rejecting anything else stops
+// index pollution and oversized/hostile KV keys from an unauthenticated caller.
+function validName(name) {
+  return typeof name === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
+}
+
+// Neutralise user-supplied text stored server-side (comments, handles). Strips
+// control chars and removes angle brackets so no HTML tag can form even for a
+// consumer that forgets to escape on render — defence in depth, and it doesn't
+// double-encode the client's own escaping (the store page already esc()s).
+function cleanText(s, max) {
+  s = String(s == null ? "" : s);
+  var out = "";
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) out += " ";        // control chars -> space
+    else if (c === 60 || c === 62) continue;        // drop < and > : no HTML tag can form
+    else out += s[i];
+  }
+  return out.trim().slice(0, max);
+}
+
+const INDEX_CAP = 5000;   // bound index:names growth against slug spam
+
 // Shape-check a figment listing from the builder. Returns an error string, or
 // null when it's well-formed. The heavy proof (budgets) is re-run at review by
 // the Python gate; this just rejects junk before it queues.
@@ -86,7 +112,7 @@ function validateListing(b) {
 // merge onto its own catalogue.
 async function trackName(env, name) {
   const names = await readJSON(env.SOCIAL, "index:names", []);
-  if (!names.includes(name)) {
+  if (!names.includes(name) && names.length < INDEX_CAP) {   // bound growth
     names.push(name);
     await env.SOCIAL.put("index:names", JSON.stringify(names));
   }
@@ -161,8 +187,8 @@ export default {
         await env.SOCIAL.put("figment:sub:" + id, JSON.stringify(body));
         queue.push({
           id,
-          name: String(body.name || "Untitled").slice(0, 40),
-          author: String(body.author || "").slice(0, 40),
+          name: cleanText(body.name, 40) || "Untitled",
+          author: cleanText(body.author, 40),
           scenes: Object.keys(body.figment.scenes || {}).length,
           at: Date.now() / 1000,
         });
@@ -181,7 +207,11 @@ export default {
       return json({ error: "not found", store: "https://dreamlayer.app/plugins" }, 404);
     }
 
-    const name = parts[2] ? decodeURIComponent(parts[2]) : "";
+    let name = "";
+    if (parts[2]) {
+      try { name = decodeURIComponent(parts[2]); } catch { name = parts[2]; }
+      if (!validName(name)) return json({ error: "invalid plugin name" }, 400);
+    }
     const action = parts[3] || "";
 
     // GET /api/plugins — stats for every plugin we've seen. The client owns the
@@ -209,7 +239,7 @@ export default {
       const body = await request.json().catch(() => ({}));
       if (action === "rate") {
         const s = clampStars(body.stars);
-        const user = String(body.user || "").slice(0, 64);
+        const user = cleanText(body.user, 64);
         if (s && user) {
           const ratings = await readJSON(env.SOCIAL, `ratings:${name}`, {});
           ratings[user] = s;                          // one vote per user, updatable
@@ -225,10 +255,11 @@ export default {
         return json({ name, downloads: n });
       }
       if (action === "comment") {
-        const text = String(body.text || "").trim().slice(0, 2000);
+        const text = cleanText(body.text, 2000);
         if (!text) return json({ error: "empty comment" }, 400);
         const comments = await readJSON(env.SOCIAL, `comments:${name}`, []);
-        const c = { id: comments.length + 1, user: String(body.user || "anon").slice(0, 40),
+        if (comments.length >= 500) comments.shift();        // bound per-plugin thread growth
+        const c = { id: comments.length + 1, user: cleanText(body.user, 40) || "anon",
                     text, ts: Date.now() / 1000 };
         comments.push(c);
         await env.SOCIAL.put(`comments:${name}`, JSON.stringify(comments));
