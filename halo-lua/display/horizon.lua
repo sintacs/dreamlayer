@@ -405,10 +405,8 @@ function M.draw(opts)
     elseif mk.kind == KIND_MEMORY then
       local extra = drawn_deg[mk.deg]
       if extra ~= nil then   -- cluster representative
-        local dim_mk = mk
         if opts.dim then
-          dim_mk = { deg = mk.deg, kind = mk.kind, luma = 0 }
-          draw_memory(dim_mk, 0, extra)
+          draw_memory({ deg = mk.deg, kind = mk.kind, luma = 0 }, 0, extra)
         else
           draw_memory(mk, tier_drop, extra)
         end

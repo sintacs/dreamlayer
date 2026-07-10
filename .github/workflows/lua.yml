@@ -1,0 +1,23 @@
+# The device Lua gets a native lint gate (halo-lua/.luacheckrc): no
+# undefined globals beyond the device runtime's, no shadowing, no syntax
+# drift. Behavior is still covered by the lupa raster harness in pytest;
+# this catches what only a Lua-aware tool sees.
+name: lua
+
+on:
+  push:
+    branches: [main]
+    paths: ["halo-lua/**", ".github/workflows/lua.yml"]
+  pull_request:
+    paths: ["halo-lua/**", ".github/workflows/lua.yml"]
+
+jobs:
+  luacheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install luacheck
+        run: sudo apt-get update && sudo apt-get install -y lua-check
+      - name: Lint the device Lua
+        working-directory: halo-lua
+        run: luacheck . --no-color

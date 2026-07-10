@@ -43,6 +43,26 @@ async function readJSON(kv, key, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
 
+// Per-IP fixed-window rate limit over KV. The `user` field on votes is
+// client-supplied and trivially spoofable — until votes are account-bound
+// (Cloud P1), this is the floor that keeps a loop from minting a thousand
+// five-star ratings in an afternoon. Fails OPEN on KV errors: the numbers
+// are decoration, availability wins.
+async function allowed(env, request, action, max, windowS = 3600) {
+  try {
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    const win = Math.floor(Date.now() / (windowS * 1000));
+    const key = `rl:${action}:${ip}:${win}`;
+    const n = (Number(await env.SOCIAL.get(key)) || 0) + 1;
+    await env.SOCIAL.put(key, String(n), { expirationTtl: windowS * 2 });
+    return n <= max;
+  } catch {
+    return true;
+  }
+}
+
+const rateLimited = () => json({ error: "rate limited — try later" }, 429);
+
 // The registry can be private, so the *catalogue* lives with the clients — this
 // service owns only the numbers. We remember every plugin name we've seen
 // activity on, so GET /api/plugins can return their stats for the client to
@@ -83,6 +103,7 @@ export default {
     // tested Python reference in host-python plugins/social.py.
     if (parts[0] === "api" && parts[1] === "waitlist" && parts.length === 2) {
       if (request.method === "POST") {
+        if (!(await allowed(env, request, "waitlist", 5))) return rateLimited();
         const body = await request.json().catch(() => ({}));
         const e = String(body.email || "").trim().toLowerCase().slice(0, 254);
         if (e.length < 6 || e.includes(" ") || !e.slice(1, -1).includes("@")) {
@@ -128,6 +149,10 @@ export default {
     }
 
     if (request.method === "POST") {
+      const limits = { rate: 10, comment: 10, download: 60 };
+      if (limits[action] && !(await allowed(env, request, action, limits[action]))) {
+        return rateLimited();
+      }
       const body = await request.json().catch(() => ({}));
       if (action === "rate") {
         const s = clampStars(body.stars);

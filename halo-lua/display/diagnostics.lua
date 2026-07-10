@@ -128,7 +128,6 @@ local _fps_val      = 0.0
 local _ble_rx_count = 0
 local _ble_tx_count = 0
 local _ble_last_rx  = ""
-local _ble_last_tx  = ""
 
 -- Frame counter for flicker effects
 local _frame_n = 0
@@ -338,7 +337,6 @@ end
 --- Record an outbound BLE message type string.
 function diag.ble_tx(msg_type)
   _ble_tx_count = _ble_tx_count + 1
-  _ble_last_tx  = tostring(msg_type or "")
 end
 
 --- Must be called once per main-loop tick to maintain FPS counter.

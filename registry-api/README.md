@@ -44,7 +44,13 @@ one-tap rating once it is — zero rework, exactly the phased plan.
 ## Notes / hardening
 
 - v1 identifies raters by a client-generated `user` id (anonymous, stable per
-  device). For real abuse-resistance add auth (a signed token / Turnstile) and
-  per-IP rate limits at the Worker edge before opening ratings publicly.
+  device). **Per-IP rate limits now run at the Worker edge** (fixed-window
+  over KV: 10 rates/h, 10 comments/h, 60 downloads/h, 5 waitlist joins/h;
+  fails open on KV errors — the numbers are decoration, availability wins).
+  That is the floor, not the ceiling: the `user` field is still spoofable
+  one-vote-per-hour-per-IP, so do NOT surface a "top rated" ranking as an
+  editorial signal until votes are account-bound (Cloud P1 accounts + signed
+  session tokens; Turnstile is the interim option if rankings must ship
+  sooner).
 - CORS is open (`*`) so the static site can call it; tighten to your domains in
   production.

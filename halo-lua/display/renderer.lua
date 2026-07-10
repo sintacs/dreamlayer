@@ -1763,8 +1763,8 @@ function renderer.bind(disp, time_fn)
   if type(time_fn) == "function" then _now_fn = time_fn end
   -- Reserve the Cinema v1 dynamic palette slots up front so the first
   -- crossfade / ghost fade never pays the reservation cost mid-frame.
-  local ok, MAT = pcall(require, "display.materials")
-  if ok and MAT then MAT.init() end
+  local ok, Mat = pcall(require, "display.materials")
+  if ok and Mat then Mat.init() end
 end
 
 --- Begin CONDENSE for card.

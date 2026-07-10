@@ -42,27 +42,25 @@ end
 function M.feed(chunk)
   _buf = _buf .. (chunk or "")
 
-  -- Try to read the 4-byte length header if we don't have it yet
-  while true do
-    if _need == nil then
-      if #_buf < 4 then return nil end  -- still waiting for header
-      _need = M._read_u32be(_buf, 1)
-      -- Header total includes the 4 header bytes: minimum legal frame is 5.
-      if _need < 5 or _need > M.MAX_FRAME then
-        _drop_corrupt("length header " .. tostring(_need))
-        return nil
-      end
+  -- Read the 4-byte length header if we don't have it yet
+  if _need == nil then
+    if #_buf < 4 then return nil end  -- still waiting for header
+    _need = M._read_u32be(_buf, 1)
+    -- Header total includes the 4 header bytes: minimum legal frame is 5.
+    if _need < 5 or _need > M.MAX_FRAME then
+      _drop_corrupt("length header " .. tostring(_need))
+      return nil
     end
-
-    if #_buf < _need then return nil end  -- still buffering payload
-
-    -- We have a complete frame
-    local payload = _buf:sub(5, _need)   -- bytes 5.._need (1-indexed)
-    _buf  = _buf:sub(_need + 1)          -- remainder for next frame
-    _need = nil
-    _stats.frames = _stats.frames + 1
-    return payload
   end
+
+  if #_buf < _need then return nil end  -- still buffering payload
+
+  -- We have a complete frame
+  local payload = _buf:sub(5, _need)   -- bytes 5.._need (1-indexed)
+  _buf  = _buf:sub(_need + 1)          -- remainder for next frame
+  _need = nil
+  _stats.frames = _stats.frames + 1
+  return payload
 end
 
 -- ---------------------------------------------------------------------------

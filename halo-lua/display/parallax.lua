@@ -41,7 +41,6 @@ local _ema_y     = 0
 local _x, _y     = 0, 0   -- current air-depth offset (px, float)
 local _return    = nil    -- { t0=, fx=, fy= } spring-home flight
 local _frozen    = false
-local _last_ms   = nil
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
@@ -77,7 +76,6 @@ function M.tick(now_ms)
     _ema_y = _ema_y + A.PAR_EMA_ALPHA * (ry - _ema_y)
   end
   _prev    = { pitch = pitch, roll = roll }
-  _last_ms = now_ms
 
   local moving = math.abs(_ema_x) > RATE_EPS or math.abs(_ema_y) > RATE_EPS
   local max_px = A.PAR_MAX_PX.air
@@ -133,7 +131,7 @@ end
 
 function M.reset()
   _prev, _ema_x, _ema_y = nil, 0, 0
-  _x, _y, _return, _frozen, _last_ms = 0, 0, nil, false, nil
+  _x, _y, _return, _frozen = 0, 0, nil, false
 end
 
 return M

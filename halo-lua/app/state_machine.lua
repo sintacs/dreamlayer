@@ -40,7 +40,6 @@ local _state         = "boot"
 local _renderer      = nil
 local _on_transition = nil
 local _on_show_card  = nil   -- injected by main.lua; routes cards through CardQueue
-local _current_card  = nil
 local _cards         = nil
 
 local function cards()
@@ -59,7 +58,6 @@ end
 -- show() routes through the injected queue hook when available,
 -- falling back to direct renderer.show_card() for backward compat.
 local function show(card)
-  _current_card = card
   if _on_show_card then
     pcall(_on_show_card, card)
   elseif _renderer then
@@ -209,7 +207,6 @@ function M.init(renderer, scheduler, on_transition, on_show_card)
   _on_transition = on_transition
   _on_show_card  = on_show_card
   _state         = "boot"
-  _current_card  = nil
   _cards         = nil
 end
 
