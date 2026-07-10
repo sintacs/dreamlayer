@@ -323,6 +323,9 @@ export default function Settings() {
         <TouchableOpacity onPress={() => router.push("/capabilities")} style={s.linkRow}>
           <Text style={[typography.body, { color: colors.accentMemory }]}>Capabilities — what your Brain can learn →</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/vitals")} style={s.linkRow}>
+          <Text style={[typography.body, { color: colors.accentMemory }]}>Device vitals — what your glasses report →</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={s.section}>

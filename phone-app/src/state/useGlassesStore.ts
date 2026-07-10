@@ -9,6 +9,7 @@
  */
 import { create } from "zustand";
 import { HaloBridge, type BleTransport, type ConnState } from "../ble/bridge";
+import { useVitalsStore } from "./useVitalsStore";
 
 type GlassesState = {
   state: ConnState;
@@ -49,7 +50,9 @@ export const useGlassesStore = create<GlassesState>((set, get) => ({
     }
     const bridge = new HaloBridge(transport, {
       onState: (s) => set({ state: s }),
-      // card/telemetry/ack routing is wired by the app layer as needed
+      // give device telemetry an audience — the Device Vitals screen (B11)
+      onTelemetry: (tel) => useVitalsStore.getState().ingest(tel),
+      // card/ack routing is wired by the app layer as needed
     });
     set({ bridge });
   },
