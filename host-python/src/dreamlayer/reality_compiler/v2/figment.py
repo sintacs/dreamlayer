@@ -146,6 +146,27 @@ class PulseSpec:
 
 
 @dataclass
+class CadenceSpec:
+    """A breathing cycle (5.1 #4): ramp *in* over ``in_s``, ``hold_s`` at full,
+    ramp *out* over ``out_s``, repeat. Drives a slow amplitude envelope (never a
+    flicker — it's seconds, not Hz) for box-breathing, HRV training, panic
+    de-escalation. Provable as ever: the period is bounded like any scene."""
+    in_s: float
+    hold_s: float
+    out_s: float
+
+    def period(self) -> float:
+        return self.in_s + self.hold_s + self.out_s
+
+    def to_dict(self) -> dict:
+        return {"in_s": self.in_s, "hold_s": self.hold_s, "out_s": self.out_s}
+
+    @staticmethod
+    def from_dict(d: dict) -> "CadenceSpec":
+        return CadenceSpec(d["in_s"], d["hold_s"], d["out_s"])
+
+
+@dataclass
 class CounterDecl:
     """A bounded integer. All ops saturate at [lo, hi]."""
     name: str
@@ -235,6 +256,7 @@ class Scene:
     on_timeout: list[Transition] = field(default_factory=list)
     on: dict[str, Transition] = field(default_factory=dict)
     pulse: Optional[PulseSpec] = None
+    cadence: Optional[CadenceSpec] = None        # 5.1 #4: breathing envelope
 
     def timed(self) -> bool:
         return self.duration_sec is not None or self.duration_range is not None
@@ -258,6 +280,8 @@ class Scene:
             d["on"] = {k: v.to_dict() for k, v in sorted(self.on.items())}
         if self.pulse:
             d["pulse"] = self.pulse.to_dict()
+        if self.cadence:
+            d["cadence"] = self.cadence.to_dict()
         return d
 
     @staticmethod
@@ -272,6 +296,7 @@ class Scene:
             on_timeout=[Transition.from_dict(t) for t in d.get("on_timeout", [])],
             on={k: Transition.from_dict(v) for k, v in d.get("on", {}).items()},
             pulse=PulseSpec.from_dict(d["pulse"]) if d.get("pulse") else None,
+            cadence=CadenceSpec.from_dict(d["cadence"]) if d.get("cadence") else None,
         )
 
 

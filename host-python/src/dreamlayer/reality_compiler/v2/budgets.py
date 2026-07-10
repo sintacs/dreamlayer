@@ -169,6 +169,16 @@ def verify(fig: Figment) -> BudgetReport:
             if s.pulse.color not in COLOR_TOKENS:
                 bad("color", f"pulse color {s.pulse.color!r} is not a token", sid)
 
+        # -- cadence (5.1 #4): a breath must be slow, non-negative, bounded
+        if s.cadence is not None:
+            cad = s.cadence
+            if min(cad.in_s, cad.hold_s, cad.out_s) < 0:
+                bad("cadence", "cadence segments must be non-negative", sid)
+            period = cad.period()
+            if not (MIN_SCENE_SEC <= period <= MAX_SCENE_SEC):
+                bad("cadence", f"cadence period {period}s outside "
+                    f"[{MIN_SCENE_SEC}, {MAX_SCENE_SEC}]s", sid)
+
         # -- events
         for ev, t in s.on.items():
             if not _valid_event(ev):

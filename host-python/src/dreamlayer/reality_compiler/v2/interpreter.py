@@ -40,6 +40,8 @@ class DisplayFrame:
     lines: list[ResolvedLine] = field(default_factory=list)
     pulse_on: bool = False
     pulse_color: Optional[str] = None
+    cadence_phase: str = ""            # "in" | "hold" | "out" | "" (no cadence)
+    cadence_level: float = 0.0         # breathing amplitude, 0..1
     ended: bool = False
 
 
@@ -226,13 +228,33 @@ class Stage:
                 phase = self.scene_elapsed * s.pulse.rate_hz
                 pulse_on = (int(phase * 2) % 2) == 0
                 pulse_color = s.pulse.color
+        cadence_phase, cadence_level = self._cadence()
         return DisplayFrame(
             scene=self.current,
             lines=[ResolvedLine(self._resolve(ln.content), ln.row,
                                 ln.size, ln.color) for ln in s.lines],
             pulse_on=pulse_on,
             pulse_color=pulse_color,
+            cadence_phase=cadence_phase,
+            cadence_level=cadence_level,
         )
+
+    def _cadence(self) -> tuple[str, float]:
+        """The breathing envelope at the current scene time (5.1 #4): ramp in →
+        hold → ramp out, cycling over the cadence period. Amplitude in 0..1."""
+        cad = self._scene().cadence
+        if cad is None:
+            return "", 0.0
+        period = cad.period()
+        if period <= 0:
+            return "", 0.0
+        u = self.scene_elapsed % period
+        if u < cad.in_s:
+            return "in", round(u / cad.in_s if cad.in_s else 1.0, 3)
+        if u < cad.in_s + cad.hold_s:
+            return "hold", 1.0
+        out = u - cad.in_s - cad.hold_s
+        return "out", round(1.0 - (out / cad.out_s if cad.out_s else 1.0), 3)
 
     # ------------------------------------------------------------------
     # Hot-swap / revoke (mirrors the Lua stage's contract)
