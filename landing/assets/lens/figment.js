@@ -195,10 +195,95 @@
 
   function canonical(fig) { return JSON.stringify(fig, Object.keys(fig).sort()); }
 
+  // -- scene-graph editing (the advanced editor) -----------------------------
+  // the triggers a scene can listen for; "timeout" is the timed exit, the rest
+  // are physical/gesture events (see figment_stage.lua on_event).
+  var TRIGGERS = [
+    { key: "timeout", label: "when it ends" },
+    { key: "double", label: "double-tap" },
+    { key: "single", label: "tap" },
+    { key: "long", label: "long-press" },
+    { key: "imu:nod", label: "nod" },
+  ];
+  function emptyFigment() {
+    var f = figment("My lens", "s0");
+    addScene(f, scene("s0", { duration_sec: 10, tick: "countdown",
+      lines: [line("HELLO", { row: 0, size: "lg", color: "accent_memory" })],
+      on_timeout: [{ target: END }] }));
+    return f;
+  }
+  function newSceneId(fig) {
+    var i = 0; while (fig.scenes["s" + i]) i++; return "s" + i;
+  }
+  function addBlankScene(fig, id) {
+    id = id || newSceneId(fig);
+    return addScene(fig, scene(id, { lines: [line("New scene")], on: {} }));
+  }
+  function deleteScene(fig, id) {
+    if (!fig.scenes[id]) return;
+    delete fig.scenes[id];
+    // any transition that pointed here now ends instead of dangling
+    Object.keys(fig.scenes).forEach(function (sid) {
+      var s = fig.scenes[sid];
+      (s.on_timeout || []).forEach(function (t) { if (t.target === id) t.target = END; });
+      if (s.on) Object.keys(s.on).forEach(function (k) { if (s.on[k].target === id) s.on[k].target = END; });
+    });
+    if (fig.initial === id) fig.initial = Object.keys(fig.scenes)[0] || "";
+  }
+  function setTransition(scene_, trigger, target) {
+    if (trigger === "timeout") { scene_.on_timeout = [{ target: target }]; }
+    else { scene_.on = scene_.on || {}; scene_.on[trigger] = { target: target }; }
+  }
+  function removeTransition(scene_, trigger) {
+    if (trigger === "timeout") { delete scene_.on_timeout; }
+    else if (scene_.on) { delete scene_.on[trigger]; }
+  }
+  function listTransitions(scene_) {
+    var out = [];
+    (scene_.on_timeout || []).forEach(function (t) { out.push({ trigger: "timeout", target: t.target }); });
+    if (scene_.on) Object.keys(scene_.on).forEach(function (k) { out.push({ trigger: k, target: scene_.on[k].target }); });
+    return out;
+  }
+  function graphEdges(fig) {
+    var edges = [];
+    Object.keys(fig.scenes).forEach(function (sid) {
+      listTransitions(fig.scenes[sid]).forEach(function (t) {
+        edges.push({ from: sid, trigger: t.trigger, to: t.target });
+      });
+    });
+    return edges;
+  }
+
+  // -- a store listing (the Publish flow, INNOVATION_SESSION 5.2) -------------
+  // canonical figment + the proof + author metadata. The registry re-checks the
+  // proof; the listing's claims are recomputed, never trusted.
+  function listing(fig, meta) {
+    meta = meta || {};
+    var card = safetyCard(fig);
+    return {
+      kind: "figment-listing", v: 1,
+      figment: fig,
+      name: (meta.name || fig.name || "Untitled").slice(0, 40),
+      author: (meta.author || "").slice(0, 40),
+      description: (meta.description || "").slice(0, 240),
+      forwho: (meta.forwho || "").slice(0, 120),
+      price: 0,                         // free; a paid tier is reserved (MARKETPLACE.md)
+      proof: {
+        ok: card.ok,
+        scenes: Object.keys(fig.scenes).length,
+        cannot: card.cannot,
+      },
+    };
+  }
+
   return {
     BUDGETS: B, COLORS: COLORS, SIZES: SIZES, HEX: HEX, END: END, SELF: SELF,
-    TEMPLATES: TEMPLATES, figment: figment, scene: scene, line: line, addScene: addScene,
-    validate: validate, safetyCard: safetyCard, canonical: canonical,
+    TRIGGERS: TRIGGERS, TEMPLATES: TEMPLATES,
+    figment: figment, scene: scene, line: line, addScene: addScene,
+    emptyFigment: emptyFigment, addBlankScene: addBlankScene, deleteScene: deleteScene,
+    newSceneId: newSceneId, setTransition: setTransition, removeTransition: removeTransition,
+    listTransitions: listTransitions, graphEdges: graphEdges,
+    validate: validate, safetyCard: safetyCard, canonical: canonical, listing: listing,
     templates: { interval: tInterval, countdown: tCountdown, checklist: tChecklist, breathing: tBreathing },
   };
 });

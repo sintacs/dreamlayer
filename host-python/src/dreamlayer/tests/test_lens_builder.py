@@ -111,3 +111,39 @@ def test_builder_page_is_wired():
     assert "This behavior <b>CANNOT</b>" in page or "This behavior" in page
     assert "/dreamlayer/rc/import" in page            # deploy hits the real endpoint
     assert "X-DreamLayer-Token" in page               # sends the Brain token
+    # the three follow-ons: advanced scene-graph, publish, same-origin
+    assert 'data-mode="advanced"' in page             # Simple ↔ Advanced modes
+    assert "/api/figments/submit" in page             # publish to the store
+    assert "__DL_BUILD__" in page                     # same-origin (Brain-served) mode
+    assert 'id="graph"' in page                        # the transition diagram
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
+def test_registry_figment_submit_route():
+    api = Path(__file__).resolve().parents[4] / "registry-api"
+    r = subprocess.run(["node", "worker.figments.test.mjs"], cwd=api,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+# -- Brain-served builder (same-origin, no CORS) ------------------------------
+
+class TestBrainServesBuilder:
+    def test_resolver_finds_the_builder(self):
+        from dreamlayer.ai_brain.server.server import _builder_dir, _builder_asset
+        d = _builder_dir()
+        assert d is not None and (d / "lens-builder.html").exists()
+        assert "LensKit" in (_builder_asset("figment.js") or "")
+
+    def test_page_injects_same_origin_and_rewrites_js(self):
+        from dreamlayer.ai_brain.server.server import _builder_page
+        html = _builder_page("tok-123")
+        assert html is not None
+        assert "/dreamlayer/build/figment.js" in html      # js path rewritten
+        assert "./assets/lens/figment.js" not in html
+        assert "__DL_BUILD__" in html and "tok-123" in html # same-origin + token
+        assert '"sameOrigin": true' in html
+
+    def test_page_omits_token_off_localhost(self):
+        from dreamlayer.ai_brain.server.server import _builder_page
+        assert '"token": ""' in _builder_page("")

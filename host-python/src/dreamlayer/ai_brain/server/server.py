@@ -1558,6 +1558,41 @@ def _cloud_view_payload(brain: Brain) -> dict:
     }
 
 
+def _builder_dir() -> "Optional[Path]":
+    """Where the browser lens-builder assets live. Prefers a copy bundled into
+    the package (an installed/notarized app), falls back to the repo's landing/
+    (running from source, as here). None if neither is present."""
+    here = Path(__file__).resolve()
+    for cand in (here.parent / "assets" / "build",
+                 here.parents[5] / "landing"):
+        if (cand / "lens-builder.html").exists():
+            return cand
+    return None
+
+
+def _builder_asset(name: str) -> "Optional[str]":
+    d = _builder_dir()
+    if d is None or "/" in name or ".." in name:
+        return None
+    fp = d / "assets" / "lens" / name
+    return fp.read_text(encoding="utf-8") if fp.is_file() else None
+
+
+def _builder_page(token: str) -> "Optional[str]":
+    """The builder HTML, rewritten to load figment.js from the Brain and told
+    it's same-origin (so it hides the URL/token inputs and deploys relatively).
+    The token rides in only for a localhost request — exactly like the panel."""
+    d = _builder_dir()
+    if d is None:
+        return None
+    html = (d / "lens-builder.html").read_text(encoding="utf-8")
+    html = html.replace("./assets/lens/figment.js", "/dreamlayer/build/figment.js")
+    inject = ("<script>window.__DL_BUILD__="
+              + json.dumps({"token": token, "sameOrigin": True})
+              + ";</script>")
+    return html.replace("</head>", inject + "</head>", 1)
+
+
 def _brain_view_payload(brain: Brain) -> dict:
     """The Brain as a cartridge (INNOVATION_SESSION 3.1): the live tier ladder —
     on-device → Mac mini → cloud — each with the round-trip latency the router
@@ -1753,6 +1788,34 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/dreamlayer/build":
+                # serve the no-code lens builder same-origin (INNOVATION 5,
+                # Category 1) so "Deploy to my Brain" needs no CORS and no
+                # pasted token. Same posture as the panel: the token is injected
+                # only for a localhost request.
+                html = _builder_page(brain.config.token if self._from_localhost() else "")
+                if html is None:
+                    self._json(404, {"error": "builder assets not found"}); return
+                body = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self._cors()
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/dreamlayer/build/figment.js":
+                js = _builder_asset("figment.js")
+                if js is None:
+                    self._json(404, {"error": "not found"}); return
+                body = js.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self._cors()
                 self.end_headers()
                 self.wfile.write(body)
                 return
