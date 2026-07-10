@@ -126,6 +126,18 @@
   ];
 
   // -- validation (a subset of budgets.verify — everything the builder emits) -
+  // mirror reality_compiler/v2/figment._valid_event so a scene's `on` keys are
+  // held to the same grammar the Python gate enforces (no false "safe").
+  var BASE_EVENTS = ["single", "double", "long", "imu_tap", "text"];
+  var IMU_GESTURES = ["nod", "shake", "peek", "tilt", "double_nod"];
+  function validEvent(name) {
+    if (BASE_EVENTS.indexOf(name) >= 0) return true;
+    if (name.indexOf("ble:") === 0) { var c = name.slice(4); return /^\d+$/.test(c) && +c >= 0 && +c <= 255; }
+    if (name.indexOf("imu:") === 0) return IMU_GESTURES.indexOf(name.slice(4)) >= 0;
+    if (name.indexOf("place:") === 0) return name.slice(6) === "enter" || name.slice(6) === "exit";
+    if (name.indexOf("bond:") === 0) { var r = name.slice(5); return r === "near" || (r.indexOf("tag:") === 0 && /^[a-z0-9]{1,16}$/i.test(r.slice(4))); }
+    return false;
+  }
   function timed(s) { return s.duration_sec != null; }
   function targets(s) {
     var out = [];
@@ -157,9 +169,13 @@
         bad("duration", "duration must be " + B.MIN_SCENE_SEC + ".." + B.MAX_SCENE_SEC + "s", sid);
       if (timed(s) && !(s.on_timeout && s.on_timeout.length)) bad("timeout", "a timed scene needs a 'when it ends' step", sid);
       if (!timed(s) && s.on_timeout && s.on_timeout.length) bad("timeout", "on-timeout needs a duration", sid);
+      if (s.tick === "countdown" && !timed(s)) bad("tick", "a countdown needs a duration", sid);
       if (s.on_timeout && s.on_timeout.length > B.MAX_BRANCHES) bad("branches", "too many timeout branches", sid);
       targets(s).forEach(function (tg) {
         if (tg !== END && tg !== SELF && ids.indexOf(tg) < 0) bad("target", "goes to unknown scene '" + tg + "'", sid);
+      });
+      if (s.on) Object.keys(s.on).forEach(function (ev) {
+        if (!validEvent(ev)) bad("event", "'" + ev + "' is not a trigger the glasses know", sid);
       });
       if (s.pulse) {
         if (!timed(s)) bad("pulse", "pulse needs a timed scene", sid);
@@ -193,7 +209,16 @@
     };
   }
 
-  function canonical(fig) { return JSON.stringify(fig, Object.keys(fig).sort()); }
+  // stable stringify — sorted keys at every level (a replacer *array* would
+  // wrongly act as an allow-list at every depth and drop nested scene fields).
+  function canonical(fig) {
+    return JSON.stringify(fig, function (k, v) {
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        var out = {}; Object.keys(v).sort().forEach(function (kk) { out[kk] = v[kk]; }); return out;
+      }
+      return v;
+    });
+  }
 
   // -- scene-graph editing (the advanced editor) -----------------------------
   // the triggers a scene can listen for; "timeout" is the timed exit, the rest

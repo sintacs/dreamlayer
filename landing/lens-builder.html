@@ -126,13 +126,13 @@
       <p class="eyebrow">Ship it</p>
       <button class="btn" id="download" style="width:100%;margin-bottom:10px">↓ Download lens (.json)</button>
       <div id="deployBox">
-        <label class="f" id="deployLabel">Deploy to your Brain</label>
-        <div id="deployRemote">
-          <input id="brainurl" placeholder="http://localhost:8765" />
-          <input id="braintoken" placeholder="Brain token (Settings → pairing)" style="margin-top:8px" />
-        </div>
-        <button class="btn ghost" id="deploy" style="width:100%;margin-top:8px">⚡ Deploy to my Brain</button>
+        <label class="f" id="deployLabel">Deploy to this Brain</label>
+        <input id="braintoken" placeholder="Brain token (Settings → pairing)" style="display:none" />
+        <button class="btn ghost" id="deploy" style="width:100%;margin-top:8px">⚡ Deploy to this Brain</button>
         <div class="toast" id="toast"></div>
+      </div>
+      <div id="deployGuide" style="display:none">
+        <p class="muted">To put this on your glasses, open the builder <b>from your Brain</b> — the Mac panel → Plugins → “Build a lens” — for one-click deploy. Or <b>Download</b> above and run <code>dreamlayer figment safety my-lens.json</code>.</p>
       </div>
     </div>
 
@@ -242,7 +242,7 @@
 
   // -- ADVANCED editor (full scene graph) -----------------------------------
   function targetOpts(sel){
-    var opts = Object.keys(fig.scenes).map(function(id){ return '<option value="'+id+'"'+(sel===id?" selected":"")+'>→ '+id+'</option>'; });
+    var opts = Object.keys(fig.scenes).map(function(id){ return '<option value="'+esc(id)+'"'+(sel===id?" selected":"")+'>→ '+esc(id)+'</option>'; });
     opts.push('<option value="'+K.END+'"'+(sel===K.END?" selected":"")+'>→ End (banish)</option>');
     opts.push('<option value="'+K.SELF+'"'+(sel===K.SELF?" selected":"")+'>→ Restart this scene</option>');
     return opts.join("");
@@ -295,27 +295,36 @@
     el.querySelector(".addline").onclick = function(){ (s.lines=s.lines||[]).push(K.line("text")); buildEditors(); refresh(); };
     el.querySelector(".timed").onchange = function(e){
       if(e.target.checked){ s.duration_sec = 10; if(!s.on_timeout) s.on_timeout=[{target:K.END}]; }
-      else { delete s.duration_sec; delete s.on_timeout; delete s.pulse; }
+      else { delete s.duration_sec; delete s.on_timeout; delete s.pulse; delete s.tick; }  // drop the countdown too
       buildEditors(); refresh(); restart();
     };
-    var dur = el.querySelector(".dur"); if(dur) dur.oninput=function(){ var v=parseFloat(dur.value); if(!isNaN(v)){ s.duration_sec=v; if(s.pulse) s.pulse.window_sec=Math.min(s.pulse.window_sec,v); refresh(); } };
+    var dur = el.querySelector(".dur"); if(dur) dur.oninput=function(){ var v=parseFloat(dur.value); if(!isNaN(v)){ s.duration_sec=Math.max(K.BUDGETS.MIN_SCENE_SEC, v); if(s.pulse) s.pulse.window_sec=Math.min(s.pulse.window_sec,s.duration_sec); refresh(); } };
     var pl = el.querySelector(".pulse"); if(pl) pl.onchange=function(){ if(pl.checked) s.pulse={window_sec:Math.min(10,s.duration_sec||10),rate_hz:2.0,color:"accent_attention"}; else delete s.pulse; buildEditors(); refresh(); };
     var pr = el.querySelector(".prate"); if(pr) pr.oninput=function(){ var v=parseFloat(pr.value); if(!isNaN(v)&&s.pulse){ s.pulse.rate_hz=v; refresh(); } };
     el.querySelectorAll(".trans .t").forEach(function(row){
       var trig = row.dataset.trig;
-      row.querySelector(".tt").onchange = function(e){ var nt=e.target.value; K.removeTransition(s,trig); K.setTransition(s,nt, row.querySelector(".tg").value); buildEditors(); refresh(); };
+      row.querySelector(".tt").onchange = function(e){
+        var nt=e.target.value;
+        // don't clobber a trigger another row already owns — revert instead
+        if(nt!==trig && K.listTransitions(s).some(function(t){return t.trigger===nt;})){ buildEditors(); return; }
+        K.removeTransition(s,trig); K.setTransition(s,nt, row.querySelector(".tg").value);
+        if(nt==="timeout" && s.duration_sec==null){ s.duration_sec=10; }
+        buildEditors(); refresh();
+      };
       row.querySelector(".tg").onchange = function(e){ K.setTransition(s, row.querySelector(".tt").value, e.target.value); refresh(); drawGraph(); };
       row.querySelector(".x").onclick = function(){ K.removeTransition(s, row.querySelector(".tt").value); buildEditors(); refresh(); };
     });
     el.querySelector(".addtrans").onclick = function(){
       var used = K.listTransitions(s).map(function(t){return t.trigger;});
       var free = K.TRIGGERS.map(function(t){return t.key;}).filter(function(k){return used.indexOf(k)<0;});
-      K.setTransition(s, free[0] || "double", Object.keys(fig.scenes)[0] || K.END);
-      if((free[0]||"double")==="timeout" && s.duration_sec==null) s.duration_sec=10;
+      if(!free.length){ return; }                       // every trigger already wired — nothing to add
+      K.setTransition(s, free[0], Object.keys(fig.scenes)[0] || K.END);
+      if(free[0]==="timeout" && s.duration_sec==null){ s.duration_sec=10; }
       buildEditors(); refresh();
     };
   }
   function renameScene(oldId, nid){
+    nid = String(nid||"").toLowerCase().replace(/[^a-z0-9_]/g,"").slice(0,12);  // safe id charset
     if(!nid || nid===oldId || fig.scenes[nid]) { buildEditors(); return; }
     var order = Object.keys(fig.scenes), rebuilt = {};
     order.forEach(function(id){ rebuilt[id===oldId?nid:id] = fig.scenes[id]; });
@@ -419,27 +428,27 @@
     var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
     a.download=(fig.name||"lens").replace(/[^a-z0-9]+/gi,"-").toLowerCase()+".json"; a.click();
   };
-  // same-origin mode: the Brain served us; hide the URL/token inputs, POST relative
+  // One-click deploy only exists same-origin (the Brain served this page): a
+  // cross-origin page can't reach the local token-authed API — by design, so a
+  // drive-by site can't touch your Brain. The static builder shows guidance.
   if(SO){
-    document.getElementById("deployRemote").style.display="none";
-    document.getElementById("deployLabel").textContent="Deploy to this Brain";
+    // the token is injected for a localhost request; on a LAN client it's empty,
+    // so expose a field to paste it rather than 401 silently.
+    if(!SO.token) document.getElementById("braintoken").style.display="";
+  } else {
+    document.getElementById("deployBox").style.display="none";
+    document.getElementById("deployGuide").style.display="";
   }
   document.getElementById("deploy").onclick = function(){
-    var toast=document.getElementById("toast");
-    var base, tok, h={"Content-Type":"application/json"};
-    if(SO){ base=""; if(SO.token) h["X-DreamLayer-Token"]=SO.token; }
-    else {
-      base=(document.getElementById("brainurl").value||"").replace(/\/$/,"");
-      tok=document.getElementById("braintoken").value||"";
-      if(!base){ toast.className="toast bad-t"; toast.textContent="Enter your Brain's URL first."; return; }
-      if(tok) h["X-DreamLayer-Token"]=tok;
-    }
+    var toast=document.getElementById("toast"), h={"Content-Type":"application/json"};
+    var tok = (SO && SO.token) || (document.getElementById("braintoken").value||"");
+    if(tok) h["X-DreamLayer-Token"]=tok;
     toast.className="toast"; toast.textContent="Deploying…";
-    fetch(base+"/dreamlayer/rc/import",{method:"POST",headers:h,body:JSON.stringify({figment:fig})})
+    fetch("/dreamlayer/rc/import",{method:"POST",headers:h,body:JSON.stringify({figment:fig})})   // same-origin, relative
       .then(function(r){return r.json();})
       .then(function(d){ if(d&&d.ok){ toast.className="toast ok-t"; toast.textContent="✓ On your glasses — "+(fig.name||"lens")+" is on stage."; }
-        else { toast.className="toast bad-t"; toast.textContent="Brain refused it: "+((d&&d.error)||"unknown"); } })
-      .catch(function(){ toast.className="toast bad-t"; toast.textContent="Couldn't reach your Brain. Download the lens and use `dreamlayer figment safety`, or open the builder from your Brain's panel."; });
+        else { toast.className="toast bad-t"; toast.textContent="Brain refused it: "+((d&&d.error)||"unknown")+(d&&d.error==="unauthorised"?" — paste your Brain token above.":""); } })
+      .catch(function(){ toast.className="toast bad-t"; toast.textContent="Couldn't reach the Brain. Download the lens and use `dreamlayer figment safety`."; });
   };
 
   // -- share: publish to the store ------------------------------------------

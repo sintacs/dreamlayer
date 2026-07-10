@@ -379,12 +379,17 @@ class Brain:
         "Deploy to my Brain" (INNOVATION_SESSION Category 1). The proof is
         re-checked *here*: the Brain budget-verifies and re-signs it before it
         can run — it never trusts the author. On success it's on stage."""
+        import uuid
         from ...reality_compiler.v2.figment import Figment
         from ...reality_compiler.v2 import safety
         try:
             fig = Figment.from_dict(data or {})
         except Exception as e:
             return {"ok": False, "error": f"not a figment: {e}"}
+        # the browser builder ships id="" (it doesn't own identity); mint a fresh
+        # one so two imported lenses can't collide/overwrite in the vault.
+        if not fig.id:
+            fig.id = uuid.uuid4().hex[:12]
         card = safety.safety_card(fig)
         if not card["ok"]:
             return {"ok": False, "error": "fails the sandbox", "safety": card}
@@ -1729,28 +1734,19 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             pass
 
         # -- helpers ----------------------------------------------------
-        def _cors(self):
-            # the Brain is a local, token-authed API; the token (not the origin)
-            # is the auth, so a web tool the wearer opened — the no-code lens
-            # builder's "Deploy to my Brain" — can reach it. No cookies are used,
-            # so `*` never leaks anything a caller doesn't already hold the token for.
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers",
-                             f"Content-Type, {TOKEN_HEADER}")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-
-        def do_OPTIONS(self):
-            self.send_response(204)
-            self._cors()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
         def _json(self, code, obj):
+            # Deliberately NO CORS headers. The Brain is a local API that can hold
+            # secrets (backup, token, memory) and its default token is empty, so
+            # cross-origin *reads* must stay blocked — a drive-by page a wearer
+            # visits connects from loopback and would otherwise pass the local
+            # gates. One-click "Deploy to my Brain" works because the builder is
+            # served *same-origin* at /dreamlayer/build; the phone uses native
+            # networking (not subject to CORS). A cross-origin web tool cannot
+            # reach this API, by design.
             body = json.dumps(obj).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
-            self._cors()
             self.end_headers()
             self.wfile.write(body)
 

@@ -185,6 +185,19 @@ class TestAdvancedGraphParity:
         assert got["ok"] is False                            # JS rejects it
         assert verify(Figment.from_dict(got["fig"])).ok is False   # so does Python
 
+    def test_orphaned_countdown_tick_is_caught_both_sides(self):
+        # un-timing a scene must not leave tick="countdown" behind — JS and the
+        # Python gate both reject a countdown on an untimed scene (audit #2).
+        script = (
+            "var K=require('./figment.js');"
+            "var f=K.emptyFigment();"                        # s0 timed + tick countdown
+            "delete f.scenes.s0.duration_sec;"               # untime it, leave the tick
+            "delete f.scenes.s0.on_timeout;"
+            "console.log(JSON.stringify({ok:K.validate(f).ok, fig:f}));")
+        got = self._build(script)
+        assert got["ok"] is False                            # JS rejects the orphaned tick
+        assert verify(Figment.from_dict(got["fig"])).ok is False   # so does Python
+
 
 # -- the Brain serves the builder over HTTP (same-origin, no CORS) -------------
 
@@ -211,14 +224,20 @@ class TestBuildRouteHttp:
         finally:
             lb.stop()
 
-    def test_options_preflight_and_cors_headers(self, tmp_path):
-        import urllib.request
+    def test_the_api_sends_no_cors_so_a_drive_by_page_cant_read_it(self, tmp_path):
+        # SECURITY: the Brain is a local token-authed API (default token empty).
+        # No _json response may carry Access-Control-Allow-Origin, or a page the
+        # wearer visits could read backup/token/memory cross-origin. One-click
+        # deploy works only because the builder is served *same-origin*.
+        import urllib.error, urllib.request
         lb = self._live(tmp_path)
         try:
-            req = urllib.request.Request(lb.url + "/dreamlayer/build", method="OPTIONS")
-            r = urllib.request.urlopen(req)
-            assert r.status == 204
-            assert r.headers.get("Access-Control-Allow-Origin") == "*"
-            assert "X-DreamLayer-Token" in (r.headers.get("Access-Control-Allow-Headers") or "")
+            req = urllib.request.Request(lb.url + "/dreamlayer/status",
+                                         headers={"X-DreamLayer-Token": "tok"})
+            try:
+                r = urllib.request.urlopen(req)
+            except urllib.error.HTTPError as e:
+                r = e
+            assert r.headers.get("Access-Control-Allow-Origin") is None
         finally:
             lb.stop()

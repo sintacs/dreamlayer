@@ -152,17 +152,19 @@ export default {
         const body = await request.json().catch(() => ({}));
         const bad = validateListing(body);
         if (bad) return json({ error: bad }, 400);
+        // Small index of pending submissions; the full (up to 64 KiB) listing
+        // lives under its own key so the index can never exceed KV's per-value
+        // limit, however long the queue grows.
         const queue = await readJSON(env.SOCIAL, "figments:queue", []);
         if (queue.length >= 500) return json({ error: "queue full — try later" }, 503);
-        const id = "fig_" + (queue.length + 1) + "_" + Date.now();
+        const id = "fig_" + Date.now() + "_" + Math.floor((queue.length + 1));
+        await env.SOCIAL.put("figment:sub:" + id, JSON.stringify(body));
         queue.push({
           id,
           name: String(body.name || "Untitled").slice(0, 40),
           author: String(body.author || "").slice(0, 40),
-          description: String(body.description || "").slice(0, 240),
           scenes: Object.keys(body.figment.scenes || {}).length,
           at: Date.now() / 1000,
-          listing: body,
         });
         await env.SOCIAL.put("figments:queue", JSON.stringify(queue));
         return json({ status: "queued", id, place: queue.length,

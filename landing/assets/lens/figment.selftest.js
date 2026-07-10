@@ -57,5 +57,13 @@ ok(K.validate(g).ok, "still valid after delete");
 var L = K.listing(K.templates.countdown(), { author: "Ada", description: "a timer" });
 ok(L.kind === "figment-listing" && L.author === "Ada" && L.proof.ok && L.price === 0, "listing packaged");
 
+// an unknown on-event trigger is rejected (parity with the Python grammar)
+var evbad = K.figment("Ev", "a");
+K.addScene(evbad, K.scene("a", { lines: [K.line("x")], on: { wiggle: { target: K.END } } }));
+ok(!K.validate(evbad).ok, "unknown on-event 'wiggle' is rejected");
+var evok = K.figment("Ev2", "a");
+K.addScene(evok, K.scene("a", { lines: [K.line("x")], on: { "imu:nod": { target: K.END }, double: { target: K.END } } }));
+ok(K.validate(evok).ok, "known events (imu:nod, double) are accepted");
+
 if (fails.length) { console.error("FAIL\n" + fails.join("\n")); process.exit(1); }
-console.log("ok — " + K.TEMPLATES.length + " templates valid, graph + listing checked, violations caught");
+console.log("ok — " + K.TEMPLATES.length + " templates valid, graph + listing + events checked, violations caught");
