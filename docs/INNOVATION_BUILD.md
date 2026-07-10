@@ -24,7 +24,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B4 | Verify `os_sandbox` wired; kill stale docstring (3.4, C8#9) | **DONE** | `plugins/os_sandbox.py` | ✅ verified wired via isolation.py; corrected stale "WASM not yet wired" line |
 | B5 | Glass Desk devkit — `simulator --watch` (1.1) | **DONE** | `simulator/glass_desk.py` + `simulator/server.py` | ✅ live-renders a plugin card through the real 256px renderer + safe-radius overlay on save; watchdog + poll fallback; `--once`; 3 tests; SDK.md |
 | B6 | Figment Golf CLI — `golf verify` (1.3) | **DONE** | `reality_compiler/v2/golf.py` + `cli.py` `golf` group | ✅ referees budgets + scores expressiveness/byte; bare + wrapped listings; 5 tests |
-| B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |
+| B7 | Vinyl Oracle example plugin (1.2) | **DONE** | `plugins/vinyl_oracle.py` | ✅ object-lens `PanelProvider` + `network`: reads a sleeve's artist/title, resolves the pressing against Discogs (year/label/country/format + want-over-have collectibility), per-release TTL cache, token persisted in `ctx.settings` (API v2); 14 tests, all offline. Honest reach: a live demo needs a real vision backend (YOLO→moondream→CLIP) to read the sleeve + a Discogs token past the anon rate limit |
 | B8 | Earcon/Haptic pack manifest + validator (1.5) | **DONE** (host) | `plugins/packs.py` + `cli.py` `packs validate` | ✅ store-gate validator enforces ≤400ms patterns, silent answer_ahead, ≥2-variant rotation; 7 tests. Follow-on: phone pack picker |
 | B9 | Proof-carrying install safety card (3.2) | **DONE** | `reality_compiler/v2/safety.py` + `cli.py` `figment safety` | ✅ renders the budget proof as a "this behavior CANNOT…" consent card; violators flagged; 5 tests |
 | B10 | Figment grammar: gesture/place/presence/cadence/ledger/slot events (5.1) | partial | `reality_compiler/v2/figment.py` grammar + `budgets.py` | ✅ 5.1 #1 gestures, #2 place, #3 presence (enforced at verify), #4 cadence (breathing envelope in the interpreter + budget), #5 ledger emits (`record` → `log_recorded()` to the Vault log). Remaining: host-firing of place/bond events + #6 slot subscriptions |
@@ -52,6 +52,31 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | L4 | Sous & Kiln — example figments (4.2, 4.3) | **DONE** | `reality_compiler/v2/recipes.py` + `examples/figments/*.json` | ✅ budget-verified builders + committed JSON; double-nod advance, battery-low escape, print counter; 6 tests |
 
 Docent (B14) and Rosetta Live (B13) already shipped as host lenses; Thread (L1) and Ember (L2) too.
+
+### Second sweep — line-by-line re-audit (things the first pass missed)
+
+A full re-read of `INNOVATION_SESSION.md` against the tree turned up three **BUILD**-lane ideas that were never triaged and are code-reachable now. All three shipped:
+
+| # | Idea (doc ref) | Lane | Home | Status |
+|---|---|---|---|---|
+| P1 | The 350ms Club — perception bench under the glance budget (1.4) | **DONE** | `object_lens/bench.py` + `cli.py` `bench perception` | ✅ deterministic labeled set, real deadline runner drops late answers, accuracy × latency score; any `add_perceptor` callable can be benched; degrades w/o numpy. 6 tests. (Leaderboard submit stays OWNER — hosted worker.) |
+| P2 | $6 physical-events kit — sensor → figment host route (1.6 / O5 tail) | **DONE** | `reality_compiler/v2/transport.py` + `deployer.py` + `server.py` route + `main.lua` + `examples/esp32/` | ✅ `event_envelope`/`push_event`/`Brain.rc_event` + `POST /dreamlayer/event/ble/<n>`; `main.lua` routes `event` into the running figment; MicroPython reed-switch sketch + README. 9 tests, luacheck clean. Closes the "host route is BUILD" note under O5. |
+| P3 | Semantic-impersonation screen — shared-figment text mimicry (5.4) | **DONE** | `reality_compiler/v2/impersonation.py` (folded into `safety.py`) | ✅ screens figment text for power/system/security/alarm/message chrome, marks shared origin + provenance glyph, flags only shared-AND-mimicking; surfaced on the safety card. "The sandbox proves physics; provenance proves voice." 10 tests. |
+
+**Still open after the re-audit — honest dispositions (not silently dropped):**
+
+- **2.3 Who's Talking** — modules (`speaker_ecapa`, `diarize_diart`, `introduction`) + the calibration harness (`scripts/calibrate_social.py`, W3) exist and `on_speaker` is wired; the live self-introduction→name path needs real audio + a labeled ROC set to tune the threshold. **OWNER** (real-data numbers), harness is BUILD-done.
+- **2.7 Candor Mirror** — the *belief-drift* half is wired (`consistency.py` "Candor", live in the orchestrator). The *speech-pace live arc + filler post-mortem* self-coach half (`filler.py` exists) is unbuilt. **BUILD (deferred)** — a genuine new lens, larger than a sweep item.
+- **2.8 Inner Weather, Outer Light** — `dream_mode/weather_river.py` exists but is **not** wired into the weather scalar; `outgoing_weather` (the bond half) is. Wiring river calibration is **BUILD (deferred)**.
+- **3.1 Bring-Your-Own-Brain ceremony** — the three brain switches + router tiers are live in the phone UI; the dedicated "Brain" tier-ladder screen with per-tier HealthLedger latency is **BUILD (deferred, phone)**.
+- **3.5 The Instrument / Research Mode** — `pipelines/lsl_transport.py` exists + capability registered; the opt-in "Research Mode" LSL stream surface is unbuilt and needs `pylsl` (an extra). **OWNER-dep**, surface is BUILD.
+- **3.6 Forkable Skin** — theme-table extraction from `display/typography.lua`/`palette.lua` with a CI budget check. **BUILD (deferred, Lua)**.
+- **4.2 Session profile** — the Sous & Kiln timer/metronome family shipped (L4); the *Session* music profile (beat/pitch tracking) needs `aubio`/`librosa`. **OWNER-dep**; the metronome-figment core is BUILD.
+- **5.3 Compiler self-teaching** — `present.repertoire_entry` formats entries but doesn't river-rank by use/completion; rehearsal-refinement + grammar-mining loops unbuilt. **BUILD (deferred)** — the `taste_river` pattern is the template.
+- **5.4(b) on-device provenance glyph** — the host discloses `provenance_glyph` (P3); rendering the `shield_glyph` on shared figments in `figment_stage.lua` is a small **BUILD (deferred, Lua)** follow-on.
+- **1.7 Duet Pomodoro** — `DuetSession` + `interval_figment` exist; a two-person pomodoro example over the bond needs the hosted relay (Category 6). **OWNER-relay**, example is BUILD.
+
+The rest of the document (Category 6 Cloud doctrine, Category 7 demo scripts) is prose/stage-direction, already reflected in `docs/CLOUD.md` and the shipped demos — no code owed.
 
 ### Less-CLI surfacing (Mac panel / website)
 | S1 | Memory Grep in the Mac panel | **DONE** | `server.py` + `panel.py` | ✅ "your memory is a file" — browse (Datasette) / export, 3 endpoints; 6 tests |
