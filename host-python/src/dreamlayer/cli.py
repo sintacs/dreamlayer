@@ -468,6 +468,69 @@ def cmd_list(args) -> int:
     return 0
 
 
+# --- memories: your data is a file -------------------------------------------
+
+def _mem_db(args) -> str:
+    """Resolve the memory SQLite path: --db, else $DREAMLAYER_DB, else the
+    Brain's default (~/.dreamlayer/dreamlayer.db)."""
+    raw = getattr(args, "db", None) or os.environ.get("DREAMLAYER_DB")
+    if raw:
+        return str(Path(raw).expanduser())
+    return str(Path.home() / ".dreamlayer" / "dreamlayer.db")
+
+
+def _veil_blocked(db_path: str):
+    """The Privacy Veil, as a launch-time gate for the detached browser. Honest
+    scope: a standalone CLI can't see live orchestrator state, so it honors two
+    explicit, checkable signals — $DREAMLAYER_VEIL, or a `veil.lock` beside the
+    db. Returns (blocked, reason)."""
+    v = os.environ.get("DREAMLAYER_VEIL", "").strip().lower()
+    if v in {"1", "true", "on", "yes"}:
+        return True, "DREAMLAYER_VEIL is set"
+    lock = Path(db_path).resolve().parent / "veil.lock"
+    if lock.exists():
+        return True, f"the privacy veil is up ({lock})"
+    return False, ""
+
+
+def cmd_mem_path(args) -> int:
+    """Print where your memory lives — 'your data is one file, here it is'."""
+    db = _mem_db(args)
+    p = Path(db)
+    if p.exists():
+        kb = p.stat().st_size / 1024
+        _p(f"{db}  ({kb:.1f} KB)")
+    else:
+        _p(f"{db}  (no file yet — the Brain creates it on first memory)")
+    return 0
+
+
+def cmd_mem_browse(args) -> int:
+    """Open your memory as a browsable, SQL-queryable database (read-only)."""
+    db = _mem_db(args)
+    if not Path(db).exists():
+        _err(f"{BAD} no memory file at {db} — pass --db PATH or set DREAMLAYER_DB")
+        return 2
+    blocked, reason = _veil_blocked(db)
+    if blocked:
+        _err(f"{BAD} not opening your memory: {reason}. Lower the veil first.")
+        return 2
+    from dreamlayer.memory.datasette_app import MemoryExplorer
+    ex = MemoryExplorer(db)
+    meta = ex.write_metadata()
+    cmd = ex.command(port=args.port, metadata_path=meta)
+    if args.print_cmd or not ex.available:
+        if not ex.available and not args.print_cmd:
+            _p(f"{WARN} datasette isn't installed (pip install 'dreamlayer[infra]'). Run:")
+        _p(cmd)
+        return 0
+    import shlex
+    import subprocess
+    _p(f"{ARROW} serving your memory read-only at http://127.0.0.1:{args.port}  (Ctrl-C to stop)")
+    subprocess.run(shlex.split(cmd))
+    return 0
+
+
 # --- parser ------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -529,6 +592,21 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--token", help="Brain token (or set DREAMLAYER_TOKEN)")
     ls.add_argument("--registry", help="path to a registry index.json")
     ls.set_defaults(func=cmd_list)
+
+    # memories — your data is one file, and here is the SQL prompt over it
+    mem = groups.add_parser("memories", help="browse your memory (it's just a file)")
+    msub = mem.add_subparsers(dest="cmd")
+
+    mpath = msub.add_parser("path", help="print where your memory file lives")
+    mpath.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mpath.set_defaults(func=cmd_mem_path)
+
+    mbrowse = msub.add_parser("browse", help="open your memory as a read-only, SQL-queryable web UI")
+    mbrowse.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mbrowse.add_argument("--port", type=int, default=8001, help="local port (default: 8001)")
+    mbrowse.add_argument("--print", dest="print_cmd", action="store_true",
+                         help="print the launch command instead of serving")
+    mbrowse.set_defaults(func=cmd_mem_browse)
 
     return parser
 
