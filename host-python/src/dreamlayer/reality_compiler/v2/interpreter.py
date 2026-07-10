@@ -40,6 +40,8 @@ class DisplayFrame:
     lines: list[ResolvedLine] = field(default_factory=list)
     pulse_on: bool = False
     pulse_color: Optional[str] = None
+    cadence_phase: str = ""            # "in" | "hold" | "out" | "" (no cadence)
+    cadence_level: float = 0.0         # breathing amplitude, 0..1
     ended: bool = False
 
 
@@ -63,6 +65,7 @@ class Stage:
             n: c.start for n, c in fig.counters.items()}
         self.slot: str = ""              # host-pushed text ("text" event)
         self.emits: list[tuple[float, str]] = []   # (t, tag) delivered
+        self.recorded: list[tuple[float, str]] = []  # (t, tag) flagged record=True
         self.dropped_emits: int = 0      # clamped by token bucket
         self.ended = False
         self.clock = 0.0
@@ -157,6 +160,10 @@ class Stage:
             if self._tokens >= 1.0:
                 self._tokens -= 1.0
                 self.emits.append((self.clock, t.emit))
+                # 5.1 #5 ledger emits: a recorded emit is data you keep — the
+                # deployer drains `recorded` into the Vault performance log.
+                if t.record:
+                    self.recorded.append((self.clock, t.emit))
             else:
                 self.dropped_emits += 1
         if t.target == END:
@@ -221,13 +228,33 @@ class Stage:
                 phase = self.scene_elapsed * s.pulse.rate_hz
                 pulse_on = (int(phase * 2) % 2) == 0
                 pulse_color = s.pulse.color
+        cadence_phase, cadence_level = self._cadence()
         return DisplayFrame(
             scene=self.current,
             lines=[ResolvedLine(self._resolve(ln.content), ln.row,
                                 ln.size, ln.color) for ln in s.lines],
             pulse_on=pulse_on,
             pulse_color=pulse_color,
+            cadence_phase=cadence_phase,
+            cadence_level=cadence_level,
         )
+
+    def _cadence(self) -> tuple[str, float]:
+        """The breathing envelope at the current scene time (5.1 #4): ramp in →
+        hold → ramp out, cycling over the cadence period. Amplitude in 0..1."""
+        cad = self._scene().cadence
+        if cad is None:
+            return "", 0.0
+        period = cad.period()
+        if period <= 0:
+            return "", 0.0
+        u = self.scene_elapsed % period
+        if u < cad.in_s:
+            return "in", round(u / cad.in_s if cad.in_s else 1.0, 3)
+        if u < cad.in_s + cad.hold_s:
+            return "hold", 1.0
+        out = u - cad.in_s - cad.hold_s
+        return "out", round(1.0 - (out / cad.out_s if cad.out_s else 1.0), 3)
 
     # ------------------------------------------------------------------
     # Hot-swap / revoke (mirrors the Lua stage's contract)
@@ -241,3 +268,15 @@ class Stage:
     def revoke(self) -> None:
         """Stop and clear; the stage returns to ambient ready."""
         self.ended = True
+
+
+def log_recorded(stage: "Stage", vault, figment_id: str) -> int:
+    """Drain a stage's recorded emits (transitions flagged ``record: true``, 5.1
+    #5) into the Vault performance log — turning a figment into an instrument that
+    produces *data you keep* (batch logs, rep history, medication-taken marks).
+    Returns how many lines were written; leaves the stage's buffer empty."""
+    for ts, tag in stage.recorded:
+        vault.record_performance(figment_id, {"emit": tag, "at": ts})
+    n = len(stage.recorded)
+    stage.recorded = []
+    return n

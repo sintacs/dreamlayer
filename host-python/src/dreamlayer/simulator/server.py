@@ -79,7 +79,21 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="DreamLayer Halo simulator")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
+    # Glass Desk — the zero-hardware devkit: watch a plugin dir and re-render its
+    # card through the real device renderer on every save.
+    ap.add_argument("--watch", metavar="PLUGIN_DIR",
+                    help="Glass Desk: live-render a plugin's card on every save")
+    ap.add_argument("--out", help="Glass Desk output PNG (default: <dir>/.glass/glass.png)")
+    ap.add_argument("--interval", type=float, default=1.0, help="Glass Desk poll seconds")
+    ap.add_argument("--once", action="store_true", help="Glass Desk: render one frame and exit")
     args = ap.parse_args(argv)
+    if args.watch:
+        from .glass_desk import watch
+        out = watch(args.watch, out_path=args.out, interval=args.interval,
+                    once=args.once)
+        if args.once:
+            print(f"◐ Glass Desk rendered {out}")
+        return
     srv = make_simulator_server(host=args.host, port=args.port)
     print(f"\n  ◐ DreamLayer Halo Simulator\n"
           f"    http://{args.host}:{args.port}\n\n"

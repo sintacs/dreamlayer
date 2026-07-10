@@ -1388,6 +1388,90 @@ class Brain:
                 "missed": {"texts": len(texts), "emails": len(emails)}}
 
 
+def _memory_db_path(brain: Brain) -> Path:
+    """Where the orchestrator's memory SQLite lives — the same file the CLI's
+    `dreamlayer memories` resolves ($DREAMLAYER_DB, else <cfg_dir>/dreamlayer.db)."""
+    import os
+    raw = os.environ.get("DREAMLAYER_DB") or str(Path(brain.cfg_dir) / "dreamlayer.db")
+    return Path(raw).expanduser()
+
+
+def _memory_file(brain: Brain) -> dict:
+    """Panel readout for 'your memory is a file' — no CLI needed."""
+    from ...memory.datasette_app import MemoryExplorer
+    p = _memory_db_path(brain)
+    return {
+        "path": str(p),
+        "exists": p.exists(),
+        "bytes": p.stat().st_size if p.exists() else 0,
+        "datasette": MemoryExplorer.available,
+        "browse_cmd": MemoryExplorer(str(p)).command(port=8001),
+    }
+
+
+def _memory_browse(brain: Brain) -> dict:
+    """Launch the read-only Datasette browser over the memory file (local-only).
+    Returns a URL when datasette is installed, else the command to run."""
+    from ...memory.datasette_app import MemoryExplorer
+    info = _memory_file(brain)
+    if not info["exists"]:
+        return {"available": False, "error": "no memory file yet", "command": info["browse_cmd"]}
+    ex = MemoryExplorer(info["path"])
+    if not MemoryExplorer.available:
+        return {"available": False, "command": ex.command(port=8001)}
+    import shlex
+    import subprocess
+    try:
+        meta = ex.write_metadata()
+        subprocess.Popen(shlex.split(ex.command(port=8001, metadata_path=meta)))
+        return {"available": True, "url": "http://127.0.0.1:8001"}
+    except Exception as exc:
+        return {"available": False, "error": str(exc), "command": ex.command(port=8001)}
+
+
+def _memory_export(brain: Brain, dest: str) -> dict:
+    """Copy the memory file somewhere (local-only). It's the user's data."""
+    import shutil
+    info = _memory_file(brain)
+    if not info["exists"]:
+        return {"ok": False, "error": "no memory file to export"}
+    if not (dest or "").strip():
+        return {"ok": False, "error": "no destination given"}
+    d = Path(dest).expanduser()
+    d.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(info["path"], d)
+    return {"ok": True, "dest": str(d), "bytes": d.stat().st_size}
+
+
+def _cloud_view_payload(brain: Brain) -> dict:
+    """What DreamLayer Cloud can see — the opaque byte-shapes only, never content
+    (INNOVATION_SESSION Category 6 / B16). The trust centerpiece: render the
+    nothing. The server stores ciphertext, room ids, and counts; this reports
+    exactly those, and names — in the client's own words — what it can never see.
+    Honest today: with no cloud configured, the answer is 'the server holds
+    nothing', which is the point."""
+    try:
+        caps = set(brain.plugin_capabilities())
+    except Exception:
+        caps = set()
+    enabled = bool({"cloud_sync", "cloud_relay", "cloud_ai"} & caps)
+    return {
+        "enabled": enabled,
+        # {bytes, last_backup_ts} once a ciphertext backup exists; None ⇒ nothing
+        # stored. The server can never open it — the key is your passphrase.
+        "vault": None,
+        # rooms the device participates in: an opaque id + a member count, never
+        # who. The relay routes; it does not read.
+        "relay": {"rooms": []},
+        "listings": 0,
+        "cannot_see": [
+            "your memories — the SQLite file never leaves the device unencrypted",
+            "who you are — bonds are pairwise keys; the relay learns only a room id",
+            "what a figment means — a dozen integers cross the wire, nothing more",
+        ],
+    }
+
+
 def _capability_payload(brain: Brain) -> dict:
     """Live optional-capability report for the panel (dreamlayer/capabilities.py)
     with the panel's own persisted off-switches applied. Env DL_DISABLE_* still
@@ -1597,6 +1681,10 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                                  "seams": brain.health.snapshot()})
             elif path == "/dreamlayer/capabilities":
                 self._json(200, _capability_payload(brain))
+            elif path == "/dreamlayer/cloud":
+                self._json(200, _cloud_view_payload(brain))
+            elif path == "/dreamlayer/memory/file":
+                self._json(200, _memory_file(brain))
             elif path == "/dreamlayer/history":
                 self._json(200, {"items": _activity_feed(brain, 40)})
             elif path == "/dreamlayer/calendar":
@@ -1692,6 +1780,16 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             path, qs = parsed.path, urllib.parse.parse_qs(parsed.query)
             if not self._authed():
                 self._json(401, {"error": "unauthorised"}); return
+            if path == "/dreamlayer/memory/browse":
+                if not self._from_localhost():
+                    self._json(403, {"error": "browsing memory is local-only"}); return
+                self._json(200, _memory_browse(brain))
+                return
+            if path == "/dreamlayer/memory/export":
+                if not self._from_localhost():
+                    self._json(403, {"error": "export is local-only"}); return
+                self._json(200, _memory_export(brain, self._body().get("dest", "")))
+                return
             if path == "/dreamlayer/folders":
                 b = self._body()
                 p = b.get("path", "")

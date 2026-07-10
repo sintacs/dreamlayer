@@ -267,7 +267,12 @@ class Orchestrator(
         self.object_lens.registry.register(AIProvider(self.brain))
         # Label (your own facts about a product) + Rosetta (translate seen text)
         self.dietary = DietaryProfile()
-        self.rosetta = RosettaLens()          # translate_fn wired by the app
+        # Rosetta: wire the offline Argos backend when installed (extras
+        # `platform`); absent → translate_fn=None, identical no-op behavior.
+        from ..rosetta_argos import ArgosTranslator, make_translate_fn
+        self.rosetta = RosettaLens(
+            translate_fn=make_translate_fn() if ArgosTranslator.available else None,
+            engine="argos")
         self.object_lens.registry.register(LabelProvider(self.dietary, self.ring))
         self.object_lens.registry.register(RosettaProvider(self.rosetta))
         # Waypath: point-me-to-my-things from anchors
@@ -628,6 +633,12 @@ class Orchestrator(
                         self.rc_deployer.revoke(fid)
                     except Exception:
                         pass  # revocation retries when the deployer reappears
+            return
+        # Nod to Remember — an on-glass IMU gesture (imu_gesture envelope):
+        # your neck is the save button (NOD_SAVE pins), a shake dismisses.
+        if name == "imu_gesture":
+            self.on_imu_gesture((payload or {}).get("gesture", ""),
+                                (payload or {}).get("confidence", 0.0))
             return
         # in Dream Mode with a live bond, single taps feed the tin can
         if name == "single_click" and self.state.is_dream() \

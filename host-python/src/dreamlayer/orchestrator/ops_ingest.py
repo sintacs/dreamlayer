@@ -164,6 +164,58 @@ class IngestOps:
         return self.silent_capture.capture_transcript(transcript, context=context, now_ms=now_ms)
 
 
+    # ------------------------------------------------------------------
+    # Nod to Remember — on-glass IMU gestures (imu_gesture BLE envelope).
+    # The classifier (halo-lua/app/imu_gesture.lua) fires a gesture name;
+    # the host turns your neck into the save button. No image is stored —
+    # a pinned sighting is a single text row.
+    # ------------------------------------------------------------------
+
+    def on_imu_gesture(self, gesture: str, confidence: float = 0.0) -> dict:
+        """Route an on-glass gesture. NOD_SAVE pins the newest ring memory;
+        SHAKE_DISMISS routes to the card-dismissal trust signal (maturity +
+        adaptive floors); GLANCE_PEEK / DOUBLE_NOD / TILT_REVEAL surface as
+        intents for the peek/confirm/reveal paths. Unknown → ignored, never
+        crashes."""
+        g = (gesture or "").strip().upper()
+        if g == "NOD_SAVE":
+            return self.pin_latest(confidence)
+        if g == "SHAKE_DISMISS":
+            # the wearer swatted the current card away — the same trust signal a
+            # tap-dismiss feeds (see _on_event TEL / CARD_DISMISSED)
+            self.maturity.observe_card(dismissed=True)
+            return {"gesture": g, "dismissed": True}
+        if g in ("GLANCE_PEEK", "DOUBLE_NOD", "TILT_REVEAL"):
+            return {"gesture": g}
+        return {"gesture": g, "ignored": True}
+
+    def pin_latest(self, confidence: float = 0.0) -> dict:
+        """Pin the newest ring sighting so it never expires (meta.pinned, honored
+        by memory/retention.py) and confirm it on-glass. The entire evidence
+        trail stays one text row — nothing is filmed."""
+        latest = self.ring.latest(limit=1)
+        if not latest:
+            return {"pinned": False, "reason": "nothing to pin"}
+        ev = latest[0].event
+        ev.meta = dict(getattr(ev, "meta", None) or {})
+        ev.meta["pinned"] = True
+        try:
+            mid = self.db.add_memory(
+                kind=getattr(ev, "kind", "memory"),
+                summary=getattr(ev, "summary", ""),
+                confidence=max(float(getattr(ev, "confidence", 0.5)),
+                               float(confidence or 0.0)),
+                meta=ev.meta)
+        except Exception as exc:
+            self.health.record_failure("pin", exc)
+            return {"pinned": False, "reason": "persist failed"}
+        # confirm: the phone plays haptics.confirm off the card earcon; the ring
+        # draws its check glyph (the boot-flag Lua wiring, D2b, renders it)
+        self.bridge.send_card(cards.saved_memory(getattr(ev, "summary", "")),
+                              event="memory_pinned")
+        return {"pinned": True, "memory_id": mid, "summary": ev.summary}
+
+
     def _premonition_sweep(self) -> None:
         """New ring events teach (and confirm) the recurrence model —
         a landed event hardens any ghost that predicted it."""

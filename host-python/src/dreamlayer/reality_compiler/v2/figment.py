@@ -56,10 +56,25 @@ COLOR_TOKENS = frozenset({
 
 SIZES = frozenset({"sm", "md", "lg"})
 
-# Events a scene may listen for. "ble:<n>" (single byte code) and
-# "text" (host-pushed string into the slot) are also accepted.
+# Events a scene may listen for. "ble:<n>" (single byte code), "text"
+# (host-pushed string into the slot), and "imu:<gesture>" (an on-glass IMU
+# gesture, see IMU_GESTURES) are also accepted.
 BASE_EVENTS = frozenset({"single", "double", "long", "imu_tap",
                          "ble", "text", "battery_low"})
+
+# On-glass IMU gestures a scene may transition on (halo-lua/app/imu_gesture.lua).
+# The classifier's 900ms per-gesture cooldowns bound the flood surface, so no new
+# budget rule is needed — these are ordinary event exits.
+IMU_GESTURES = frozenset({"nod", "shake", "peek", "tilt", "double_nod"})
+
+# Place events (5.1 #2), fired by the host's place-signature engine
+# (memory/proactive.py) with a ≥60s debounce — "when I get to the gym, start the
+# circuit machine". Presence events (5.1 #3) from Confluence: a bonded partner's
+# rate-limited emit becomes your transition — "when she leaves work, my dinner
+# timer starts". bond:tag:<t> routes a specific partner emit tag. Both firing
+# sides are already rate-limited, so these stay ordinary event exits.
+PLACE_EVENTS = frozenset({"enter", "exit"})
+BOND_EVENTS = frozenset({"near"})
 
 TICKS = frozenset({"countdown", "countup"})
 
@@ -74,6 +89,18 @@ def _valid_event(name: str) -> bool:
     if name.startswith("ble:"):
         code = name[4:]
         return code.isdigit() and 0 <= int(code) <= 255
+    if name.startswith("imu:"):
+        return name[4:] in IMU_GESTURES
+    if name.startswith("place:"):
+        return name[6:] in PLACE_EVENTS
+    if name.startswith("bond:"):
+        rest = name[5:]
+        if rest in BOND_EVENTS:
+            return True
+        if rest.startswith("tag:"):
+            tag = rest[4:]
+            return tag.isalnum() and 1 <= len(tag) <= 16
+        return False
     return False
 
 
@@ -116,6 +143,27 @@ class PulseSpec:
     def from_dict(d: dict) -> "PulseSpec":
         return PulseSpec(d["window_sec"], d.get("color", "accent_attention"),
                          d.get("rate_hz", 2.0))
+
+
+@dataclass
+class CadenceSpec:
+    """A breathing cycle (5.1 #4): ramp *in* over ``in_s``, ``hold_s`` at full,
+    ramp *out* over ``out_s``, repeat. Drives a slow amplitude envelope (never a
+    flicker — it's seconds, not Hz) for box-breathing, HRV training, panic
+    de-escalation. Provable as ever: the period is bounded like any scene."""
+    in_s: float
+    hold_s: float
+    out_s: float
+
+    def period(self) -> float:
+        return self.in_s + self.hold_s + self.out_s
+
+    def to_dict(self) -> dict:
+        return {"in_s": self.in_s, "hold_s": self.hold_s, "out_s": self.out_s}
+
+    @staticmethod
+    def from_dict(d: dict) -> "CadenceSpec":
+        return CadenceSpec(d["in_s"], d["hold_s"], d["out_s"])
 
 
 @dataclass
@@ -171,6 +219,9 @@ class Transition:
     counter_ops: list[CounterOp] = field(default_factory=list)
     emit: Optional[str] = None                   # short tag sent to host
     when: Optional[Guard] = None                 # only for timeout branches
+    record: bool = False                         # 5.1 #5: also log this emit to
+                                                 # the Vault performance log — data
+                                                 # you keep (batch/rep/med logs)
 
     def to_dict(self) -> dict:
         d: dict = {"target": self.target}
@@ -178,6 +229,8 @@ class Transition:
             d["counter_ops"] = [o.to_dict() for o in self.counter_ops]
         if self.emit is not None:
             d["emit"] = self.emit
+        if self.record:
+            d["record"] = True
         if self.when is not None:
             d["when"] = self.when.to_dict()
         return d
@@ -189,6 +242,7 @@ class Transition:
             [CounterOp.from_dict(o) for o in d.get("counter_ops", [])],
             d.get("emit"),
             Guard.from_dict(d["when"]) if d.get("when") else None,
+            record=bool(d.get("record", False)),
         )
 
 
@@ -202,6 +256,7 @@ class Scene:
     on_timeout: list[Transition] = field(default_factory=list)
     on: dict[str, Transition] = field(default_factory=dict)
     pulse: Optional[PulseSpec] = None
+    cadence: Optional[CadenceSpec] = None        # 5.1 #4: breathing envelope
 
     def timed(self) -> bool:
         return self.duration_sec is not None or self.duration_range is not None
@@ -225,6 +280,8 @@ class Scene:
             d["on"] = {k: v.to_dict() for k, v in sorted(self.on.items())}
         if self.pulse:
             d["pulse"] = self.pulse.to_dict()
+        if self.cadence:
+            d["cadence"] = self.cadence.to_dict()
         return d
 
     @staticmethod
@@ -239,6 +296,7 @@ class Scene:
             on_timeout=[Transition.from_dict(t) for t in d.get("on_timeout", [])],
             on={k: Transition.from_dict(v) for k, v in d.get("on", {}).items()},
             pulse=PulseSpec.from_dict(d["pulse"]) if d.get("pulse") else None,
+            cadence=CadenceSpec.from_dict(d["cadence"]) if d.get("cadence") else None,
         )
 
 
@@ -309,6 +367,21 @@ class Figment:
         """Stable byte-for-byte form — the thing that gets signed."""
         return json.dumps(self.to_dict(), sort_keys=True,
                           separators=(",", ":"), ensure_ascii=True)
+
+    # -- heirloom (INNOVATION_SESSION 5.5) ---------------------------------
+
+    def dedicate(self, to: str) -> "Figment":
+        """Mark this figment an heirloom — a dedication that rides in `meta`, and
+        therefore in the signed canonical JSON, so it's provably the author's.
+        Set it *before* keep()/sign() (it changes the signature). Tiny, signed,
+        and executable on any future device that speaks the grammar."""
+        self.meta = dict(self.meta or {})
+        self.meta["dedication"] = to
+        return self
+
+    def dedication(self) -> Optional[str]:
+        """The dedication, if this figment is an heirloom; else None."""
+        return (self.meta or {}).get("dedication")
 
     # -- inspection --------------------------------------------------------
 

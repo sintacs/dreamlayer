@@ -468,6 +468,188 @@ def cmd_list(args) -> int:
     return 0
 
 
+# --- memories: your data is a file -------------------------------------------
+
+def _mem_db(args) -> str:
+    """Resolve the memory SQLite path: --db, else $DREAMLAYER_DB, else the
+    Brain's default (~/.dreamlayer/dreamlayer.db)."""
+    raw = getattr(args, "db", None) or os.environ.get("DREAMLAYER_DB")
+    if raw:
+        return str(Path(raw).expanduser())
+    return str(Path.home() / ".dreamlayer" / "dreamlayer.db")
+
+
+def _veil_blocked(db_path: str):
+    """The Privacy Veil, as a launch-time gate for the detached browser. Honest
+    scope: a standalone CLI can't see live orchestrator state, so it honors two
+    explicit, checkable signals — $DREAMLAYER_VEIL, or a `veil.lock` beside the
+    db. Returns (blocked, reason)."""
+    v = os.environ.get("DREAMLAYER_VEIL", "").strip().lower()
+    if v in {"1", "true", "on", "yes"}:
+        return True, "DREAMLAYER_VEIL is set"
+    lock = Path(db_path).resolve().parent / "veil.lock"
+    if lock.exists():
+        return True, f"the privacy veil is up ({lock})"
+    return False, ""
+
+
+def cmd_mem_path(args) -> int:
+    """Print where your memory lives — 'your data is one file, here it is'."""
+    db = _mem_db(args)
+    p = Path(db)
+    if p.exists():
+        kb = p.stat().st_size / 1024
+        _p(f"{db}  ({kb:.1f} KB)")
+    else:
+        _p(f"{db}  (no file yet — the Brain creates it on first memory)")
+    return 0
+
+
+def cmd_mem_browse(args) -> int:
+    """Open your memory as a browsable, SQL-queryable database (read-only)."""
+    db = _mem_db(args)
+    if not Path(db).exists():
+        _err(f"{BAD} no memory file at {db} — pass --db PATH or set DREAMLAYER_DB")
+        return 2
+    blocked, reason = _veil_blocked(db)
+    if blocked:
+        _err(f"{BAD} not opening your memory: {reason}. Lower the veil first.")
+        return 2
+    from dreamlayer.memory.datasette_app import MemoryExplorer
+    ex = MemoryExplorer(db)
+    meta = ex.write_metadata()
+    cmd = ex.command(port=args.port, metadata_path=meta)
+    if args.print_cmd or not ex.available:
+        if not ex.available and not args.print_cmd:
+            _p(f"{WARN} datasette isn't installed (pip install 'dreamlayer[infra]'). Run:")
+        _p(cmd)
+        return 0
+    import shlex
+    import subprocess
+    _p(f"{ARROW} serving your memory read-only at http://127.0.0.1:{args.port}  (Ctrl-C to stop)")
+    subprocess.run(shlex.split(cmd))
+    return 0
+
+
+def cmd_mem_export(args) -> int:
+    """Copy your memory file somewhere — it's yours to take."""
+    import shutil
+    db = _mem_db(args)
+    if not Path(db).exists():
+        _err(f"{BAD} no memory file at {db} — pass --db PATH or set DREAMLAYER_DB")
+        return 2
+    dest = Path(args.dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(db, dest)
+    kb = dest.stat().st_size / 1024
+    _p(f"{OK} exported your memory → {dest}  ({kb:.1f} KB)")
+    return 0
+
+
+def cmd_mem_import(args) -> int:
+    """Restore a memory file into place (refuses to clobber without --force)."""
+    import shutil
+    src = Path(args.src)
+    if not src.exists():
+        _err(f"{BAD} no file to import at {src}")
+        return 2
+    db = Path(_mem_db(args))
+    if db.exists() and not args.force:
+        _err(f"{BAD} {db} already exists — pass --force to overwrite it")
+        return 2
+    db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, db)
+    _p(f"{OK} imported {src} → {db}")
+    return 0
+
+
+def cmd_mem_burn(args) -> int:
+    """Delete your memory file. Destructive — requires --yes."""
+    db = Path(_mem_db(args))
+    if not db.exists():
+        _p(f"{db}  (already gone)")
+        return 0
+    if not args.yes:
+        _err(f"{BAD} refusing to burn {db} without --yes (this permanently deletes "
+             f"your memory)")
+        return 2
+    db.unlink()
+    _p(f"{OK} burned your memory — {db} is gone")
+    return 0
+
+
+# --- figment golf: the compiler is the referee -------------------------------
+
+def _load_figment(path_str: str):
+    """Load a figment from a bare figment .json or a {figment: ...} listing."""
+    from dreamlayer.reality_compiler.v2.figment import Figment
+    d = json.loads(Path(path_str).read_text(encoding="utf-8"))
+    if isinstance(d.get("figment"), dict):
+        d = d["figment"]
+    return Figment.from_dict(d)
+
+
+def cmd_golf_verify(args) -> int:
+    """Verify a figment against the sandbox budgets and score it per byte."""
+    try:
+        fig = _load_figment(args.path)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        _err(f"{BAD} not a figment: {exc}")
+        return 2
+    from dreamlayer.reality_compiler.v2.golf import referee
+    r = referee(fig)
+    if getattr(args, "json", False):
+        _p(json.dumps(r, indent=2))
+        return 0 if r["ok"] else 1
+    sc = r["score"]
+    _p(f"{OK if r['ok'] else BAD} "
+       f"{'BUDGETS OK' if r['ok'] else 'BUDGETS VIOLATED'}  "
+       f"(display ≤{r['proof']['worst_display_hz']:g}Hz, "
+       f"emit ≤{r['proof']['worst_emit_per_sec']:g}/s)")
+    for v in r["violations"]:
+        _p(f"  {BAD} {v}")
+    _p(f"{ARROW} golf score {sc['golf_score']}  "
+       f"(expressiveness {sc['expressiveness']} in {sc['bytes']} bytes)")
+    _p(f"    scenes={sc['scenes']}  events={sc['distinct_events']}  "
+       f"counters={sc['counters']}  pulses={sc['pulses']}  "
+       f"emits={sc['emits']}  lines={sc['lines']}")
+    return 0 if r["ok"] else 1
+
+
+def cmd_pack_validate(args) -> int:
+    """Run the sensory gate on an earcon/haptic pack (INNOVATION 1.5)."""
+    try:
+        pack = json.loads(Path(args.path).read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError) as exc:
+        _err(f"{BAD} can't read pack: {exc}")
+        return 2
+    from dreamlayer.plugins.packs import validate_pack
+    ok, reasons = validate_pack(pack)
+    if ok:
+        _p(f"{OK} pack '{pack.get('name','?')}' passes the sensory gate")
+        return 0
+    _p(f"{BAD} pack failed the sensory gate")
+    for r in reasons:
+        _p(f"  {BAD} {r}")
+    return 1
+
+
+def cmd_figment_safety(args) -> int:
+    """Show a figment's proof-carrying safety card before you install it."""
+    try:
+        fig = _load_figment(args.path)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        _err(f"{BAD} not a figment: {exc}")
+        return 2
+    from dreamlayer.reality_compiler.v2.safety import render_text, safety_card
+    card = safety_card(fig)
+    if getattr(args, "json", False):
+        _p(json.dumps(card, indent=2))
+    else:
+        _p(render_text(card))
+    return 0 if card["ok"] else 1
+
+
 # --- parser ------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -529,6 +711,60 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--token", help="Brain token (or set DREAMLAYER_TOKEN)")
     ls.add_argument("--registry", help="path to a registry index.json")
     ls.set_defaults(func=cmd_list)
+
+    # memories — your data is one file, and here is the SQL prompt over it
+    mem = groups.add_parser("memories", help="browse your memory (it's just a file)")
+    msub = mem.add_subparsers(dest="cmd")
+
+    mpath = msub.add_parser("path", help="print where your memory file lives")
+    mpath.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mpath.set_defaults(func=cmd_mem_path)
+
+    mbrowse = msub.add_parser("browse", help="open your memory as a read-only, SQL-queryable web UI")
+    mbrowse.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mbrowse.add_argument("--port", type=int, default=8001, help="local port (default: 8001)")
+    mbrowse.add_argument("--print", dest="print_cmd", action="store_true",
+                         help="print the launch command instead of serving")
+    mbrowse.set_defaults(func=cmd_mem_browse)
+
+    mexport = msub.add_parser("export", help="copy your memory file somewhere (it's yours)")
+    mexport.add_argument("dest", help="destination path for the copy")
+    mexport.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mexport.set_defaults(func=cmd_mem_export)
+
+    mimport = msub.add_parser("import", help="restore a memory file into place")
+    mimport.add_argument("src", help="the memory file to import")
+    mimport.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mimport.add_argument("--force", action="store_true", help="overwrite an existing memory file")
+    mimport.set_defaults(func=cmd_mem_import)
+
+    mburn = msub.add_parser("burn", help="permanently delete your memory file")
+    mburn.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mburn.add_argument("--yes", action="store_true", help="confirm the deletion")
+    mburn.set_defaults(func=cmd_mem_burn)
+
+    # golf — score a figment's expressiveness per byte; the compiler referees
+    golf = groups.add_parser("golf", help="score a figment's expressiveness per byte (budgets are the referee)")
+    gsub = golf.add_subparsers(dest="cmd")
+    gv = gsub.add_parser("verify", help="verify a figment against the sandbox budgets and score it")
+    gv.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
+    gv.add_argument("--json", action="store_true", help="machine-readable output")
+    gv.set_defaults(func=cmd_golf_verify)
+
+    # figment — proof-carrying behaviors: see what an install CANNOT do
+    fig = groups.add_parser("figment", help="inspect a figment (proof-carrying safety card)")
+    fsub = fig.add_subparsers(dest="cmd")
+    fs = fsub.add_parser("safety", help="show the safety card — what this behavior CANNOT do")
+    fs.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
+    fs.add_argument("--json", action="store_true", help="machine-readable output")
+    fs.set_defaults(func=cmd_figment_safety)
+
+    # packs — earcon/haptic packs: the store's sensory gate
+    packs = groups.add_parser("packs", help="validate an earcon/haptic pack")
+    psub = packs.add_subparsers(dest="cmd")
+    pv = psub.add_parser("validate", help="run the sensory gate on a pack .json")
+    pv.add_argument("path", help="a pack .json (name + haptics + earcons)")
+    pv.set_defaults(func=cmd_pack_validate)
 
     return parser
 

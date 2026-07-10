@@ -282,6 +282,87 @@ class WorldLensOps:
         ear (live voice translation)."""
         return self.rosetta.read(text, target=target)
 
+    def translate_heard(self, text: str, target: str = "en", speaker: str = ""):
+        """Rosetta Live (the ear, INNOVATION_SESSION 4.6): translate what someone
+        is *saying* into your language — offline when the Argos backend is
+        installed — and show it as one subtitle card per utterance. Veil-gated;
+        nothing is recorded, the caption is a line of text. Returns the card sent,
+        or None while incognito."""
+        if not self.privacy.allow_capture():
+            return None
+        res = self.rosetta.read(text, target=target)
+        card = cards.spoken_caption(speaker=speaker, text=res.translated)
+        self.bridge.send_card(card, event="caption")
+        return card
+
+    def thread(self, image: bytes, place: str = "", k: int = 6) -> dict:
+        """Thread Lens (INNOVATION_SESSION 4.1): steal color from the world.
+        Extract a k-swatch palette from a deliberate snapshot, save it as a
+        `taught` memory (recallable by place + time), and hand back the hex
+        swatches to paint into the display's dynamic palette bank. Veil-gated;
+        the image is never stored — only the palette (a few hex codes)."""
+        from ..object_lens.palette_extract import extract_palette
+        if not self.privacy.allow_capture():
+            return {"ok": False, "reason": "incognito"}
+        swatches = extract_palette(image, k)
+        if not swatches:
+            return {"ok": False, "reason": "no palette"}
+        meta = {"palette": swatches, "place": place}
+        try:
+            self.db.add_memory(kind="taught", summary="palette " + " ".join(swatches),
+                               confidence=0.8, meta=meta)
+        except Exception as exc:
+            self.health.record_failure("thread", exc)
+        return {"ok": True, "swatches": swatches, "place": place}
+
+    def ember(self, now=None, window_days: int = 3, weather: str = ""):
+        """Ember Lens (INNOVATION_SESSION 4.9, sensitive by design): on a day that
+        matters, one quiet line — a memory you *chose to keep* (pinned), a year
+        ago today. Never an ambush: only pinned memories surface, at most one, and
+        a storm-state morning suppresses it. Veil-gated. Returns the card, or None.
+        """
+        import datetime as _dt
+        import json as _json
+        if not self.privacy.allow_capture() or weather == "storm":
+            return None
+        now = now or _dt.datetime.now(_dt.timezone.utc)
+        target = now - _dt.timedelta(days=365)
+        lo = (target - _dt.timedelta(days=window_days)).isoformat()
+        hi = (target + _dt.timedelta(days=window_days)).isoformat()
+        try:
+            rows = self.db.conn.execute(
+                "SELECT summary, meta FROM memories WHERE created_at BETWEEN ? AND ? "
+                "ORDER BY created_at", (lo, hi)).fetchall()
+        except Exception:
+            return None
+        for summary, meta_s in rows:
+            meta = _json.loads(meta_s or "{}")
+            if meta.get("pinned"):
+                card = cards.saved_memory(summary)
+                self.bridge.send_card(card, event="ember")
+                return card
+        return None
+
+    def docent(self, query: str, client=None, synth=None):
+        """Docent Lens (INNOVATION_SESSION 4.5): a venue's place-keyed knowledge
+        layer. Given a caption/query and a venue's LocalRecall collection
+        (``client``), retrieve the venue's *own* passages and compose a short,
+        grounded answer — cited from their docs, not a hallucination, and it
+        works offline because the collection synced when you arrived. Veil-gated.
+        ``synth(query, passages)->str`` is optional (e.g. make_synthesizer over a
+        Brain); without it, the top passages are summarized directly. Returns the
+        card, or None (incognito / no venue collection / nothing found)."""
+        if not self.privacy.allow_capture() or client is None or not query.strip():
+            return None
+        hits = client.search(query, top_k=3)
+        passages = [h.get("text", "").strip() for h in hits if h.get("text")]
+        if not passages:
+            return None
+        answer = synth(query, passages) if synth else " ".join(passages[:2])
+        card = cards.scholar(mode="answer", primary=(answer or "").strip()[:96])
+        self.bridge.send_card(card, event="docent")
+        return card
+
 
     def greet(self, person: str, now: float | None = None):
         """Surface a dossier the moment you greet someone the ledger knows.
