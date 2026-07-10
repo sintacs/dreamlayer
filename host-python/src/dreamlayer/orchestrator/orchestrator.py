@@ -629,6 +629,12 @@ class Orchestrator(
                     except Exception:
                         pass  # revocation retries when the deployer reappears
             return
+        # Nod to Remember — an on-glass IMU gesture (imu_gesture envelope):
+        # your neck is the save button (NOD_SAVE pins), a shake dismisses.
+        if name == "imu_gesture":
+            self.on_imu_gesture((payload or {}).get("gesture", ""),
+                                (payload or {}).get("confidence", 0.0))
+            return
         # in Dream Mode with a live bond, single taps feed the tin can
         if name == "single_click" and self.state.is_dream() \
                 and self.tincan is not None:

@@ -56,10 +56,16 @@ COLOR_TOKENS = frozenset({
 
 SIZES = frozenset({"sm", "md", "lg"})
 
-# Events a scene may listen for. "ble:<n>" (single byte code) and
-# "text" (host-pushed string into the slot) are also accepted.
+# Events a scene may listen for. "ble:<n>" (single byte code), "text"
+# (host-pushed string into the slot), and "imu:<gesture>" (an on-glass IMU
+# gesture, see IMU_GESTURES) are also accepted.
 BASE_EVENTS = frozenset({"single", "double", "long", "imu_tap",
                          "ble", "text", "battery_low"})
+
+# On-glass IMU gestures a scene may transition on (halo-lua/app/imu_gesture.lua).
+# The classifier's 900ms per-gesture cooldowns bound the flood surface, so no new
+# budget rule is needed — these are ordinary event exits.
+IMU_GESTURES = frozenset({"nod", "shake", "peek", "tilt", "double_nod"})
 
 TICKS = frozenset({"countdown", "countup"})
 
@@ -74,6 +80,8 @@ def _valid_event(name: str) -> bool:
     if name.startswith("ble:"):
         code = name[4:]
         return code.isdigit() and 0 <= int(code) <= 255
+    if name.startswith("imu:"):
+        return name[4:] in IMU_GESTURES
     return False
 
 
