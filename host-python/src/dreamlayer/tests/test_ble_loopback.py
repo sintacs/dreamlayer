@@ -156,3 +156,75 @@ class TestFramingProperty:
         rt, proto = make_protocol()
         decoded = [json.loads(f) for f in feed_bytes(proto, stream)]
         assert decoded == objs
+
+
+class TestBleChaos:
+    """Adversarial transport conditions — the storms a real radio produces."""
+
+    @settings(max_examples=40, deadline=None)
+    @given(
+        objs=st.lists(
+            st.fixed_dictionaries({"t": st.just("card"),
+                                   "n": st.integers(min_value=0, max_value=9999)}),
+            min_size=1, max_size=8),
+        seed=st.integers(min_value=0, max_value=10_000),
+    )
+    def test_random_refragmentation_recovers_every_frame(self, objs, seed):
+        # concatenate all frames, then cut the stream at arbitrary boundaries —
+        # the reassembler must recover every object regardless of where chunks split
+        stream = b"".join(frame_payload(o) for o in objs)
+        rt, proto = make_protocol()
+        i, decoded = 0, []
+        import random
+        rng = random.Random(seed)
+        while i < len(stream):
+            step = rng.randint(1, 40)
+            for f in feed_bytes(proto, stream[i:i + step]):
+                decoded.append(json.loads(f))
+            i += step
+        assert decoded == objs
+
+    def test_garbage_interleaved_between_good_frames_recovers(self):
+        rt, proto = make_protocol()
+        good1 = frame_payload({"t": "command", "kind": "a"})
+        good2 = frame_payload({"t": "command", "kind": "b"})
+        garbage = (10**9).to_bytes(4, "big")            # a bogus huge length
+        decoded = []
+        for f in feed_bytes(proto, good1):
+            decoded.append(json.loads(f))
+        # a garbage header lands mid-stream → dropped, link recovers
+        feed_bytes(proto, garbage)
+        for f in feed_bytes(proto, good2):
+            decoded.append(json.loads(f))
+        assert [d["kind"] for d in decoded] == ["a", "b"]
+        assert proto["stats"]()["dropped"] >= 1
+
+    def test_reset_mid_stream_discards_partial_then_resyncs(self):
+        # a disconnect drops a half-received frame; reset() clears it and the
+        # next full frame after reconnect decodes cleanly (no bleed from the
+        # truncated one)
+        rt, proto = make_protocol()
+        framed = frame_payload({"t": "card", "payload": {"text": "x" * 400}})
+        half = framed[: len(framed) // 2]
+        assert feed_bytes(proto, half) == []            # partial, nothing yet
+        proto["reset"]()                                # "disconnect"
+        obj = {"t": "command", "kind": "after-reconnect"}
+        decoded = [json.loads(f) for f in feed_bytes(proto, frame_payload(obj))]
+        assert decoded == [obj]
+
+    def test_duplicate_frames_both_deliver(self):
+        # BLE can re-deliver; the framing layer is not a dedup layer, so both
+        # copies decode (idempotency is the app's job, and this documents that)
+        rt, proto = make_protocol()
+        f = frame_payload({"t": "TEL", "event": "CARD_SHOWN"})
+        decoded = [json.loads(x) for x in feed_bytes(proto, f + f)]
+        assert len(decoded) == 2
+
+    def test_oversize_length_never_buffers_unbounded(self):
+        # the cap is the whole point: a giant advertised length is dropped at
+        # the header, not buffered toward MAX_FRAME
+        rt, proto = make_protocol()
+        feed_bytes(proto, (_MAX_FRAME_BYTES + 1).to_bytes(4, "big") + b"junk")
+        assert proto["stats"]()["dropped"] == 1
+        obj = {"t": "command", "kind": "ok"}
+        assert [json.loads(f) for f in feed_bytes(proto, frame_payload(obj))] == [obj]

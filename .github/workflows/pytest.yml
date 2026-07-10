@@ -29,5 +29,9 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run pytest
-        # hardware/benchmark tests need a device or run only on demand
-        run: pytest --tb=short -m "not hardware and not benchmark"
+        # hardware/benchmark tests need a device or run only on demand.
+        # --cov-fail-under is set 5 points below the measured total (90%) so
+        # coverage can only rot LOUDLY — a drop fails the build.
+        run: >
+          pytest --tb=short -m "not hardware and not benchmark"
+          --cov=dreamlayer --cov-report=term-missing --cov-fail-under=85
