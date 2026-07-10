@@ -27,7 +27,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B7 | Vinyl Oracle example plugin (1.2) | BUILD | `examples/` (+ needs a real classifier backend) | queued |
 | B8 | Earcon/Haptic pack manifest + validator (1.5) | BUILD | `plugins/package.py` + `plugins/validate.py` | queued |
 | B9 | Proof-carrying install safety card (3.2) | BUILD | `reality_compiler/v2/budgets.py` report → render | queued |
-| B10 | Figment grammar: gesture/place/presence/cadence/ledger/slot events (5.1) | BUILD | `reality_compiler/v2/figment.py` grammar + `budgets.py` | queued |
+| B10 | Figment grammar: gesture/place/presence/cadence/ledger/slot events (5.1) | partial | `reality_compiler/v2/figment.py` grammar + `budgets.py` | ✅ 5.1 #1 gesture events (`imu:<g>`) shipped with D2; place/presence/cadence/ledger/slot still queued |
 | B11 | Device Vitals surface — TEL has an audience (C8#5) | BUILD | phone settings screen + `HaloBridge` TEL callback | queued (phone) |
 | B12 | Retrace — `locate` recall card (2.6) | BUILD | `orchestrator/ops_*` + voice grammar | queued |
 | B13 | Rosetta Live offline captions (4.6) | BUILD | wire `social_lens/rosetta_argos.py` | queued |
@@ -35,7 +35,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B15 | Heirloom figments — `meta.dedication` + Inherited vault view (5.5) | BUILD | `reality_compiler/v2/` vault | queued |
 | B16 | "What the cloud can see" panel (C6) | BUILD | phone/panel + `cloud_sync.py` byte-shapes | queued |
 | D1 | LLM intent parser: keep-as-suggestion-layer vs delete (C8#4) | **DONE** | `reality_compiler/intent_parser_llm.py` | ✅ owner chose KEEP; docstring reframed as suggestion-layer, grammar-escape test added, doc #4 reconciled |
-| D2 | Nod to Remember: wire host + sim, boot flag OFF (2.1) | **in progress** | `halo-lua/main.lua` + `orchestrator/ops_ingest.py` + `reality_compiler/v2/figment.py` | ✅ D2a: host pin path (`on_imu_gesture`/`pin_latest`) + `imu:<gesture>` figment grammar, 6 tests. ⏳ D2b: main.lua boot-flag wiring + sim injection |
+| D2 | Nod to Remember: wire host + sim, boot flag OFF (2.1) | **DONE** | `halo-lua/main.lua` + `orchestrator/ops_ingest.py` + `reality_compiler/v2/figment.py` | ✅ D2a host pin path + `imu:<gesture>` grammar; ✅ D2b main.lua boot-flag classifier (default OFF) + accel feed, lupa device test injects a synthetic nod → `imu_gesture` envelope. 8 gesture tests; full suite 1982 green |
 | D3 | **Answer-ahead default** — flip `copilot_on`? (2.5) | DECIDE | `orchestrator/answer_ahead.py` | stays off by default unless told |
 | D4 | Overnight Self nightly LoRA (2.2) | DECIDE→BUILD | `rem/nightly_mlx.py` | build the eval gate FIRST (see 2.2 caution) |
 | O1 | NPU: `.tflite` + Vela recipe + candidate zoo (C8#3, 1.4 tail) | OWNER | new `models/` + `AUDIT_ACTIONS.md` | register recipe, no silicon |

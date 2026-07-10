@@ -12,6 +12,7 @@ local DreamRend  = require("display.dream_renderer")
 local Prism      = require("display.prism")
 local PAL        = require("display.palette")
 local Figment    = require("app.figment_stage") -- Reality Compiler v2 stage
+local ImuGesture = require("app.imu_gesture")    -- Nod to Remember (boot-flag)
 local MT         = require("ble.message_types")
 local Horizon    = require("display.horizon")   -- Meridian day-ring
 local Renderer   = require("display.renderer")
@@ -184,6 +185,18 @@ end
 local _shown     = nil   -- card instance currently owned by the renderer
 local _dreaming  = false -- last seen dream state (Lumen warp trigger)
 
+-- Nod to Remember (INNOVATION 2.1): the tuned IMU classifier, declared here as
+-- an upvalue so tick_body can feed it. Instantiated at boot only behind the
+-- boot flag (default OFF); nil means the whole path is dormant and free.
+local _imu = nil
+local function _read_accel()
+  local imu = _G.halo and _G.halo.imu
+  if not imu or not imu.read then return nil end
+  local ok, ax, ay, az = pcall(imu.read)
+  if ok and type(ax) == "number" then return ax, ay, az end
+  return nil
+end
+
 local function tick_body()
   _tick_ms = _tick_ms + 50
 
@@ -213,6 +226,14 @@ local function tick_body()
       process_inbound(msg)
       msg = HostComm.on_receive("")
     end
+  end
+
+  -- Nod to Remember: feed one accel sample per tick when enabled + present.
+  -- A NOD_SAVE / SHAKE / etc. fires the on_gesture callback → imu_gesture
+  -- envelope to the host. Dormant (and free) unless the boot flag wired _imu.
+  if _imu then
+    local ax, ay, az = _read_accel()
+    if ax then _imu:feed(ax, ay, az, _tick_ms) end
   end
 
   -- Render
@@ -329,6 +350,18 @@ if _G.halo and _G.halo.button then
   if _G.halo.button.single then _G.halo.button.single(_button("single")) end
   if _G.halo.button.double then _G.halo.button.double(_button("double")) end
   if _G.halo.button.long   then _G.halo.button.long(_button("long"))     end
+end
+
+-- Nod to Remember: enable the IMU gesture classifier only behind the boot flag
+-- (_G.halo.config.imu_gestures, default OFF), so default boot is unchanged.
+-- Each gesture crosses to the host as an imu_gesture envelope: NOD_SAVE → a
+-- pinned memory, SHAKE_DISMISS → dismiss the current card (see ops_ingest).
+if _G.halo and _G.halo.config and _G.halo.config.imu_gestures then
+  _imu = ImuGesture.new({
+    on_gesture = function(name, conf)
+      HostComm.send({ t = "imu_gesture", gesture = name, confidence = conf })
+    end,
+  })
 end
 
 -- Give the figment stage its whitelisted effects: display, host send,
