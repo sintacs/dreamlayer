@@ -28,6 +28,7 @@ from .transport import (
 )
 from .deployer import StageDeployer, DeployRecord
 from .compiler import RealityCompilerV2, TextCompileResult
+from .repertoire_ranker import RepertoireRanker
 from .skill import compile_skill, parse_skill, Step
 
 __all__ = [
@@ -46,5 +47,5 @@ __all__ = [
     "FIGMENT_PUT", "FIGMENT_SWAP", "FIGMENT_REVOKE", "FIGMENT_TEXT",
     "FIGMENT_ACK", "FIGMENT_EVENT",
     "StageDeployer", "DeployRecord",
-    "RealityCompilerV2", "TextCompileResult",
+    "RealityCompilerV2", "TextCompileResult", "RepertoireRanker",
 ]
