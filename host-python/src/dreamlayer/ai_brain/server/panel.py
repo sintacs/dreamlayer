@@ -409,6 +409,11 @@ _PAGE = r"""<!doctype html><html lang="en"><head>
       <button class="sm ghost" onclick="testCloud()">Test connection</button>
       <button class="sm" onclick="saveCloud()">Save cloud</button></div>
     <div id="cloudStatus"></div>
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+      <div class="conn-t">What the cloud can see</div>
+      <div class="conn-s" id="cloudSees">…</div>
+      <ul id="cloudCant" style="margin:8px 0 0;padding-left:18px;font-size:.85rem;color:var(--muted)"></ul>
+    </div>
   </section>
 
   <section>
@@ -819,8 +824,15 @@ async function exportMemory(){
   let r; try{r=await api("/dreamlayer/memory/export",{method:"POST",body:JSON.stringify({dest})});}catch(e){return;}
   alert(r.ok?`Exported → ${r.dest} (${Math.round(r.bytes/1024)} KB)`:`Export failed: ${r.error||"unknown"}`);
 }
+async function loadCloudView(){
+  let r; try{r=await api("/dreamlayer/cloud");}catch(e){return;}
+  const s=$("cloudSees"); if(s){s.textContent=r.enabled
+    ?`Vault ${r.vault?Math.round(r.vault.bytes/1024)+" KB ciphertext":"— no backup"} · ${(r.relay&&r.relay.rooms?r.relay.rooms.length:0)} relay room(s) · ${r.listings||0} listing(s) — opaque shapes only.`
+    :"Cloud is off — the server holds nothing about you.";}
+  const ul=$("cloudCant"); if(ul){ul.innerHTML="";(r.cannot_see||[]).forEach(x=>{ul.innerHTML+=`<li>${esc(x)}</li>`;});}
+}
 async function load(){
-  loadMemFile();
+  loadMemFile(); loadCloudView();
   let c; try{c=await api("/dreamlayer/config");}catch(e){$("livetext").textContent="offline";return;}
   if(c.error){$("livetext").textContent="token needed";return;}
   const incog=c.config.network_mode==="lan_only";
