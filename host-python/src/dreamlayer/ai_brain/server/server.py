@@ -374,6 +374,31 @@ class Brain:
             self._rc_active = None
         return {"ok": True, **self.rc_repertoire()}
 
+    def rc_import(self, data: dict) -> dict:
+        """Import a figment authored elsewhere — the no-code browser builder's
+        "Deploy to my Brain" (INNOVATION_SESSION Category 1). The proof is
+        re-checked *here*: the Brain budget-verifies and re-signs it before it
+        can run — it never trusts the author. On success it's on stage."""
+        from ...reality_compiler.v2.figment import Figment
+        from ...reality_compiler.v2 import safety
+        try:
+            fig = Figment.from_dict(data or {})
+        except Exception as e:
+            return {"ok": False, "error": f"not a figment: {e}"}
+        card = safety.safety_card(fig)
+        if not card["ok"]:
+            return {"ok": False, "error": "fails the sandbox", "safety": card}
+        try:
+            self.rc.keep(fig)               # re-verifies budgets + signs
+        except Exception as e:
+            return {"ok": False, "error": f"rejected: {e}", "safety": card}
+        record = self.rc.deploy(fig.id)
+        if record.success:
+            self._rc_active = fig.id
+            self.activity.add("rc", f"Imported lens {fig.name!r} from the builder")
+        return {"ok": record.success, "id": fig.id, "safety": card,
+                **self.rc_repertoire()}
+
     def rc_refine_suggestion(self, figment_id: str) -> dict:
         """If you keep quitting this figment at the same scene, the compiler's
         proposed edit — "you end this around 20:00 of 25:00, shorten it?" (5.3).
@@ -1669,11 +1694,28 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
             pass
 
         # -- helpers ----------------------------------------------------
+        def _cors(self):
+            # the Brain is a local, token-authed API; the token (not the origin)
+            # is the auth, so a web tool the wearer opened — the no-code lens
+            # builder's "Deploy to my Brain" — can reach it. No cookies are used,
+            # so `*` never leaks anything a caller doesn't already hold the token for.
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers",
+                             f"Content-Type, {TOKEN_HEADER}")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self._cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def _json(self, code, obj):
             body = json.dumps(obj).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self._cors()
             self.end_headers()
             self.wfile.write(body)
 
@@ -1976,6 +2018,9 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 self._json(200, brain.rc_deploy(self._body().get("figment_id", "")))
             elif path == "/dreamlayer/rc/revoke":
                 self._json(200, brain.rc_revoke(self._body().get("figment_id", "")))
+            elif path == "/dreamlayer/rc/import":
+                # the no-code browser builder's "Deploy to my Brain"
+                self._json(200, brain.rc_import(self._body().get("figment") or self._body()))
             elif path.startswith("/dreamlayer/event/"):
                 # the $6 physical-events kit (INNOVATION 1.6): a sensor out in
                 # the world POSTs a named signal to the figment on stage.
