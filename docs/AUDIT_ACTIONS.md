@@ -1,14 +1,32 @@
 # Audit remediation — the owner-action register
 
-The 2026-07 system audit was remediated in code where code could fix it
-(BLE framing interop, on-glass crash guard + banish kill switch, the v1
-codegen deletion, Ed25519 plugin signing, persistent ANN + retention
-lifecycle + cold-start maturity arc, the health ledger and latency
-contracts, the phone connection machine/outbox/caches/haptics/Look screen
-and its first test suite, luacheck/DCO/phone/web CI, registry rate
-limits, and the doc corrections). What remains is, by nature, **owner
-action** — things a terminal cannot do. This file is the tracked list;
-delete entries as they land.
+The 2026-07 system audit was remediated in code where code could fix it,
+in two passes:
+
+- **Pass 1 (audit fixes):** BLE framing interop, on-glass crash guard +
+  banish kill switch, v1 codegen deletion, Ed25519 plugin signing,
+  persistent ANN + retention lifecycle + cold-start maturity arc, the
+  health ledger and latency contracts, the phone connection machine/
+  outbox/caches/haptics/Look screen, luacheck/DCO/phone/web CI, registry
+  rate limits, doc corrections.
+- **Pass 2 (A/A+ push):** the orchestrator god-object decomposed into a
+  coordinator + 10 ops mixins (behaviour-preserving); Plugin API v2
+  (lifecycle + veil-gated events + settings) with a real subprocess
+  isolation jail for untrusted plugins; the capture path wired end to end
+  (mic→VAD→ASR→speaker→hub) plus a wake-word seam; real Moondream/CLIP
+  vision backends behind a ladder; the Rig-3 social calibration harness
+  and a retrieval-quality regression floor; dismissal learning; the phone
+  BLE bridge as pure-TS-over-injected-transport (Expo Go intact) with an
+  inert ble-plx shell, a jest-expo component-test project, and Look
+  promoted to a tab; a cross-device e2e (live Brain ↔ hub ↔ real device
+  Lua), BLE chaos storms, structured logging, `docs/CONCURRENCY.md`, the
+  panel per-seam health view, and a `--cov-fail-under=85` coverage gate.
+
+What remains is, by nature, **owner action** — things a terminal cannot
+do. This file is the tracked list; delete entries as they land. Note that
+Pass 2 built the *code half* of several items below (the capture pipeline,
+the vision backends, the BLE bridge, the calibration harness); what's left
+under them is the physical/organizational half.
 
 ## 1. Close the first real loop on real glass (the audit's One Thing)
 The loopback rig (Rig 0, `test_ble_loopback.py`) is in CI; the crash
