@@ -616,6 +616,24 @@ def cmd_golf_verify(args) -> int:
     return 0 if r["ok"] else 1
 
 
+def cmd_pack_validate(args) -> int:
+    """Run the sensory gate on an earcon/haptic pack (INNOVATION 1.5)."""
+    try:
+        pack = json.loads(Path(args.path).read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError) as exc:
+        _err(f"{BAD} can't read pack: {exc}")
+        return 2
+    from dreamlayer.plugins.packs import validate_pack
+    ok, reasons = validate_pack(pack)
+    if ok:
+        _p(f"{OK} pack '{pack.get('name','?')}' passes the sensory gate")
+        return 0
+    _p(f"{BAD} pack failed the sensory gate")
+    for r in reasons:
+        _p(f"  {BAD} {r}")
+    return 1
+
+
 def cmd_figment_safety(args) -> int:
     """Show a figment's proof-carrying safety card before you install it."""
     try:
@@ -740,6 +758,13 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
     fs.add_argument("--json", action="store_true", help="machine-readable output")
     fs.set_defaults(func=cmd_figment_safety)
+
+    # packs — earcon/haptic packs: the store's sensory gate
+    packs = groups.add_parser("packs", help="validate an earcon/haptic pack")
+    psub = packs.add_subparsers(dest="cmd")
+    pv = psub.add_parser("validate", help="run the sensory gate on a pack .json")
+    pv.add_argument("path", help="a pack .json (name + haptics + earcons)")
+    pv.set_defaults(func=cmd_pack_validate)
 
     return parser
 
