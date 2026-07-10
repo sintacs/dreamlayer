@@ -34,7 +34,7 @@ Rule we learned on contact: **verify each idea against the current tree before a
 | B14 | Docent Lens — venue RAG plugin (4.5) | BUILD | wire `memory/localrecall_api.py` | queued |
 | B15 | Heirloom figments — `meta.dedication` + Inherited vault view (5.5) | BUILD | `reality_compiler/v2/` vault | queued |
 | B16 | "What the cloud can see" panel (C6) | BUILD | phone/panel + `cloud_sync.py` byte-shapes | queued |
-| D1 | **LLM intent parser: keep-as-suggestion-layer vs delete** (C8#4) | DECIDE | `reality_compiler/intent_parser_llm.py` | needs owner call |
+| D1 | LLM intent parser: keep-as-suggestion-layer vs delete (C8#4) | **DONE** | `reality_compiler/intent_parser_llm.py` | ✅ owner chose KEEP; docstring reframed as suggestion-layer, grammar-escape test added, doc #4 reconciled |
 | D2 | **Nod to Remember: wire `imu_gesture.lua` into `main.lua` boot** (2.1) | DECIDE | `halo-lua/main.lua` + host ingest pin | changes on-glass boot → confirm |
 | D3 | **Answer-ahead default** — flip `copilot_on`? (2.5) | DECIDE | `orchestrator/answer_ahead.py` | stays off by default unless told |
 | D4 | Overnight Self nightly LoRA (2.2) | DECIDE→BUILD | `rem/nightly_mlx.py` | build the eval gate FIRST (see 2.2 caution) |

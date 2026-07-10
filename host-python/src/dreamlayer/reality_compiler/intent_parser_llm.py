@@ -1,12 +1,28 @@
-"""LLM intent parser — the `_llm_parse` upgrade path the module docstring calls
-for, implemented as a NEW sibling class (intent_parser.py is untouched).
+"""LLM intent parser — an OPTIONAL *suggestion layer above the closed grammar*,
+never inside it. A NEW sibling class (intent_parser.py is untouched).
 
-Uses outlines/instructor for constrained, schema-valid structured output when
-available (extras group `structured`); otherwise — and this is the default
-today — it falls back to the deterministic IntentParser regex path. Either way
-it returns a validated BehaviorIntent, so callers can adopt it as a drop-in.
+Design principle (see docs/adr and INNOVATION_SESSION 5.4 / Category 8 #4). The
+reality compiler's safety story is that behaviors are *data*, statically
+budget-verified before they run. A non-deterministic model must never sit
+*inside* that proof path. So this class is deliberately arranged so it cannot
+weaken it:
 
-    p = LLMIntentParser()                 # regex until a model + dep are wired
+  * **Deterministic by default.** With no model wired (the default today) it
+    *is* the regex `IntentParser`, byte-for-byte.
+  * **The model only suggests; the deterministic matcher decides.** When an
+    `llm` is injected, its free-form output is folded back through the same
+    regex matchers, so the return value is *always* a schema-legal
+    `BehaviorIntent` — the model can nudge phrasing toward the closed grammar,
+    it cannot invent a behavior outside it.
+  * **It doesn't deploy.** Whatever it returns still passes `budgets.verify()`
+    downstream before anything reaches glass. The proof, not the parser, is the
+    gate.
+
+So it's a convenience for turning messy speech into a *candidate* intent, with
+zero authority over safety. Not "regex in a trenchcoat" — an honest front-end
+that is structurally forbidden from being anything more.
+
+    p = LLMIntentParser()                 # deterministic until a model + dep are wired
     intent = p.parse("round timer 3 minutes")
 """
 from __future__ import annotations

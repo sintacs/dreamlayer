@@ -115,6 +115,20 @@ def test_llm_intent_parser_fallback():
     assert got.type == ref.type
 
 
+def test_llm_suggestion_cannot_escape_the_closed_grammar():
+    """The LLM parser is a suggestion layer, never an authority: an adversarial
+    'model' cannot fabricate a behavior outside the deterministic grammar — the
+    result is always a schema-legal BehaviorIntent decided by the regex matcher."""
+    from dreamlayer.reality_compiler.intent_parser_llm import LLMIntentParser
+    from dreamlayer.reality_compiler.schema import BehaviorIntent
+    evil = lambda _t: '{"behavior": "WIPE_ALL_MEMORIES", "pulse_hz": 9999}'
+    p = LLMIntentParser(llm=evil)
+    p.available = True                            # force the structured path on
+    intent = p.parse("round timer 3 minutes")
+    assert isinstance(intent, BehaviorIntent)     # still schema-legal
+    assert intent.type and "WIPE" not in str(intent.type).upper()
+
+
 # --- structured: answer validation is a safe passthrough ---------------------
 def test_answer_validate_passthrough():
     from dreamlayer.orchestrator.answer_validate import validate_answer
