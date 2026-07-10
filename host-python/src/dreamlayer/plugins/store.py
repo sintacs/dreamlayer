@@ -219,9 +219,14 @@ class PluginStore:
             if not report.ok:
                 continue                       # was fine at install, isn't now
             if isolate == "untrusted" and not report.signed:
-                # unreviewed/unsigned → the subprocess jail, not the host
+                # unreviewed/unsigned → an isolation tier, not the host. Prefer
+                # the WASM jail when a runtime is configured (no ambient
+                # authority); else the capability-mediated subprocess jail.
                 from .isolation import SubprocessPluginHost
-                host = SubprocessPluginHost(
+                from . import wasm_host
+                Host = wasm_host.WasmPluginHost if wasm_host.available() \
+                    else SubprocessPluginHost
+                host = Host(
                     self.dir / name, package.manifest.requires,
                     health=getattr(orchestrator, "health", None),
                     name=package.manifest.name,

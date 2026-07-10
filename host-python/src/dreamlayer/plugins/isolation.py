@@ -58,17 +58,22 @@ class SubprocessPluginHost:
         if self.health is not None:
             self.health.record_failure(self._seam(), exc)
 
-    def start(self) -> bool:
-        """Launch the child and read its registration manifest. Returns whether
-        the plugin registered any proxyable extension point."""
+    def _child_argv(self) -> list:
+        """The command that launches the sandbox child. Subclasses (e.g. the
+        WASM host) override this to run the same child under a different runtime;
+        the RPC/proxy machinery above is unchanged."""
         from . import os_sandbox
         prefix = os_sandbox.wrapper(self.capabilities, self.package_dir)
         self.sandbox = os_sandbox.available() if prefix else None
-        child = [sys.executable, "-m", "dreamlayer.plugins.sandbox_child",
-                 str(self.package_dir), json.dumps(self.capabilities)]
+        return prefix + [sys.executable, "-m", "dreamlayer.plugins.sandbox_child",
+                         str(self.package_dir), json.dumps(self.capabilities)]
+
+    def start(self) -> bool:
+        """Launch the child and read its registration manifest. Returns whether
+        the plugin registered any proxyable extension point."""
         try:
             self._proc = subprocess.Popen(
-                prefix + child,
+                self._child_argv(),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, text=True, bufsize=1)
         except Exception as exc:

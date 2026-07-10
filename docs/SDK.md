@@ -182,8 +182,14 @@ declaring `network`/`fs` fails validation. Known capabilities: `cards`,
   `network` capability means no network namespace, the filesystem is read-only
   except a private scratch, PID/IPC unshared. Control with `DL_SANDBOX`
   (`auto` | `bwrap` | `nsjail` | `none`); it degrades cleanly to a plain
-  subprocess where the tools aren't usable. A WASM tier (wasmtime/Pyodide, where
-  a denied capability is a WASI import the host never provides) is the roadmap.
+  subprocess where the tools aren't usable. A **WASM tier** (`plugins/wasm_host.py`)
+  is wired as the strongest jail — the same sandbox child under `wasmtime`, where
+  a denied capability is simply a WASI grant the host never provides (no `fs` →
+  no `--dir`; no `network` → no socket inheritance). It activates when an
+  operator sets `DL_WASM_RUNTIME` (wasmtime) + `DL_WASM_GUEST` (a `python.wasm`
+  with dreamlayer bundled); otherwise the store falls back to the subprocess
+  tier. The capability→grant mapping and tier selection are tested; end-to-end
+  execution is gated on that operator-provided runtime.
 
 ## Publishing
 
