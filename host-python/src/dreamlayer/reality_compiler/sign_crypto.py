@@ -71,6 +71,37 @@ class Signer:
         if not self.verify(payload, signature):
             raise SigningError("signature verification failed")
 
+    @property
+    def public_key_hex(self) -> str:
+        """Raw Ed25519 public key, hex — the identity an author publishes so
+        anyone can verify without the private seed. Empty on the HMAC
+        fallback (symmetric keys have no public half to publish)."""
+        if self._pub is None:
+            return ""
+        from cryptography.hazmat.primitives import serialization
+        raw = self._pub.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw)
+        return raw.hex()
+
+
+def verify_detached(payload, signature_hex: str,
+                    public_key_hex: str) -> bool | None:
+    """Verify an author signature with ONLY the public key.
+
+    Returns True/False on a real verification, or None when the
+    `cryptography` extra isn't installed — callers must treat None as
+    *unverifiable*, never as valid.
+    """
+    if not _HAS_CRYPTO:
+        return None
+    try:
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        pub.verify(bytes.fromhex(signature_hex), _canonical(payload))
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
 
 def content_hash(payload) -> str:
     return hashlib.sha256(_canonical(payload)).hexdigest()[:16]

@@ -1,0 +1,4 @@
+{
+  "_doc": "Trusted publisher registry: publisher name -> Ed25519 public key (hex). A SIGNED package must be signed by a key registered here to install on clients that load this file; unsigned packages remain installable under the curated-registry (reviewed-PR) trust model, surfaced with a warning. Add a key by PR: the same review gate that admits a plugin admits its author's key.",
+  "publishers": {}
+}

@@ -1,11 +1,12 @@
-"""Typed pipeline runner (pydantic-ai) — models the RC stages
-intent_parser → compiler → validator → deployer as a typed node graph.
+"""Typed pipeline runner (pydantic-ai) — models the RC v2 stages
+rehearse → choreograph → verify → sign → deploy as a typed node graph.
+(The v1 codegen pipeline this originally mirrored was removed; the runner
+is stage-agnostic — callers supply the stages.)
 
-ADD-alongside: new module (compiler.py untouched). Lazy-imports pydantic-ai
+ADD-alongside module. Lazy-imports pydantic-ai
 (extras group `structured`); the always-available fallback is a simple typed
 sequential runner that threads each stage's output into the next and stops on
-the first failure — same control flow the compiler already has, just made
-inspectable.
+the first failure.
 """
 from __future__ import annotations
 import logging

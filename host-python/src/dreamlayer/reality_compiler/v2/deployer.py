@@ -41,13 +41,38 @@ class StageDeployer:
     halo_bridge.py BLE transport). None → dry-run.
     """
 
-    def __init__(self, vault: Vault, bridge=None) -> None:
+    def __init__(self, vault: Vault, bridge=None,
+                 require_author_sig: bool = False) -> None:
         self.vault = vault
         self.bridge = bridge
         self.sent: list[dict] = []       # every envelope ever handed over
         self._on_device: set[str] = set()
+        # Sharing gate: self-authored figments ride the per-install HMAC
+        # session key. A figment that arrived from OUTSIDE this install
+        # (meta.origin == "shared") must additionally carry a verifiable
+        # Ed25519 author signature — flip this on for any install that
+        # accepts shared figments. HMAC can't prove authorship to a third
+        # party; asymmetric signatures can.
+        self.require_author_sig = require_author_sig
 
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _author_sig_ok(fig) -> bool:
+        """Verify meta.author_sig/author_pubkey over the figment body
+        (with the signature fields excluded). Unverifiable (no cryptography
+        installed) counts as NOT ok — never trust what can't be checked."""
+        from ..sign_crypto import verify_detached
+        meta = getattr(fig, "meta", None) or {}
+        sig, pub = meta.get("author_sig", ""), meta.get("author_pubkey", "")
+        if not (sig and pub):
+            return False
+        body = fig.to_dict()
+        body_meta = dict(body.get("meta") or {})
+        body_meta.pop("author_sig", None)
+        body_meta.pop("author_pubkey", None)
+        body["meta"] = body_meta
+        return verify_detached(body, sig, pub) is True
 
     def deploy(self, figment_id: str) -> DeployRecord:
         """put (if needed) + hot-swap. Refuses unsigned/revoked/unproven."""
@@ -58,6 +83,13 @@ class StageDeployer:
         if entry.revoked:
             return self._refuse("put+swap",
                                 f"figment {figment_id} is revoked")
+        meta = getattr(entry.figment, "meta", None) or {}
+        if self.require_author_sig and meta.get("origin") == "shared" \
+                and not self._author_sig_ok(entry.figment):
+            return self._refuse(
+                "put+swap",
+                f"shared figment {figment_id} has no verifiable Ed25519 "
+                "author signature")
         report = verify(entry.figment)
         if not report.ok:
             return self._refuse("put+swap",

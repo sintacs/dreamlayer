@@ -63,7 +63,8 @@ class PluginManifest:
     requires: tuple = ()             # capability names
     api: str = API_VERSION
     checksum: str = ""               # sha256 of the code payload
-    signature: str = ""              # author signature (reserved; verified later)
+    signature: str = ""              # Ed25519 author signature over the code payload
+    pubkey: str = ""                 # author's Ed25519 public key, hex
     # -- store display (optional; authors ship these so the detail view is
     #    theirs, not the store's) ------------------------------------------
     long: tuple = ()                 # paragraphs: how it helps you
@@ -92,6 +93,7 @@ class PluginManifest:
             api=str(d.get("api", API_VERSION)),
             checksum=str(d.get("checksum", "")),
             signature=str(d.get("signature", "")),
+            pubkey=str(d.get("pubkey", "")),
             long=tuple(d.get("long") or ()),
             forwho=str(d.get("forwho", "")),
             screenshot=str(d.get("screenshot", "")),
@@ -138,6 +140,28 @@ class PluginPackage:
     def checksum_ok(self) -> bool:
         return bool(self.manifest.checksum) and \
             sha256_of(self.source) == self.manifest.checksum
+
+    # -- author signing -------------------------------------------------------
+
+    @property
+    def signed(self) -> bool:
+        return bool(self.manifest.signature and self.manifest.pubkey)
+
+    def sign_with(self, signer) -> "PluginPackage":
+        """Stamp the author's Ed25519 signature + public key. The signature
+        covers exactly what the checksum covers — the code payload — so the
+        store-detail fields stay freely editable. `signer` is a
+        reality_compiler.sign_crypto.Signer holding the author's seed; it
+        must have a real keypair (the HMAC fallback has no public half and
+        would produce an unverifiable package)."""
+        pub = getattr(signer, "public_key_hex", "")
+        if not pub:
+            raise ValueError(
+                "author signing needs Ed25519 (install the 'privacy' extra); "
+                "the HMAC fallback cannot produce a publishable public key")
+        self.manifest.signature = signer.sign(self.source)
+        self.manifest.pubkey = pub
+        return self
 
     # -- disk round-trip -----------------------------------------------------
 

@@ -113,11 +113,16 @@ class PluginStore:
 
     def __init__(self, install_dir, index: Optional[RegistryIndex] = None,
                  fetch_fn: Optional[Callable[[str], str]] = None,
-                 host_capabilities=frozenset()):
+                 host_capabilities=frozenset(),
+                 trusted_keys: Optional[dict] = None):
         self.dir = Path(install_dir)
         self.index = index or RegistryIndex()
         self._fetch = fetch_fn
         self.host_capabilities = frozenset(host_capabilities)
+        # publisher name -> Ed25519 pubkey hex (registry/keys.json). When set,
+        # any SIGNED package must be signed by a registered key; unsigned
+        # packages stay curated-registry-trust (warning, not refusal).
+        self.trusted_keys = trusted_keys
 
     # -- what's installed ----------------------------------------------------
 
@@ -159,14 +164,16 @@ class PluginStore:
             r = ValidationReport()
             r.add_error("registry checksum does not match the fetched package")
             return r
-        report = validate(package, self.host_capabilities)
+        report = validate(package, self.host_capabilities,
+                          trusted_keys=self.trusted_keys)
         if report.ok:
             package.write(self.dir / package.manifest.name)
         return report
 
     def install_package(self, package: PluginPackage) -> ValidationReport:
         """Install a package you already hold (sideload). Same gate."""
-        report = validate(package, self.host_capabilities)
+        report = validate(package, self.host_capabilities,
+                          trusted_keys=self.trusted_keys)
         if report.ok:
             package.write(self.dir / package.manifest.name)
         return report
@@ -190,7 +197,8 @@ class PluginStore:
                 package = PluginPackage.load(self.dir / name)
             except Exception:
                 continue
-            if not validate(package, self.host_capabilities).ok:
+            if not validate(package, self.host_capabilities,
+                            trusted_keys=self.trusted_keys).ok:
                 continue                       # was fine at install, isn't now
             try:
                 plugins.append(load_plugin_object(package))

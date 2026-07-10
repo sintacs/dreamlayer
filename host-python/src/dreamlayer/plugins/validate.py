@@ -1,11 +1,16 @@
 """plugins/validate.py — the gate: does this plugin run cleanly, and is it safe?
 
-Every plugin passes through here before it is ever installed or loaded. Four
+Every plugin passes through here before it is ever installed or loaded. Five
 lines of defence, cheapest first:
 
   1. **Manifest** — well-formed name/version/entry/capabilities/api.
   2. **Integrity** — the code's sha256 matches the manifest checksum, so what
      you validated is what you run (tampering is caught).
+  2b. **Authenticity** — when the manifest carries an Ed25519 signature it
+     must verify against the code payload with the manifest's public key
+     (a bad signature is a hard error); when a trusted-keys registry is
+     supplied, the key must be in it. Unsigned packages stay installable
+     under the curated-registry model, labeled with a warning.
   3. **Static scan** — the source is parsed to an AST and screened for
      dangerous operations (subprocess, eval/exec, raw sockets, file writes,
      ctypes, dynamic import…). Each is allowed *only* if the manifest declared
@@ -60,6 +65,8 @@ class ValidationReport:
     errors: list = field(default_factory=list)     # hard — will not install
     warnings: list = field(default_factory=list)   # soft — surfaced, not fatal
     capabilities: tuple = ()                        # what it declared
+    signed: bool = False                            # author signature verified
+    publisher: str = ""                             # trusted-registry name, if any
 
     def add_error(self, msg: str) -> None:
         self.errors.append(msg)
@@ -146,10 +153,62 @@ def smoke_load(package: PluginPackage, host_capabilities=frozenset()) -> list:
     return issues
 
 
+def check_signature(package: PluginPackage,
+                    trusted_keys: Optional[dict] = None) -> tuple:
+    """Authenticity check (defence 2b). Returns (signed, publisher,
+    errors, warnings).
+
+    - signature + pubkey present → must verify over the code payload;
+      a bad signature is a hard error (someone re-signed tampered code).
+    - `cryptography` not installed → the claim can't be checked: warning,
+      and the package counts as UNSIGNED (never as valid).
+    - trusted_keys ({publisher_name: pubkey_hex}) provided → a signed
+      package's key must be registered, else hard error.
+    - unsigned → warning only; the curated-registry model still applies.
+    """
+    from ..reality_compiler.sign_crypto import verify_detached
+
+    m = package.manifest
+    errors: list = []
+    warnings: list = []
+    if not (m.signature and m.pubkey):
+        if m.signature and not m.pubkey:
+            errors.append("signature present but no pubkey — unverifiable")
+            return False, "", errors, warnings
+        warnings.append(
+            "unsigned package — trust rests on the curated registry alone")
+        return False, "", errors, warnings
+
+    verdict = verify_detached(package.source, m.signature, m.pubkey)
+    if verdict is None:
+        warnings.append(
+            "author signature present but the 'cryptography' extra is not "
+            "installed — authenticity NOT verified")
+        return False, "", errors, warnings
+    if verdict is False:
+        errors.append(
+            "author signature INVALID — the code does not match what the "
+            "author signed")
+        return False, "", errors, warnings
+
+    publisher = ""
+    if trusted_keys is not None:
+        by_key = {v: k for k, v in trusted_keys.items()}
+        publisher = by_key.get(m.pubkey, "")
+        if not publisher:
+            errors.append(
+                "author key is not in the trusted publisher registry")
+            return False, "", errors, warnings
+    return True, publisher, errors, warnings
+
+
 def validate(package: PluginPackage, host_capabilities=frozenset(),
-             run_smoke: bool = True) -> ValidationReport:
+             run_smoke: bool = True,
+             trusted_keys: Optional[dict] = None) -> ValidationReport:
     """The whole gate. `host_capabilities` are what this device can grant; a
-    plugin requiring more is a hard error (it can't run here safely)."""
+    plugin requiring more is a hard error (it can't run here safely).
+    `trusted_keys` maps publisher name → Ed25519 pubkey hex (registry/keys.json);
+    when provided, signed packages must be signed by a registered key."""
     m = package.manifest
     report = ValidationReport(capabilities=tuple(m.requires))
 
@@ -158,6 +217,14 @@ def validate(package: PluginPackage, host_capabilities=frozenset(),
 
     if not package.checksum_ok():                # 2. integrity
         report.add_error("checksum mismatch — the code does not match the manifest")
+
+    signed, publisher, sig_errors, sig_warnings = \
+        check_signature(package, trusted_keys)   # 2b. authenticity
+    report.signed, report.publisher = signed, publisher
+    for e in sig_errors:
+        report.add_error(e)
+    for w in sig_warnings:
+        report.add_warning(w)
 
     missing = [c for c in m.requires if c not in set(host_capabilities)]
     if missing:                                  # capability grantable here?

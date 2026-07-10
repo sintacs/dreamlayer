@@ -1,9 +1,9 @@
 """reality_compiler — behaviors for Halo, authored by the user.
 
-v1 (re-exported below): plain English → 15 hand-coded Lua templates.
-v2 (``dreamlayer.reality_compiler.v2``): the Rehearsal paradigm — perform a
-behavior once in sketch time, the choreographer infers a Figment (a total,
-statically-budgeted scene-machine), and a fixed on-device stage runs it.
+v2 (``dreamlayer.reality_compiler.v2``) is the product: the Rehearsal
+paradigm — perform a behavior once in sketch time, the choreographer infers
+a Figment (a total, statically-budgeted, signed scene-machine), and a fixed
+on-device stage runs it. No user code ever ships to the glasses.
 
     from dreamlayer.reality_compiler.v2 import RealityCompilerV2
 
@@ -17,8 +17,17 @@ statically-budgeted scene-machine), and a fixed on-device stage runs it.
     if result.ok:
         rc.keep(result.figment)
         rc.deploy(result.figment.id)
+
+The v1 plain-English surface survives as a *parser only*:
+``RealityCompilerV2.compile_text()`` reuses the v1 ``IntentParser`` and
+lifts the parsed intent to a Figment (``v2/compat.py``). The v1 codegen and
+deploy pipeline (string-templated Lua uploaded over BLE) was removed — it
+substituted parsed natural-language parameters into Lua source with no
+escaping and no API blocklist, an injection-shaped surface with no reason
+to exist now that everything new travels as verified data to the fixed
+stage. Stored Figments, not phrases or generated code, are the durable
+objects (docs/RC_V2_PICKED.md).
 """
-from .compiler import RealityCompiler, CompileResult
 from .intent_parser import IntentParser
 from .schema import (
     BehaviorIntent, RoundTimerIntent, OvertimeTimerIntent,
@@ -28,13 +37,8 @@ from .schema import (
     HabitReminderIntent, ReactTimerIntent, GestureRepeaterIntent,
     SpeakerIndicatorIntent, ValidationError,
 )
-from .codegen import CodeGenerator
-from .emulator import HaloEmulator
-from .validator import EmulatorValidator
-from .deployer import HaloDeployer
 
 __all__ = [
-    "RealityCompiler", "CompileResult",
     "IntentParser",
     "BehaviorIntent", "RoundTimerIntent", "OvertimeTimerIntent",
     "StopwatchIntent", "IntervalTimerIntent", "SimpleCounterIntent",
@@ -42,8 +46,4 @@ __all__ = [
     "PointsMarkerIntent", "NextClassIntent", "TextSubtitlesIntent",
     "HabitReminderIntent", "ReactTimerIntent", "GestureRepeaterIntent",
     "SpeakerIndicatorIntent", "ValidationError",
-    "CodeGenerator",
-    "HaloEmulator",
-    "EmulatorValidator",
-    "HaloDeployer",
 ]
