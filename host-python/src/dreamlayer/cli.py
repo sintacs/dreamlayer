@@ -531,6 +531,53 @@ def cmd_mem_browse(args) -> int:
     return 0
 
 
+def cmd_mem_export(args) -> int:
+    """Copy your memory file somewhere — it's yours to take."""
+    import shutil
+    db = _mem_db(args)
+    if not Path(db).exists():
+        _err(f"{BAD} no memory file at {db} — pass --db PATH or set DREAMLAYER_DB")
+        return 2
+    dest = Path(args.dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(db, dest)
+    kb = dest.stat().st_size / 1024
+    _p(f"{OK} exported your memory → {dest}  ({kb:.1f} KB)")
+    return 0
+
+
+def cmd_mem_import(args) -> int:
+    """Restore a memory file into place (refuses to clobber without --force)."""
+    import shutil
+    src = Path(args.src)
+    if not src.exists():
+        _err(f"{BAD} no file to import at {src}")
+        return 2
+    db = Path(_mem_db(args))
+    if db.exists() and not args.force:
+        _err(f"{BAD} {db} already exists — pass --force to overwrite it")
+        return 2
+    db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, db)
+    _p(f"{OK} imported {src} → {db}")
+    return 0
+
+
+def cmd_mem_burn(args) -> int:
+    """Delete your memory file. Destructive — requires --yes."""
+    db = Path(_mem_db(args))
+    if not db.exists():
+        _p(f"{db}  (already gone)")
+        return 0
+    if not args.yes:
+        _err(f"{BAD} refusing to burn {db} without --yes (this permanently deletes "
+             f"your memory)")
+        return 2
+    db.unlink()
+    _p(f"{OK} burned your memory — {db} is gone")
+    return 0
+
+
 # --- figment golf: the compiler is the referee -------------------------------
 
 def _load_figment(path_str: str):
@@ -645,6 +692,22 @@ def build_parser() -> argparse.ArgumentParser:
     mbrowse.add_argument("--print", dest="print_cmd", action="store_true",
                          help="print the launch command instead of serving")
     mbrowse.set_defaults(func=cmd_mem_browse)
+
+    mexport = msub.add_parser("export", help="copy your memory file somewhere (it's yours)")
+    mexport.add_argument("dest", help="destination path for the copy")
+    mexport.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mexport.set_defaults(func=cmd_mem_export)
+
+    mimport = msub.add_parser("import", help="restore a memory file into place")
+    mimport.add_argument("src", help="the memory file to import")
+    mimport.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mimport.add_argument("--force", action="store_true", help="overwrite an existing memory file")
+    mimport.set_defaults(func=cmd_mem_import)
+
+    mburn = msub.add_parser("burn", help="permanently delete your memory file")
+    mburn.add_argument("--db", help="memory sqlite path (or set DREAMLAYER_DB)")
+    mburn.add_argument("--yes", action="store_true", help="confirm the deletion")
+    mburn.set_defaults(func=cmd_mem_burn)
 
     # golf — score a figment's expressiveness per byte; the compiler referees
     golf = groups.add_parser("golf", help="score a figment's expressiveness per byte (budgets are the referee)")
