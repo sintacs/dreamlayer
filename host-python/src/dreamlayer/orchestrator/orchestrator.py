@@ -267,7 +267,12 @@ class Orchestrator(
         self.object_lens.registry.register(AIProvider(self.brain))
         # Label (your own facts about a product) + Rosetta (translate seen text)
         self.dietary = DietaryProfile()
-        self.rosetta = RosettaLens()          # translate_fn wired by the app
+        # Rosetta: wire the offline Argos backend when installed (extras
+        # `platform`); absent → translate_fn=None, identical no-op behavior.
+        from ..rosetta_argos import ArgosTranslator, make_translate_fn
+        self.rosetta = RosettaLens(
+            translate_fn=make_translate_fn() if ArgosTranslator.available else None,
+            engine="argos")
         self.object_lens.registry.register(LabelProvider(self.dietary, self.ring))
         self.object_lens.registry.register(RosettaProvider(self.rosetta))
         # Waypath: point-me-to-my-things from anchors

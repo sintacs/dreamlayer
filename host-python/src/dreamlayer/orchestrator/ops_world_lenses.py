@@ -282,6 +282,19 @@ class WorldLensOps:
         ear (live voice translation)."""
         return self.rosetta.read(text, target=target)
 
+    def translate_heard(self, text: str, target: str = "en", speaker: str = ""):
+        """Rosetta Live (the ear, INNOVATION_SESSION 4.6): translate what someone
+        is *saying* into your language — offline when the Argos backend is
+        installed — and show it as one subtitle card per utterance. Veil-gated;
+        nothing is recorded, the caption is a line of text. Returns the card sent,
+        or None while incognito."""
+        if not self.privacy.allow_capture():
+            return None
+        res = self.rosetta.read(text, target=target)
+        card = cards.spoken_caption(speaker=speaker, text=res.translated)
+        self.bridge.send_card(card, event="caption")
+        return card
+
 
     def greet(self, person: str, now: float | None = None):
         """Surface a dossier the moment you greet someone the ledger knows.
