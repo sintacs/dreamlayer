@@ -616,6 +616,22 @@ def cmd_golf_verify(args) -> int:
     return 0 if r["ok"] else 1
 
 
+def cmd_figment_safety(args) -> int:
+    """Show a figment's proof-carrying safety card before you install it."""
+    try:
+        fig = _load_figment(args.path)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        _err(f"{BAD} not a figment: {exc}")
+        return 2
+    from dreamlayer.reality_compiler.v2.safety import render_text, safety_card
+    card = safety_card(fig)
+    if getattr(args, "json", False):
+        _p(json.dumps(card, indent=2))
+    else:
+        _p(render_text(card))
+    return 0 if card["ok"] else 1
+
+
 # --- parser ------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -716,6 +732,14 @@ def build_parser() -> argparse.ArgumentParser:
     gv.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
     gv.add_argument("--json", action="store_true", help="machine-readable output")
     gv.set_defaults(func=cmd_golf_verify)
+
+    # figment — proof-carrying behaviors: see what an install CANNOT do
+    fig = groups.add_parser("figment", help="inspect a figment (proof-carrying safety card)")
+    fsub = fig.add_subparsers(dest="cmd")
+    fs = fsub.add_parser("safety", help="show the safety card — what this behavior CANNOT do")
+    fs.add_argument("path", help="a figment .json (bare figment, or a {figment: ...} listing)")
+    fs.add_argument("--json", action="store_true", help="machine-readable output")
+    fs.set_defaults(func=cmd_figment_safety)
 
     return parser
 
