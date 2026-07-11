@@ -98,21 +98,82 @@
   .askex button{font:inherit;font-size:11.5px;color:var(--text2);background:var(--surface2);
     border:1px solid var(--border);border-radius:999px;padding:4px 10px;cursor:pointer}
   .askex button:hover{color:var(--text);border-color:var(--teal)}
+  .helpbtn{cursor:pointer;background:transparent;border:1px solid var(--teal);color:var(--teal);font-weight:650}
+  .helpbtn:hover{background:rgba(47,212,196,.10)}
+  /* tutorial */
+  .tour-scrim{position:fixed;inset:0;z-index:50;background:rgba(4,10,10,.72);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .tour{position:relative;display:flex;width:min(860px,96vw);max-height:92vh;overflow:hidden;
+    background:linear-gradient(160deg,#0c1618,#0a1012);border:1px solid var(--border);border-radius:18px;
+    box-shadow:0 30px 120px rgba(0,0,0,.6),0 0 80px rgba(47,212,196,.06)}
+  .tour-x{position:absolute;top:12px;right:14px;z-index:2;background:transparent;border:0;color:var(--text2);
+    font-size:18px;cursor:pointer;line-height:1}
+  .tour-x:hover{color:var(--text)}
+  .tour-rail{width:210px;flex:none;background:rgba(0,0,0,.28);border-right:1px solid var(--border);
+    padding:20px 12px;overflow-y:auto}
+  .tour-rail .step{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;border-radius:9px;cursor:pointer;
+    color:var(--text2);font-size:12.5px;line-height:1.25}
+  .tour-rail .step:hover{background:rgba(255,255,255,.03)}
+  .tour-rail .step.on{background:rgba(47,212,196,.10);color:var(--text)}
+  .tour-rail .step .n{flex:none;width:19px;height:19px;border-radius:50%;border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+  .tour-rail .step.on .n{border-color:var(--teal);color:var(--teal)}
+  .tour-rail .step.done .n{background:var(--teal);color:#00201c;border-color:var(--teal)}
+  .tour-body{flex:1;padding:28px 30px;overflow-y:auto;display:flex;flex-direction:column}
+  .tour-kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin:0 0 6px}
+  .tour-body h2{margin:0 0 12px;font-size:23px;line-height:1.15;letter-spacing:-.01em}
+  .tour-copy{color:var(--text);font-size:14.5px;line-height:1.55}
+  .tour-copy p{margin:0 0 11px} .tour-copy b{color:#fff}
+  .tour-copy .whoa{color:var(--teal);font-style:italic}
+  .tour-copy code{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:1px 5px;font-size:12.5px}
+  .tour-demo{margin:14px 0 6px;min-height:0}
+  .tour-demo button{font:inherit;font-weight:650;background:var(--teal);color:#00201c;border:0;border-radius:999px;
+    padding:9px 16px;cursor:pointer}
+  .tour-demo button:hover{filter:brightness(1.06)}
+  .tour-demo .cap{display:block;margin-top:7px;font-size:12px;color:var(--text2)}
+  .tour-nav{display:flex;align-items:center;gap:12px;margin-top:auto;padding-top:18px}
+  .tour-skip{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer}
+  .tour-skip input{width:auto}
+  @media(max-width:640px){ .tour{flex-direction:column} .tour-rail{width:auto;display:flex;gap:6px;overflow-x:auto;
+    border-right:0;border-bottom:1px solid var(--border);padding:12px} .tour-rail .step .lbl{display:none}
+    .tour-rail .step{padding:6px} }
 </style>
 </head>
 <body>
 <header>
   <h1>Lens Builder</h1>
   <span class="tag">A behavior is <b>data</b>, not code. Build one here — no coding — watch your device re-prove it's safe, deploy it, share it.</span>
+  <button class="home helpbtn" id="showtour" title="See what's possible">✦ What's possible</button>
   <a class="home" href="./index.html">← dreamlayer</a>
 </header>
+
+<!-- First-run tutorial: a guided showcase of the edges of the grammar. Each
+     chapter can load a live example onto the ring so you watch it run. -->
+<div class="tour-scrim" id="tour" style="display:none" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
+  <div class="tour">
+    <button class="tour-x" id="tourX" title="Close (Esc)">✕</button>
+    <div class="tour-rail" id="tourRail"></div>
+    <div class="tour-body">
+      <p class="tour-kicker" id="tourKicker">The whole stack · 1 / 8</p>
+      <h2 id="tourTitle">—</h2>
+      <div class="tour-copy" id="tourCopy"></div>
+      <div class="tour-demo" id="tourDemo"></div>
+      <div class="tour-nav">
+        <label class="tour-skip"><input type="checkbox" id="tourNoShow" /> Don't show this again</label>
+        <span style="flex:1"></span>
+        <button class="btn ghost" id="tourPrev">← Back</button>
+        <button class="btn" id="tourNext">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
   <div class="col left">
     <div class="askjuno" id="askjuno">
       <p class="eyebrow">Ask Juno</p>
       <p class="muted" style="margin:0 0 8px">Describe the lens you want — Juno drafts it and your device re-proves it's safe.</p>
-      <textarea id="askprompt" rows="2" maxlength="240" placeholder="a 5 minute countdown that pulses at the end"></textarea>
+      <textarea id="askprompt" rows="2" maxlength="240" placeholder="count my push-ups with a nod"></textarea>
       <button class="btn" id="askgo" style="width:100%;margin-top:8px">✦ Draft my lens</button>
       <div class="toast" id="asktoast"></div>
       <div class="askex" id="askex"></div>
@@ -213,8 +274,12 @@
   document.getElementById("blank").onclick = function(){ loadBlank(); };
   function markRecipe(id){ [].forEach.call(document.querySelectorAll(".recipe"), function(c){ c.classList.toggle("on", c.dataset.id===id); }); }
 
-  function loadTemplate(t){ fig = t.make(); editKind = t.id; markRecipe(t.id); boot(); }
-  function loadBlank(){ fig = K.emptyFigment(); editKind = "blank"; markRecipe("blank"); setMode("advanced"); boot(); }
+  // the rich templates (counters, gestures, painted glyphs) read best as a
+  // scene graph — open them in Advanced; the classic knob recipes stay Simple
+  var ADVANCED_TEMPLATES = { reps:1, focus:1, score:1 };
+  function loadTemplate(t){ fig = t.make(); editKind = t.id; markRecipe(t.id); startDemo(null);
+    if(ADVANCED_TEMPLATES[t.id]) setMode("advanced"); else setMode("simple"); boot(); }
+  function loadBlank(){ fig = K.emptyFigment(); editKind = "blank"; markRecipe("blank"); startDemo(null); setMode("advanced"); boot(); }
   function boot(){
     document.getElementById("fname").value = fig.name;
     buildEditors(); refresh(); restart();
@@ -425,7 +490,7 @@
   var cv=document.getElementById("ring"), ctx=cv.getContext("2d");
   var play=true, activeScene=null, t0=0, raf=null, SZ={sm:20,md:32,lg:44};
   function nowms(){ return (typeof performance!=="undefined"&&performance.now)?performance.now():0; }
-  function restart(){ activeScene = fig ? fig.initial : null; t0=nowms(); if(mode==="advanced"){ buildAdvanced(); drawGraph(); } }
+  function restart(){ activeScene = fig ? fig.initial : null; t0=nowms(); resetCounters(); if(mode==="advanced"){ buildAdvanced(); drawGraph(); } }
   document.getElementById("restart").onclick = restart;
   document.getElementById("play").onclick = function(){ if(paintMode) return; play=!play; this.textContent=play?"▶ Play":"⏸ Pause"; if(play&&!raf) tick(); };
 
@@ -505,24 +570,103 @@
     if(s){ delete s.glyphs; } paintCount(); paintStatic(); refresh();
   };
 
-  function advance(s){ if(s.duration_sec!=null&&s.on_timeout&&s.on_timeout.length) return s.on_timeout[s.on_timeout.length-1].target;
-    if(s.on){ if(s.on["imu:nod"]) return s.on["imu:nod"].target; if(s.on.double) return s.on.double.target; var k=Object.keys(s.on)[0]; if(k) return s.on[k].target; } return "@end"; }
-  function dwell(s){ return s.duration_sec!=null ? s.duration_sec : 2.4; }
+  // live counter state, so a rep/score lens actually ticks up in the preview as
+  // it auto-cycles through its gestures (mirrors interpreter.py's saturating ops)
+  var pcount={};
+  function resetCounters(){ pcount={}; if(fig&&fig.counters) Object.keys(fig.counters).forEach(function(n){ pcount[n]=fig.counters[n].start||0; }); }
+  function applyOps(t){ (t.counter_ops||[]).forEach(function(op){ var d=fig.counters&&fig.counters[op.counter]; if(!d) return;
+    var c=pcount[op.counter]||0, by=op.amount==null?1:op.amount;
+    if(op.op==="inc") c+=by; else if(op.op==="dec") c-=by; else c=by;
+    pcount[op.counter]=Math.max(d.lo==null?0:d.lo, Math.min(d.hi==null?9999:d.hi, c)); }); }
+  // the transition the preview takes when a scene "ends" — timeout for timed
+  // scenes, else a representative gesture so event-only lenses still animate
+  function pickTrans(s){
+    if(s.duration_sec!=null && s.on_timeout && s.on_timeout.length) return s.on_timeout[s.on_timeout.length-1];
+    if(s.on){ var pref=["imu:nod","single","double","long","imu_tap"];
+      for(var i=0;i<pref.length;i++) if(s.on[pref[i]]) return s.on[pref[i]];
+      var k=Object.keys(s.on)[0]; if(k) return s.on[k]; }
+    return { target:"@end" };
+  }
+  function dwell(s){ return s.duration_sec!=null ? s.duration_sec : 1.6; }
+
+  // -- showcase demo feed: simulate the Brain/camera/partner feeding a lens ----
+  // Each script is a timeline of {at, slot, fire} — `slot` streams host text
+  // into {slot}; `fire` delivers a world/gesture event (place:enter, bond:near,
+  // ble:3, long, single, double). This is exactly what the real stack pushes;
+  // here it's scripted so the "no way" behavior plays live in the browser.
+  var DEMOS = {
+    whisper: { loop:6.8, steps:[ {at:0.3,slot:"¿Dónde está la estación?"}, {at:1.4,slot:"Where is the station?"},
+      {at:3.0,slot:"La cuenta, por favor"}, {at:4.0,slot:"The check, please"},
+      {at:5.4,slot:"Dos cafés, gracias"} ] },
+    ask: { loop:7.5, steps:[ {at:0.7,fire:"double"}, {at:3.0,slot:"Your lease is due Fri the 14th."},
+      {at:6.2,fire:"double"} ] },
+    secondSight: { loop:7.5, steps:[ {at:1.0,fire:"long"}, {at:1.6,slot:"Monstera · water weekly"},
+      {at:4.2,fire:"long"}, {at:4.8,slot:"Cabernet · 2018 · bold, dry"} ] },
+    tethered: { loop:11, steps:[ {at:2.6,fire:"bond:near"} ] },
+    threshold:{ loop:9, steps:[ {at:2.2,fire:"place:enter"} ] },
+    ember: { loop:8.5, steps:[ {at:1.6,fire:"place:enter"}, {at:2.2,slot:"You sat here with Dad — 3y ago"} ] },
+    coach: { loop:8.5, steps:[ {at:0.8,slot:"↓ go deeper"}, {at:1.8,slot:"hold…"},
+      {at:2.6,slot:"✓ clean rep",fire:"single"}, {at:4.0,slot:"chest up"}, {at:5.0,slot:"steady"},
+      {at:5.8,slot:"✓ clean rep",fire:"single"} ] },
+  };
+  var demo=null, demoStart=0, demoIdx=0, pslot="";
+  function startDemo(id){ demo=DEMOS[id]||null; demoStart=nowms(); demoIdx=0; pslot=""; }
+  function fireEvent(ev){
+    var s=fig&&fig.scenes[activeScene]; if(!s||!s.on) return;
+    var tr=s.on[ev]; if(!tr) return; applyOps(tr);
+    var n=tr.target==="@self"?activeScene:tr.target;
+    activeScene=(n==="@end"||!fig.scenes[n])?fig.initial:n;
+    t0=nowms(); if(mode==="advanced") drawGraph();
+  }
+  function demoTick(){
+    if(!demo) return;
+    var d=(nowms()-demoStart)/1000;
+    while(demoIdx<demo.steps.length && d>=demo.steps[demoIdx].at){
+      var st=demo.steps[demoIdx++];
+      if(st.slot!=null) pslot=st.slot;
+      if(st.fire) fireEvent(st.fire);
+    }
+    if(d>=(demo.loop||6)){ demoStart=nowms(); demoIdx=0; pslot=""; activeScene=fig.initial; resetCounters(); }
+  }
   function tick(){
     raf=null;
     if(fig&&activeScene){
+      demoTick();
       var s=fig.scenes[activeScene];
-      if(s){ var el=(nowms()-t0)/1000;
-        if(play&&el>=dwell(s)){ var n=advance(s); activeScene=(n==="@end"||n==="@self"||!fig.scenes[n])?fig.initial:n; t0=nowms(); el=0; if(mode==="advanced") drawGraph(); }
+      if(s){ var el=(nowms()-t0)/1000, timed=s.duration_sec!=null;
+        // a demo drives event-only scenes itself; timed scenes still time out
+        if(play&&el>=dwell(s)&&(timed||!demo)){ var tr=pickTrans(s); applyOps(tr); var n=tr.target;
+          if(n==="@self") n=activeScene;
+          activeScene=(n==="@end"||!fig.scenes[n])?fig.initial:n;
+          if(activeScene===fig.initial && n==="@end" && !demo) resetCounters();
+          t0=nowms(); el=0; if(mode==="advanced") drawGraph(); }
         draw(s, el, dwell(s));
       }
     }
     raf = play ? requestAnimationFrame(tick) : null;
   }
+  function resolveTokens(txt, s, el, dur){
+    return String(txt||"")
+      .replace(/\{remaining\}/g, s.duration_sec!=null?mmss(Math.max(0,Math.ceil(dur-el))):"")
+      .replace(/\{remaining_s\}/g, s.duration_sec!=null?String(Math.max(0,Math.ceil(dur-el))):"")
+      .replace(/\{elapsed\}/g, mmss(Math.floor(el)))
+      .replace(/\{elapsed_ms\}/g, String(Math.floor(el*1000)))
+      .replace(/\{slot\}/g, pslot||"")
+      .replace(/\{count:(\w+)\}/g, function(_,n){ return String(pcount[n]!=null?pcount[n]:0); });
+  }
   function draw(s, el, dur){
     var W=cv.width, C=W/2; ctx.clearRect(0,0,W,W);
     ctx.fillStyle="#000"; ctx.beginPath(); ctx.arc(C,C,C-2,0,7); ctx.fill();
     ctx.strokeStyle="rgba(140,190,190,.12)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(C,C,C*0.875,0,7); ctx.stroke();
+    // breathing cadence: a soft halo that swells in → holds → falls out
+    if(s.cadence){ var per=(s.cadence.in_s||0)+(s.cadence.hold_s||0)+(s.cadence.out_s||0);
+      if(per>0){ var u=el%per, amp;
+        if(u<s.cadence.in_s) amp=u/(s.cadence.in_s||1);
+        else if(u<s.cadence.in_s+s.cadence.hold_s) amp=1;
+        else amp=1-(u-s.cadence.in_s-s.cadence.hold_s)/(s.cadence.out_s||1);
+        ctx.save(); ctx.globalAlpha=0.12+0.45*Math.max(0,Math.min(1,amp));
+        ctx.strokeStyle=K.HEX.accent_memory; ctx.lineWidth=5;
+        ctx.beginPath(); ctx.arc(C,C,C*(0.62+0.14*amp),0,7); ctx.stroke(); ctx.restore(); } }
     if(s.duration_sec!=null){ var f=Math.max(0,1-el/dur); ctx.strokeStyle=K.HEX.accent_memory; ctx.lineWidth=6;
       ctx.beginPath(); ctx.arc(C,C,C*0.93,-Math.PI/2,-Math.PI/2+f*2*Math.PI); ctx.stroke(); }
     var pulseOn=false; if(s.pulse&&s.duration_sec!=null&&(dur-el)<=s.pulse.window_sec) pulseOn=(Math.floor(el*s.pulse.rate_hz*2)%2===0);
@@ -535,11 +679,13 @@
       for(var i=1;i<pts.length;i++) ctx.lineTo(pts[i][0]*W, pts[i][1]*W);
       ctx.stroke(); });
     ctx.textAlign="center"; ctx.textBaseline="middle";
+    var hasRemLine=false;
     (s.lines||[]).forEach(function(ln){ var y=C-84+(ln.row||0)*64;
+      if(/\{remaining/.test(ln.content||"")) hasRemLine=true;
       ctx.fillStyle = pulseOn?K.HEX[s.pulse.color]:(K.HEX[ln.color]||K.HEX.text_primary);
       ctx.font=(SZ[ln.size]||32)+"px -apple-system,Segoe UI,Roboto,sans-serif";
-      ctx.fillText(ln.content||"", C, y); });
-    if(s.duration_sec!=null){ var rem=Math.max(0,Math.ceil(dur-el)); ctx.fillStyle=K.HEX.text_secondary;
+      ctx.fillText(resolveTokens(ln.content, s, el, dur), C, y); });
+    if(s.duration_sec!=null && !hasRemLine){ var rem=Math.max(0,Math.ceil(dur-el)); ctx.fillStyle=K.HEX.text_secondary;
       ctx.font="26px -apple-system,Segoe UI,Roboto"; ctx.fillText(mmss(rem), C, C+66); }
     document.getElementById("scenelabel").textContent = "scene: "+activeScene;
   }
@@ -575,18 +721,20 @@
   };
 
   // -- Ask Juno: describe a lens, get a verified figment into the builder ----
-  var EXAMPLES = ["a 5 minute countdown that pulses at the end",
-    "interval timer, 3 min work 1 min rest", "box breathing, 4 seconds each",
-    "checklist: warm up, main set, cool down"];
+  var EXAMPLES = ["count my push-ups with a nod",
+    "a focus session that breathes while I work",
+    "keep score — tap for us, double-tap for them",
+    "box breathing, 4 seconds each"];
   (function seedExamples(){
     var wrap=document.getElementById("askex");
     EXAMPLES.forEach(function(ex){ var b=document.createElement("button"); b.textContent=ex;
       b.onclick=function(){ document.getElementById("askprompt").value=ex; }; wrap.appendChild(b); });
   })();
-  function loadComposed(f, kind, note){
+  function loadComposed(f, kind, note, demoId){
     fig = f; editKind = kind || "juno"; markRecipe(null);
     document.getElementById("fname").value = fig.name;
     setMode("advanced"); boot();
+    startDemo(demoId||null);   // showcases carry a simulated live feed; others clear it
     var toast=document.getElementById("asktoast"); toast.className="toast ok-t";
     toast.textContent = "✓ " + (note || ("Drafted “"+fig.name+"”. Tweak it, paint on it, then deploy."));
   }
@@ -637,9 +785,94 @@
 
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 
+  // -- the "what's possible" tour: a guided showcase of the grammar's edges ---
+  // Each chapter can drop a live, budget-proven example onto the ring, so the
+  // point lands by being watched — not just read.
+  var TOUR = [
+    { rail:"Data, not code", title:"You can't break it. That's the point.",
+      copy:"<p>Everything here is a <b>figment</b> — a little machine described as <b>data</b>. It can't name a function, run forever, or misbehave. Your <b>glasses re-prove every lens is safe</b> before it runs, and again on every hop — phone, Brain, glass.</p>"+
+           "<p>So don't hold back. <span class='whoa'>The wilder your idea, the more this matters — and it still can't hurt anything.</span> Here's what people build.</p>" },
+    { rail:"Translate anything", title:"Read and hear any language. Live.", demo:"whisper",
+      copy:"<p>Look at a foreign menu, or listen to someone speak — the <b>camera</b> reads it, the <b>Brain</b> (on your Mac, or the cloud) translates, and the words <b>stream onto the glass in real time</b>.</p>"+
+           "<p><span class='whoa'>No app to open, no phone to hold up.</span> You just… understand. The lens is three lines of data; the whole stack does the rest.</p>" },
+    { rail:"Your Brain, on glass", title:"Ask out loud. See the answer.", demo:"ask",
+      copy:"<p>Double-tap, speak a question. The lens <code>emit</code>s it; your <b>Brain answers from your own files and memory</b> (or the cloud) and streams the reply into your vision — with a <b>⛨ provenance shield</b> so you know where it came from.</p>"+
+           "<p><span class='whoa'>Your second brain, answering in your field of view.</span> “When's the lease due?” — and it just knows.</p>" },
+    { rail:"Name what you see", title:"Glance at anything. Know it.", demo:"secondSight",
+      copy:"<p>Hold a glance on a plant, a bottle, a landmark. The <b>camera + vision model</b> (local or cloud) name it and add one useful fact, right on the ring.</p>"+
+           "<p>For travelers, the curious, the low-vision. <span class='whoa'>Look at the world and have it quietly explained.</span></p>" },
+    { rail:"Feel them near", title:"A lens that glows when they're close.", demo:"tethered",
+      copy:"<p>Bond with someone. Their emotional <b>weather</b> tints your ring; when they come near, <code>bond:near</code> fires and the glass warms — and you <code>emit</code> a <b>heartbeat back to them</b>.</p>"+
+           "<p><span class='whoa'>No text. No call. Just presence, across any distance.</span> Two people, one quiet thread.</p>" },
+    { rail:"Your world reacts", title:"Walk through a door. The right thing happens.", demo:"threshold",
+      copy:"<p>Geofence the places in your life. <code>place:enter</code> fires a ritual: reach the gym → the circuit begins; step into your kid's room → it dims to a bedtime breath; walk on stage → your notes appear.</p>"+
+           "<p><span class='whoa'>Your surroundings become the interface.</span> Nothing to tap — you just move through your day and it keeps up.</p>" },
+    { rail:"Memory, returned", title:"Your life, handed back at the perfect moment.", demo:"ember",
+      copy:"<p>Standing where something happened — or on the anniversary — your <b>Vault</b> surfaces a single line into your vision: <em>“you sat here with Dad, 3 years ago today.”</em></p>"+
+           "<p><span class='whoa'>Not a photo you go looking for. A memory that finds you</span> — exactly when it means the most.</p>" },
+    { rail:"Coach your form", title:"It watches how you move, not just how many.", demo:"coach",
+      copy:"<p>The phone's <b>pose model + the Brain</b> judge your squat depth, your running cadence, your posture — and stream a live cue onto the glass. A <em>clean</em> rep logs to your Vault; a sloppy one doesn't.</p>"+
+           "<p><span class='whoa'>A personal trainer living in your glasses</span> — this is what a rep counter grows up to be.</p>" },
+    { rail:"Paint that breathes", title:"And it's beautiful, too.", demo:"mandala",
+      copy:"<p>Paint bounded vector strokes right onto a lens; add a <b>cadence</b> and the whole ring breathes — in, hold, out. A hand-drawn mandala for box-breathing, HRV, talking someone down.</p>"+
+           "<p>Every one of these — translation, memory, presence, coaching — is <b>the same signed, provable figment</b> underneath. Here in the builder the Brain/camera feed is simulated; <b>paired to your own Brain it runs for real</b> — your phone relays each lens's emit and the answer streams back onto the glass.</p>"+
+           "<p><span class='whoa'>Now imagine yours.</span> Describe it to <b>Ask Juno</b>, or start blank.</p>" },
+  ];
+  var tourI=0, tourEl=document.getElementById("tour");
+  function tourRender(){
+    var rail=document.getElementById("tourRail"); rail.innerHTML="";
+    TOUR.forEach(function(ch,i){
+      var d=document.createElement("div"); d.className="step"+(i===tourI?" on":"")+(i<tourI?" done":"");
+      d.innerHTML='<span class="n">'+(i<tourI?"✓":(i+1))+'</span><span class="lbl">'+esc(ch.rail)+'</span>';
+      d.onclick=function(){ tourI=i; tourRender(); }; rail.appendChild(d);
+    });
+    var ch=TOUR[tourI];
+    document.getElementById("tourKicker").textContent="The whole stack · "+(tourI+1)+" / "+TOUR.length;
+    document.getElementById("tourTitle").textContent=ch.title;
+    document.getElementById("tourCopy").innerHTML=ch.copy;
+    var demoBox=document.getElementById("tourDemo"); demoBox.innerHTML="";
+    if(ch.demo){
+      var b=document.createElement("button"); b.textContent="▶ Load & run this on the ring";
+      b.onclick=function(){ runShowcase(ch.demo); };
+      var cap=document.createElement("span"); cap.className="cap";
+      cap.textContent = DEMOS[ch.demo] ? "Loads the real lens and simulates the live Brain/camera/partner feed so you can watch it work."
+                                       : "Loads a real, budget-proven lens into the builder — tweak it, paint on it, make it yours.";
+      demoBox.appendChild(b); demoBox.appendChild(cap);
+    }
+    document.getElementById("tourPrev").style.visibility = tourI===0?"hidden":"";
+    document.getElementById("tourNext").textContent = tourI===TOUR.length-1 ? "Start creating ✦" : "Next →";
+  }
+  function runShowcase(key){
+    var mk=(K.showcases&&K.showcases[key])||(K.templates&&K.templates[key]);
+    if(!mk) return; closeTour(true);
+    var hasDemo = !!DEMOS[key];
+    loadComposed(mk(), "showcase",
+      "Running “"+mk().name+"”"+(hasDemo?" — the Brain/camera feed is simulated so you can watch it live.":" — watch the ring, then make it yours."),
+      hasDemo?key:null);
+  }
+  function openTour(){ tourI=0; tourRender(); tourEl.style.display="flex"; }
+  function closeTour(keep){
+    tourEl.style.display="none";
+    if(document.getElementById("tourNoShow").checked){ try{ localStorage.setItem("dl_tour_seen","1"); }catch(e){} }
+    if(!keep){ try{ localStorage.setItem("dl_tour_seen","1"); }catch(e){} }
+  }
+  document.getElementById("showtour").onclick = openTour;
+  document.getElementById("tourX").onclick = function(){ closeTour(); };
+  document.getElementById("tourPrev").onclick = function(){ if(tourI>0){ tourI--; tourRender(); } };
+  document.getElementById("tourNext").onclick = function(){ if(tourI<TOUR.length-1){ tourI++; tourRender(); } else { closeTour(); } };
+  tourEl.addEventListener("click", function(e){ if(e.target===tourEl) closeTour(); });
+  document.addEventListener("keydown", function(e){
+    if(tourEl.style.display==="none") return;
+    if(e.key==="Escape") closeTour();
+    else if(e.key==="ArrowRight") document.getElementById("tourNext").click();
+    else if(e.key==="ArrowLeft") document.getElementById("tourPrev").click();
+  });
+
   // boot
   loadTemplate(K.TEMPLATES[0]);
   tick();
+  // first-time visitors meet the tour automatically; afterwards it's the ✦ button
+  try{ if(!localStorage.getItem("dl_tour_seen")) openTour(); }catch(e){}
 })();
 </script>
 </body>

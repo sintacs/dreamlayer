@@ -56,7 +56,8 @@ class TestUnderNode:
                            capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
 
-    @pytest.mark.parametrize("recipe", ["interval", "countdown", "checklist", "breathing"])
+    @pytest.mark.parametrize("recipe", ["interval", "countdown", "checklist",
+                                        "breathing", "reps", "focus", "score"])
     def test_a_browser_built_figment_passes_the_real_gate(self, recipe):
         # dump the template the browser would emit, load it with the real
         # Figment, and run the real budget verifier — the strongest parity check
@@ -69,6 +70,45 @@ class TestUnderNode:
         fig = Figment.from_dict(data)
         report = verify(fig)
         assert report.ok, f"{recipe} rejected by the real gate: {report.violations}"
+
+    @pytest.mark.parametrize("show", ["headControl", "mandala", "world",
+                                      "keep", "fusion", "whisper", "ask",
+                                      "secondSight", "tethered", "threshold",
+                                      "ember", "coach"])
+    def test_a_tutorial_showcase_passes_the_real_gate(self, show):
+        # the "what's possible" tour loads these live — they push the whole
+        # grammar (gestures, guards, paint, cadence, world-triggers, record)
+        # and must still clear the exact same budget proof
+        out = subprocess.run(
+            ["node", "-e",
+             f"console.log(JSON.stringify(require('./figment.js').showcases.{show}()))"],
+            cwd=LENS, capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        fig = Figment.from_dict(json.loads(out.stdout))
+        report = verify(fig)
+        assert report.ok, f"{show} rejected by the real gate: {report.violations}"
+
+    # (show, events that reach the {slot} scene before the host pushes text)
+    @pytest.mark.parametrize("show,setup", [
+        ("whisper", []), ("ask", ["double"]), ("secondSight", ["long"]),
+        ("ember", []), ("coach", []),
+    ])
+    def test_slot_fed_showcase_renders_the_hosts_text(self, show, setup):
+        # the "live feed" is real: these showcases show {slot}, and the host
+        # (Brain/camera) pushes text into it via a "text" event. Prove the
+        # reference interpreter actually surfaces that text on a line.
+        from dreamlayer.reality_compiler.v2.interpreter import Stage
+        out = subprocess.run(
+            ["node", "-e",
+             f"console.log(JSON.stringify(require('./figment.js').showcases.{show}()))"],
+            cwd=LENS, capture_output=True, text=True)
+        fig = Figment.from_dict(json.loads(out.stdout))
+        st = Stage(fig)
+        for ev in setup:
+            st.inject(ev)                          # reach the answer/seen scene
+        st.inject("text", "HELLO WORLD")           # the host streams a line in
+        assert any("HELLO WORLD" in ln.text for ln in st.frame().lines), \
+            f"{show} did not surface the host's slot text"
 
 
 # -- the Brain import endpoint (Deploy to my Brain) ---------------------------
@@ -138,6 +178,71 @@ class TestAskJuno:
         assert out["ok"] is False and out["unmatched"] is True
 
 
+# -- the real hardware loop: Brain feeds the live lens, closes emit→answer ----
+
+class TestBrainLensLoop:
+    def _brain(self, tmp_path):
+        from dreamlayer.ai_brain.server import Brain
+        return Brain(tmp_path)
+
+    def _deploy_slot_lens(self, brain):
+        # a minimal lens that shows {slot}: what the world-facing showcases are
+        fig = Figment(name="Slotty", initial="show")
+        fig.add_scene(F.Scene(id="show", lines=[F.TextLine("{slot}", row=1)],
+                              on={"double": F.Transition(target=F.END)}))
+        out = brain.rc_import(fig.to_dict())
+        assert out["ok"] and brain._rc_active == out["id"]
+        return out["id"]
+
+    def test_feed_streams_text_to_the_live_lens(self, tmp_path):
+        brain = self._brain(tmp_path)
+        active = self._deploy_slot_lens(brain)
+        before = len(brain.rc.deployer.sent)
+        r = brain.rc_feed("Hola mundo", source="translate")
+        assert r["ok"] and r["text"] == "Hola mundo" and r["active"] == active
+        # the device actually received a text envelope carrying that line
+        sent = brain.rc.deployer.sent[before:]
+        assert any(e.get("t") == "figment_text" and e.get("text") == "Hola mundo"
+                   for e in sent)
+
+    def test_feed_clamps_to_one_glass_line(self, tmp_path):
+        brain = self._brain(tmp_path)
+        self._deploy_slot_lens(brain)
+        r = brain.rc_feed("x" * 200)
+        assert r["ok"] and len(r["text"]) <= F.MAX_TEXT_LEN
+
+    def test_feed_refused_with_no_lens_on_stage(self, tmp_path):
+        brain = self._brain(tmp_path)
+        assert brain.rc_feed("anything")["ok"] is False
+
+    def test_emit_ask_runs_the_brain_and_answers_on_glass(self, tmp_path):
+        from dreamlayer.ai_brain.schema import Answer
+        brain = self._brain(tmp_path)
+        active = self._deploy_slot_lens(brain)
+        # stand in for the Brain's recall so the test is deterministic
+        seen = {}
+        brain.ask = lambda q: (seen.update(q=q) or Answer("Lease due Fri 14th", tier="device"))
+        r = brain.rc_emit("ask", "when is my lease due?")
+        assert r["ok"] and r["tag"] == "ask"
+        assert seen["q"] == "when is my lease due?"           # the question reached the Brain
+        assert r["answer"] == "Lease due Fri 14th" and r["tier"] == "device"
+        # and the answer was pushed onto the glass
+        assert any(e.get("t") == "figment_text" and "Lease due" in e.get("text", "")
+                   for e in brain.rc.deployer.sent)
+
+    def test_emit_with_payload_streams_to_the_slot(self, tmp_path):
+        brain = self._brain(tmp_path)
+        self._deploy_slot_lens(brain)
+        r = brain.rc_emit("look", "Monstera deliciosa")
+        assert r["ok"] and r["tag"] == "look" and r["text"].startswith("Monstera")
+
+    def test_emit_refused_with_no_lens_or_empty_tag(self, tmp_path):
+        brain = self._brain(tmp_path)
+        assert brain.rc_emit("ask", "hi")["ok"] is False       # nothing on stage
+        self._deploy_slot_lens(brain)
+        assert brain.rc_emit("")["ok"] is False                # empty tag
+
+
 # -- the builder page itself --------------------------------------------------
 
 def test_builder_page_is_wired():
@@ -154,6 +259,8 @@ def test_builder_page_is_wired():
     assert 'id="paint"' in page                        # the paint-on-your-lens mode
     assert "/dreamlayer/rc/compose" in page            # Ask Juno hits the compose endpoint
     assert "composeLocal" in page                      # and degrades client-side off-Brain
+    assert 'id="tour"' in page and "runShowcase" in page   # the "what's possible" tutorial
+    assert "dl_tour_seen" in page                      # first-run gating so it isn't nagware
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
@@ -259,6 +366,35 @@ class TestBuildRouteHttp:
             jsresp = urllib.request.urlopen(lb.url + "/dreamlayer/build/figment.js")
             assert "LensKit" in jsresp.read().decode()
             assert jsresp.headers.get("Access-Control-Allow-Origin") is None
+        finally:
+            lb.stop()
+
+    def test_feed_and_emit_routes_close_the_loop_over_http(self, tmp_path):
+        import json as _json, urllib.error, urllib.request
+        lb = self._live(tmp_path)
+
+        def post(pathname, body, token="tok"):
+            hdr = {"Content-Type": "application/json"}
+            if token:
+                hdr["X-DreamLayer-Token"] = token
+            req = urllib.request.Request(lb.url + pathname,
+                                         data=_json.dumps(body).encode(), headers=hdr)
+            try:
+                return _json.loads(urllib.request.urlopen(req).read())
+            except urllib.error.HTTPError as e:
+                return {"_status": e.code}
+
+        try:
+            # deploy a {slot} lens, then feed it and close an emit — over HTTP
+            fig = Figment(name="Slotty", initial="show")
+            fig.add_scene(F.Scene(id="show", lines=[F.TextLine("{slot}", row=1)],
+                                  on={"double": F.Transition(target=F.END)}))
+            assert post("/dreamlayer/rc/import", {"figment": fig.to_dict()})["ok"]
+            assert post("/dreamlayer/rc/feed", {"text": "Hola"})["text"] == "Hola"
+            emitted = post("/dreamlayer/rc/emit", {"tag": "look", "text": "Monstera"})
+            assert emitted["ok"] and emitted["tag"] == "look"
+            # token-gated: no token → 401
+            assert post("/dreamlayer/rc/feed", {"text": "x"}, token=None)["_status"] == 401
         finally:
             lb.stop()
 

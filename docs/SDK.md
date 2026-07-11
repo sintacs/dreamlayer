@@ -228,7 +228,22 @@ Three ways to author one, easiest first:
   it, **Paint** bounded vector strokes right onto the ring, watch it run on a
   live preview, read the safety card, then **Deploy to your Brain** or download
   the JSON. Zero install, zero code. Paint strokes are data too — count/vertex/
-  colour capped, so they re-prove safe like everything else.
+  colour capped, so they re-prove safe like everything else. First visit opens a
+  **"What's possible" tour** — a guided showcase that loads live lenses onto the
+  ring, each simulating the real stack feed so the loop between the glass and
+  everything behind it lands by being watched: **Whisper** (camera + Brain →
+  live translation streamed into `{slot}`), **Ask** (speak → your Brain answers
+  from your Vault, with a provenance shield), **Second Sight** (glance → the
+  camera names it), **Tethered** (a bonded partner's presence via `bond:near`,
+  emitting a heartbeat back), **Threshold** (`place:enter` rituals), **Ember**
+  (the Vault surfaces a memory where it happened), **Coach** (phone pose + Brain
+  judge your form), and a breathing painted mandala. Every one is the same
+  signed, budget-proven figment underneath. In the builder the feed is
+  simulated; on a paired Brain it runs for real over two wires — `POST
+  /dreamlayer/rc/feed {text}` streams host text (a translation, a camera label,
+  a Vault memory) into the running lens's `{slot}`, and `POST /dreamlayer/rc/emit
+  {tag, text}` closes the loop: the lens emits, the Brain acts, the answer lands
+  back on the glass (`emit "ask"` runs your Brain over the spoken question).
 - **The phone** — rehearse it by performing it (tap, speak the beats, keep), in
   the app's rehearsal flow.
 - **JSON + the CLI** — hand-write or generate the figment and check it:

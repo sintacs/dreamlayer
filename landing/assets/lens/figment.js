@@ -52,8 +52,15 @@
     if (o.pulse) s.pulse = o.pulse;                     // {window_sec, rate_hz, color}
     if (o.tick) s.tick = o.tick;
     if (o.glyphs) s.glyphs = o.glyphs;                  // [{points:[[x,y]..], color, width}]
+    if (o.cadence) s.cadence = o.cadence;               // {in_s, hold_s, out_s} breathing
     return s;
   }
+  function counter(name, o) {                            // a bounded, saturating tally
+    o = o || {};
+    return { name: name, start: o.start || 0, lo: o.lo || 0, hi: o.hi == null ? 999 : o.hi };
+  }
+  function inc(name, by) { return { counter: name, op: "inc", amount: by == null ? 1 : by }; }
+  function zero(name) { return { counter: name, op: "set", amount: 0 }; }
   // one painted stroke: a polyline in normalized 0..1 display coords. Coords are
   // rounded to 4 places to match figment.py's canonical form (signature-stable).
   function r4(n) { return Math.round(Math.max(0, Math.min(1, +n)) * 1e4) / 1e4; }
@@ -129,12 +136,339 @@
     addScene(f, mk("hold2", "HOLD", hold, "in", "text_secondary"));
     return f;
   }
+  // A rep counter: nod to add one, hold to reset, double-tap to finish. Shows
+  // off counters + on-glass gestures + a painted tally arc + the {count} token.
+  function tReps(o) {
+    o = o || {};
+    var f = figment(o.name || "Rep counter", "count");
+    f.counters.reps = counter("reps", { hi: 999 });
+    addScene(f, scene("count", {
+      lines: [line("{count:reps}", { row: 1, size: "lg", color: "accent_memory" }),
+              line(o.label || "reps", { row: 0, size: "sm", color: "text_secondary" }),
+              line("nod +1 · hold 0 · ✕✕ done", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph([[0.26, 0.64], [0.5, 0.71], [0.74, 0.64]], { color: "accent_memory", width: "md" })],
+      on: { "imu:nod": { target: SELF, counter_ops: [inc("reps")] },
+            "long": { target: SELF, counter_ops: [zero("reps")] },
+            "double": { target: END } },
+    }));
+    return f;
+  }
+  // A deep-work session: a painted sigil that BREATHES while you focus, then a
+  // gentle end-pulse and a checkmark. Paint + cadence + pulse + countdown.
+  function tFocus(o) {
+    o = o || {}; var secs = (o.minutes || 25) * 60;
+    var f = figment(o.name || "Deep focus", "work");
+    addScene(f, scene("work", {
+      duration_sec: secs, tick: "countdown",
+      lines: [line("FOCUS", { row: 0, size: "lg", color: "accent_memory" })],
+      glyphs: [glyph([[0.5, 0.34], [0.66, 0.5], [0.5, 0.66], [0.34, 0.5], [0.5, 0.34]],
+                     { color: "accent_memory", width: "md" })],
+      cadence: { in_s: 4, hold_s: 2, out_s: 4 },
+      pulse: { window_sec: Math.min(15, secs), rate_hz: 1.5, color: "accent_attention" },
+      on_timeout: [{ target: "done" }], on: { double: { target: END } },
+    }));
+    addScene(f, scene("done", {
+      duration_sec: 4,
+      lines: [line("DONE", { row: 0, size: "lg", color: "accent_success" })],
+      glyphs: [glyph([[0.34, 0.54], [0.45, 0.64], [0.68, 0.4]], { color: "accent_success", width: "lg" })],
+      on_timeout: [{ target: END }], on: { double: { target: END } },
+    }));
+    return f;
+  }
+  // A live scoreboard: tap for us, double-tap for them, hold to reset. Two
+  // saturating counters + gestures, the score painted on the glass.
+  function tScore(o) {
+    o = o || {};
+    var f = figment(o.name || "Scoreboard", "play");
+    f.counters.us = counter("us", { hi: 99 });
+    f.counters.them = counter("them", { hi: 99 });
+    addScene(f, scene("play", {
+      lines: [line("{count:us} : {count:them}", { row: 1, size: "lg", color: "text_primary" }),
+              line("us   ·   them", { row: 0, size: "sm", color: "text_secondary" }),
+              line("tap us · ✕✕ them · hold 0", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph([[0.5, 0.26], [0.5, 0.58]], { color: "border_subtle", width: "sm" })],
+      on: { single: { target: SELF, counter_ops: [inc("us")] },
+            double: { target: SELF, counter_ops: [inc("them")] },
+            long: { target: SELF, counter_ops: [zero("us"), zero("them")] } },
+    }));
+    return f;
+  }
   var TEMPLATES = [
-    { id: "interval", name: "Interval timer", blurb: "Work / rest rounds — pulses near the switch.", make: tInterval },
-    { id: "countdown", name: "Countdown", blurb: "A single timer that pulses as it lands.", make: tCountdown },
-    { id: "checklist", name: "Checklist ritual", blurb: "Named stages you advance with a nod.", make: tChecklist },
+    { id: "reps", name: "Rep counter", blurb: "Nod to count — a live tally you paint on the glass.", make: tReps },
+    { id: "focus", name: "Deep focus", blurb: "A sigil that breathes while you work, then lands.", make: tFocus },
+    { id: "score", name: "Scoreboard", blurb: "Tap us, double-tap them. The score, on your eye.", make: tScore },
     { id: "breathing", name: "Box breathing", blurb: "In · hold · out · hold, gently breathing the ring.", make: tBreathing },
+    { id: "interval", name: "Interval timer", blurb: "Work / rest rounds — pulses near the switch.", make: tInterval },
+    { id: "checklist", name: "Checklist ritual", blurb: "Named stages you advance with a nod.", make: tChecklist },
+    { id: "countdown", name: "Countdown", blurb: "A single timer that pulses as it lands.", make: tCountdown },
   ];
+
+  // -- showcase lenses for the tutorial: each pushes a different edge ---------
+  // These exist to make people say "wait, it can do THAT?" — they use the whole
+  // grammar (gestures, counters, guards, paint, cadence, world-triggers, the
+  // performance ledger) and every one still passes the exact same budget proof.
+  function _petal(cx, cy, ang, len, wid) {
+    var ox = Math.cos(ang), oy = Math.sin(ang), px = -oy, py = ox;
+    return [[cx, cy],
+            [cx + ox * len * 0.5 + px * wid, cy + oy * len * 0.5 + py * wid],
+            [cx + ox * len, cy + oy * len],
+            [cx + ox * len * 0.5 - px * wid, cy + oy * len * 0.5 - py * wid],
+            [cx, cy]];
+  }
+  function _mandala() {
+    var g = [], N = 6;
+    for (var k = 0; k < N; k++)
+      g.push(glyph(_petal(0.5, 0.5, (k / N) * Math.PI * 2, 0.34, 0.12),
+                   { color: k % 2 ? "accent_memory" : "accent_attention", width: "sm" }));
+    return g;
+  }
+  // Steer with your head: a deck you flip with nod / shake / peek — no hands.
+  function shHeadControl() {
+    var f = figment("Head-steered deck", "a");
+    var deck = [["FOCUS", "accent_memory"], ["BREATHE", "accent_success"], ["STAND TALL", "accent_attention"]];
+    deck.forEach(function (d, i) {
+      var next = "abc"[(i + 1) % deck.length], prev = "abc"[(i + deck.length - 1) % deck.length];
+      addScene(f, scene("abc"[i], {
+        lines: [line(d[0], { row: 1, size: "lg", color: d[1] }),
+                line("nod → · shake ← · look up = done", { row: 4, size: "sm", color: "text_secondary" })],
+        glyphs: [glyph([[0.30, 0.30], [0.70, 0.30]], { color: d[1], width: "sm" })],
+        on: { "imu:nod": { target: next }, "imu:shake": { target: prev }, "imu:peek": { target: END } },
+      }));
+    });
+    return f;
+  }
+  // Paint that breathes: a hand-painted mandala on a slow breathing envelope.
+  function shMandala() {
+    var f = figment("Breathing mandala", "breathe");
+    addScene(f, scene("breathe", {
+      duration_sec: 300, tick: "countdown",
+      lines: [line("BREATHE", { row: 0, size: "md", color: "text_secondary" })],
+      glyphs: _mandala(),
+      cadence: { in_s: 4, hold_s: 4, out_s: 6 },
+      pulse: { window_sec: 12, rate_hz: 0.8, color: "accent_memory" },
+      on_timeout: [{ target: END }], on: { double: { target: END } },
+    }));
+    return f;
+  }
+  // The world reaches in: one lens, three real-world triggers — a place you
+  // arrive at, a bonded partner coming near, a $6 BLE button out in the world.
+  function shWorld() {
+    var f = figment("When the world moves", "wait");
+    addScene(f, scene("wait", {
+      lines: [line("READY", { row: 1, size: "lg", color: "text_secondary" }),
+              line("arrive · partner near · button", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph([[0.5, 0.28], [0.5, 0.5], [0.68, 0.5]], { color: "border_subtle", width: "sm" })],
+      on: { "place:enter": { target: "here" }, "bond:near": { target: "them" }, "ble:3": { target: "btn" } },
+    }));
+    var beat = function (id, txt, col, back) {
+      addScene(f, scene(id, {
+        duration_sec: 4, tick: "countdown",
+        lines: [line(txt, { row: 1, size: "lg", color: col })],
+        pulse: { window_sec: 3, rate_hz: 1.5, color: col },
+        on_timeout: [{ target: back }], on: { double: { target: END } },
+      }));
+    };
+    beat("here", "YOU'RE HERE", "accent_success", "wait");
+    beat("them", "THEY'RE NEAR", "accent_memory", "wait");
+    beat("btn", "PRESSED", "accent_attention", "wait");
+    return f;
+  }
+  // Data you keep: every nod is logged to your Vault performance ledger, so the
+  // lens becomes an instrument — a rep history, a meds-taken record.
+  function shKeep() {
+    var f = figment("Logged reps", "count");
+    f.counters.reps = counter("reps", { hi: 999 });
+    addScene(f, scene("count", {
+      lines: [line("{count:reps}", { row: 1, size: "lg", color: "accent_memory" }),
+              line("each nod is saved", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph([[0.28, 0.66], [0.5, 0.72], [0.72, 0.66]], { color: "accent_memory", width: "md" })],
+      on: { "imu:nod": { target: SELF, counter_ops: [inc("reps")], emit: "rep", record: true },
+            "long": { target: SELF, counter_ops: [zero("reps")] },
+            "double": { target: END } },
+    }));
+    return f;
+  }
+  // Push every limit: paint + a counter + a guard that decides + a gesture + a
+  // world-trigger + the ledger, fused into one signed, provable ritual.
+  function shFusion() {
+    var f = figment("The whole stack", "arrive");
+    f.counters.rounds = counter("rounds", { hi: 9 });
+    addScene(f, scene("arrive", {
+      lines: [line("AT THE GYM?", { row: 1, size: "md", color: "text_secondary" }),
+              line("arrive to begin · ✕✕ now", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: _mandala().slice(0, 3),
+      on: { "place:enter": { target: "work" }, "double": { target: "work" } },
+    }));
+    addScene(f, scene("work", {
+      duration_sec: 30, tick: "countdown",
+      lines: [line("ROUND {count:rounds}", { row: 0, size: "lg", color: "accent_attention" })],
+      glyphs: [glyph([[0.3, 0.7], [0.5, 0.62], [0.7, 0.7]], { color: "accent_attention", width: "md" })],
+      pulse: { window_sec: 5, rate_hz: 2.0, color: "accent_attention" },
+      on_timeout: [{ target: "rest", counter_ops: [inc("rounds")], emit: "round", record: true }],
+      on: { double: { target: END } },
+    }));
+    addScene(f, scene("rest", {
+      duration_sec: 15, tick: "countdown",
+      lines: [line("BREATHE", { row: 1, size: "lg", color: "accent_success" })],
+      cadence: { in_s: 4, hold_s: 2, out_s: 4 },
+      // a guard decides: after 3 rounds, you're done — else back to work
+      on_timeout: [{ target: "done", when: { counter: "rounds", cmp: "ge", value: 3 } },
+                   { target: "work" }],
+      on: { double: { target: END } },
+    }));
+    addScene(f, scene("done", {
+      duration_sec: 5,
+      lines: [line("DONE ×{count:rounds}", { row: 1, size: "lg", color: "accent_success" })],
+      glyphs: [glyph([[0.34, 0.54], [0.45, 0.64], [0.68, 0.4]], { color: "accent_success", width: "lg" })],
+      on_timeout: [{ target: END }], on: { double: { target: END } },
+    }));
+    return f;
+  }
+  // -- the loop between the glass and the whole stack -------------------------
+  // These are the "no way" lenses: the world feeds them (place/bond/ble events),
+  // the Brain streams into {slot} (translations, an LLM answer, a camera label,
+  // a resurfaced memory), and they emit back (a heartbeat, a logged rep). Every
+  // one is a real, budget-proven figment — the tour simulates the live feed.
+  function _ring(cx, cy, r) {
+    var pts = [], N = 13;
+    for (var i = 0; i <= N; i++) { var a = (i / N) * Math.PI * 2; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+    return pts;
+  }
+  function _heart(cx, cy, s) {
+    var pts = [], N = 20;
+    for (var i = 0; i <= N; i++) {
+      var t = (i / N) * Math.PI * 2, x = 16 * Math.pow(Math.sin(t), 3);
+      var y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      pts.push([cx + x * s, cy - y * s]);
+    }
+    return pts;
+  }
+  function _heartGlyph(col) { return [glyph(_heart(0.5, 0.44, 0.0155), { color: col, width: "sm" })]; }
+
+  // Whisper — read/hear any language, live. Camera OCR + mic → Brain/cloud
+  // translate → the words stream onto {slot}.
+  function shWhisper() {
+    var f = figment("Whisper — live translate", "live");
+    addScene(f, scene("live", {
+      lines: [line("{slot}", { row: 1, size: "md", color: "text_primary" }),
+              line("▸ translating live", { row: 4, size: "sm", color: "accent_memory" })],
+      glyphs: [glyph([[0.18, 0.8], [0.34, 0.8]], { color: "accent_memory", width: "sm" }),
+               glyph([[0.66, 0.8], [0.82, 0.8]], { color: "accent_memory", width: "sm" })],
+      on: { "text": { target: SELF }, "double": { target: END } },
+    }));
+    return f;
+  }
+  // Ask — your Brain, on glass. Double-tap & speak → emit "ask" → the Brain
+  // answers from your own memory (or cloud) → the answer lands in {slot}.
+  function shAsk() {
+    var f = figment("Ask — your Brain, on glass", "idle");
+    addScene(f, scene("idle", {
+      lines: [line("ASK ME ANYTHING", { row: 1, size: "md", color: "text_secondary" }),
+              line("double-tap · then speak", { row: 3, size: "sm", color: "text_secondary" })],
+      on: { "double": { target: "hear", emit: "ask" } },
+    }));
+    addScene(f, scene("hear", {
+      duration_sec: 2, tick: "countup",
+      lines: [line("listening…", { row: 1, size: "md", color: "accent_attention" })],
+      pulse: { window_sec: 2, rate_hz: 1.5, color: "accent_attention" },
+      on_timeout: [{ target: "answer" }], on: { "text": { target: "answer" }, "double": { target: "idle" } },
+    }));
+    addScene(f, scene("answer", {
+      lines: [line("{slot}", { row: 1, size: "md", color: "text_primary" }),
+              line("⛨ from your memory", { row: 4, size: "sm", color: "accent_memory" })],
+      on: { "text": { target: SELF }, "double": { target: "idle" } },
+    }));
+    return f;
+  }
+  // Tethered — feel a bonded partner across the world. Their presence fires
+  // bond:near, their mood-weather tints the ring, you emit a heartbeat back.
+  function shTethered() {
+    var f = figment("Tethered — feel them near", "away");
+    addScene(f, scene("away", {
+      lines: [line("· · ·", { row: 1, size: "lg", color: "text_secondary" }),
+              line("2,400 miles away", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: _heartGlyph("border_subtle"), cadence: { in_s: 4, hold_s: 1, out_s: 4 },
+      on: { "bond:near": { target: "near" }, "text": { target: SELF }, "double": { target: END } },
+    }));
+    addScene(f, scene("near", {
+      duration_sec: 6, tick: "countdown",
+      lines: [line("SHE'S NEAR", { row: 1, size: "lg", color: "accent_memory" })],
+      glyphs: _heartGlyph("accent_memory"), pulse: { window_sec: 6, rate_hz: 1.1, color: "accent_memory" },
+      on_timeout: [{ target: "away", emit: "beat", record: true }], on: { "double": { target: END } },
+    }));
+    return f;
+  }
+  // Threshold — your world reacts to where you are. Arriving fires place:enter
+  // and the right ritual just begins.
+  function shThreshold() {
+    var f = figment("Threshold — arrive & begin", "home");
+    addScene(f, scene("home", {
+      lines: [line("HOME", { row: 0, size: "md", color: "text_secondary" }),
+              line("walk somewhere…", { row: 4, size: "sm", color: "text_secondary" })],
+      on: { "place:enter": { target: "gym" }, "double": { target: END } },
+    }));
+    addScene(f, scene("gym", {
+      duration_sec: 5, tick: "countdown",
+      lines: [line("GYM ✦ ROUND 1", { row: 1, size: "lg", color: "accent_attention" })],
+      pulse: { window_sec: 3, rate_hz: 2.0, color: "accent_attention" },
+      on_timeout: [{ target: "home" }], on: { "place:exit": { target: "home" }, "double": { target: END } },
+    }));
+    return f;
+  }
+  // Second Sight — the camera whispers what it sees. Glance + hold → emit
+  // "look" → vision (local or cloud) names it into {slot}.
+  function shSecondSight() {
+    var f = figment("Second Sight — name anything", "look");
+    addScene(f, scene("look", {
+      lines: [line("GLANCE + HOLD", { row: 1, size: "md", color: "text_secondary" }),
+              line("to name what you see", { row: 3, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph(_ring(0.5, 0.42, 0.13), { color: "accent_memory", width: "sm" })],
+      on: { "long": { target: "seen", emit: "look" }, "double": { target: END } },
+    }));
+    addScene(f, scene("seen", {
+      lines: [line("{slot}", { row: 1, size: "md", color: "accent_success" }),
+              line("hold to look again ↻", { row: 4, size: "sm", color: "text_secondary" })],
+      on: { "text": { target: SELF }, "long": { target: "look" }, "double": { target: END } },
+    }));
+    return f;
+  }
+  // Ember — your own memory, handed back at the perfect moment. Standing where
+  // it happened (place:enter) the Vault surfaces a line into {slot}.
+  function shEmber() {
+    var f = figment("Ember — memory, returned", "quiet");
+    addScene(f, scene("quiet", {
+      lines: [line("· here ·", { row: 1, size: "md", color: "text_secondary" })],
+      on: { "place:enter": { target: "back" }, "text": { target: "back" }, "double": { target: END } },
+    }));
+    addScene(f, scene("back", {
+      lines: [line("{slot}", { row: 1, size: "md", color: "accent_memory" })],
+      glyphs: [glyph([[0.5, 0.72], [0.44, 0.6], [0.5, 0.5], [0.56, 0.6], [0.5, 0.72]], { color: "accent_attention", width: "sm" })],
+      cadence: { in_s: 5, hold_s: 2, out_s: 5 },
+      on: { "text": { target: SELF }, "double": { target: END } },
+    }));
+    return f;
+  }
+  // Coach — the camera judges your FORM, not your reps. The phone's pose + the
+  // Brain stream a live cue into {slot}; a clean rep logs to your Vault.
+  function shCoach() {
+    var f = figment("Coach — form, not reps", "set");
+    f.counters.reps = counter("reps", { hi: 99 });
+    addScene(f, scene("set", {
+      lines: [line("{slot}", { row: 0, size: "lg", color: "accent_attention" }),
+              line("clean reps: {count:reps}", { row: 4, size: "sm", color: "text_secondary" })],
+      glyphs: [glyph([[0.24, 0.62], [0.5, 0.62]], { color: "accent_attention", width: "lg" })],
+      on: { "text": { target: SELF },
+            "single": { target: SELF, counter_ops: [inc("reps")], emit: "rep", record: true },
+            "double": { target: END } },
+    }));
+    return f;
+  }
+  var SHOWCASES = {
+    whisper: shWhisper, ask: shAsk, secondSight: shSecondSight, tethered: shTethered,
+    threshold: shThreshold, ember: shEmber, coach: shCoach,
+    headControl: shHeadControl, mandala: shMandala, world: shWorld,
+    keep: shKeep, fusion: shFusion,
+  };
 
   // -- Ask Juno (client fallback): a lightweight plain-English → figment map ---
   // When the page is served BY a Brain, "Ask Juno" POSTs to /dreamlayer/rc/compose
@@ -152,9 +486,16 @@
     var mins = _dur(t, "minute|min"), secs = _dur(t, "second|sec");
     var has = function () { for (var i = 0; i < arguments.length; i++) if (t.indexOf(arguments[i]) >= 0) return true; return false; };
     var fig, kind;
-    if (has("interval", "hiit", "tabata") || (has("work") && has("rest"))) {
-      var parts = t.split(/work|rest/);
-      fig = tInterval({ work: (mins ? mins * 60 : secs) || 180, rest: 30 }); kind = "interval"; void parts;
+    if (has("score", "scoreboard", "keep score", " vs ", "point")) {
+      fig = tScore({}); kind = "score";
+    } else if (has("rep", "count", "tally", "push-up", "pushup", "sit-up", "situp",
+                   "squat", "pull-up", "pullup", "nod to")) {
+      fig = tReps({ label: (t.match(/(push-?ups?|sit-?ups?|squats?|pull-?ups?|reps?)/) || [])[0] || "reps" });
+      kind = "reps";
+    } else if (has("focus", "deep work", "pomodoro", "work session", "concentrate", "study")) {
+      fig = tFocus({ minutes: mins || 25 }); kind = "focus";
+    } else if (has("interval", "hiit", "tabata") || (has("work") && has("rest"))) {
+      fig = tInterval({ work: (mins ? mins * 60 : secs) || 180, rest: 30 }); kind = "interval";
     } else if (has("breath", "box breathing")) {
       var b = secs || 4; fig = tBreathing({ in_s: b, hold_s: b, out_s: b }); kind = "breathing";
     } else if (has("checklist", "steps", "ritual", "routine", "then ")) {
@@ -367,6 +708,8 @@
     newSceneId: newSceneId, setTransition: setTransition, removeTransition: removeTransition,
     listTransitions: listTransitions, graphEdges: graphEdges,
     validate: validate, safetyCard: safetyCard, canonical: canonical, listing: listing,
-    templates: { interval: tInterval, countdown: tCountdown, checklist: tChecklist, breathing: tBreathing },
+    templates: { reps: tReps, focus: tFocus, score: tScore, breathing: tBreathing,
+      interval: tInterval, countdown: tCountdown, checklist: tChecklist },
+    showcases: SHOWCASES,
   };
 });
