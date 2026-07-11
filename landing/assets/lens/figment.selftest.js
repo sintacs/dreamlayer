@@ -112,6 +112,80 @@ ok(!K.composeLocal("xyzzy random gibberish").matched, "composeLocal declines non
 // every trigger carries a plain-language hint for the builder's inline help
 ok(K.TRIGGERS.every(function (t) { return t.label && t.hint; }), "every trigger has a plain label + hint");
 
+// share codec: a whole lens round-trips through a URL-safe code, and a broken
+// or unsafe code is refused (never loaded)
+["mandala", "coach", "whisper"].forEach(function (id) {
+  var f = K.showcases[id]();
+  var code = K.encodeShare(f, { author: "ada" });
+  ok(/^[A-Za-z0-9_-]+$/.test(code), "share code is URL-safe for " + id);
+  var back = K.decodeShare(code);
+  ok(back && back.figment && back.author === "ada", "share round-trips for " + id);
+  ok(K.validate(back.figment).ok, "the decoded " + id + " lens is still valid");
+});
+ok(K.decodeShare("!!!not base64!!!") === null, "a garbage share code is refused");
+ok(K.decodeShare(K.encodeShare(K.figment("Empty", ""))) === null, "a share with no scenes is refused");
+// figment golf: the score reports bytes + machine packed in
+var golf = K.golfScore(K.templates.countdown());
+ok(golf.bytes > 0 && golf.valid === true && typeof golf.moves === "number", "golfScore reports bytes/moves/valid");
+
+// the reference interpreter runs a lens: a countdown ends on time, a counter counts
+var stg = new K.Stage(K.templates.countdown());
+ok(stg.frame().scene === "run" && !stg.ended, "Stage starts in the initial scene");
+stg.step(600);
+ok(stg.ended, "Stage ends the countdown after its duration");
+var sc = new K.Stage(K.templates.score());
+sc.inject("single"); sc.inject("single"); sc.inject("double");
+ok(sc.counters.us === 2 && sc.counters.them === 1, "Stage tracks tap/double-tap counters");
+sc.inject("long");
+ok(sc.counters.us === 0 && sc.counters.them === 0, "Stage resets counters on a long press");
+
+// figment golf challenges: each is verifiable, and a real solution SOLVES it
+ok(K.GOLF.length >= 4 && K.GOLF.every(function (c) { return c.id && c.brief && c.par > 0 && c.checks.length; }),
+   "GOLF ships challenges with a brief, a par, and acceptance checks");
+function _pocket(name) { var f = K.figment(name || "Timer", "a");
+  K.addScene(f, K.scene("a", { duration_sec: 180, tick: "countdown", lines: [K.line("{remaining}")], on_timeout: [{ target: K.END }] })); return f; }
+var gr = K.runChallenge(_pocket(), K.GOLF.filter(function (c) { return c.id === "pocket-timer"; })[0]);
+ok(gr.solved && gr.bytes > 0 && gr.underPar >= 0, "a correct lens solves pocket-timer and lands at/under par");
+// a valid but wrong-duration lens must NOT solve it (behavior, not shape)
+var wrong = K.figment("W", "a");
+K.addScene(wrong, K.scene("a", { duration_sec: 60, tick: "countdown", lines: [K.line("{remaining}")], on_timeout: [{ target: K.END }] }));
+ok(!K.runChallenge(wrong, K.GOLF[0]).solved, "a wrong-duration lens does not solve pocket-timer");
+// the score template really solves the two-sided tally
+ok(K.runChallenge(K.templates.score(), K.GOLF.filter(function (c) { return c.id === "tally"; })[0]).solved,
+   "the scoreboard template solves the tally challenge");
+
+// faithfulness gate: the browser engine refuses the two glass-only features it
+// can't simulate, so "valid here" == "the preview/verifier runs it like glass"
+var rnd = K.figment("Rnd", "a");
+K.addScene(rnd, K.scene("a", { lines: [K.line("hi")], on: { single: { target: K.END } } }));
+rnd.scenes.a.duration_range = [5, 10];   // random timer + event exit (Stage can't model the timer)
+ok(!K.validate(rnd).ok, "a random-timer (duration_range) scene is refused by the browser engine");
+var batt = K.figment("Bat", "a");
+batt.battery_below = 20;
+K.addScene(batt, K.scene("a", { lines: [K.line("hi")], on_timeout: [{ target: K.END }], duration_sec: 5, tick: "countdown" }));
+ok(!K.validate(batt).ok, "a battery-triggered lens is refused by the browser engine");
+
+// validate mirrors the FULL on-glass proof (not a looser subset): the
+// per-transition caps that budgets.verify enforces are enforced here too
+var ops = K.figment("Ops", "a"); ops.counters.a = { name: "a", start: 0, lo: 0, hi: 9999 };
+K.addScene(ops, K.scene("a", { lines: [K.line("x")], on: { single: { target: K.SELF,
+  counter_ops: [{ counter: "a", op: "inc", amount: 1 }, { counter: "a", op: "inc", amount: 1 },
+                 { counter: "a", op: "inc", amount: 1 }, { counter: "a", op: "inc", amount: 1 },
+                 { counter: "a", op: "inc", amount: 1 }] } } }));
+ok(!K.validate(ops).ok, "more than " + K.BUDGETS.MAX_COUNTER_OPS + " counter ops is rejected");
+var etag = K.figment("Tag", "a");
+K.addScene(etag, K.scene("a", { lines: [K.line("x")], duration_sec: 5, tick: "countdown",
+  on_timeout: [{ target: K.END, emit: "x".repeat(K.BUDGETS.MAX_EMIT_TAG_LEN + 1) }] }));
+ok(!K.validate(etag).ok, "an over-long emit tag is rejected");
+var undecl = K.figment("Und", "a");
+K.addScene(undecl, K.scene("a", { lines: [K.line("x")], on: { single: { target: K.SELF, counter_ops: [{ counter: "ghost", op: "inc", amount: 1 }] } } }));
+ok(!K.validate(undecl).ok, "a counter op on an undeclared counter is rejected");
+// counter saturation matches the Python/glass default (9999, not 999)
+var sat = K.figment("Sat", "a"); sat.counters.n = { name: "n", start: 9998, lo: 0 };  // hi omitted
+K.addScene(sat, K.scene("a", { lines: [K.line("{count:n}")], on: { single: { target: K.SELF, counter_ops: [{ counter: "n", op: "inc", amount: 1 }] } } }));
+var satS = new K.Stage(sat); satS.inject("single"); satS.inject("single"); satS.inject("single");
+ok(satS.counters.n === 9999, "an omitted counter hi saturates at 9999 (parity with the glasses)");
+
 // every tutorial showcase is budget-clean AND exercises a distinct edge
 Object.keys(K.showcases).forEach(function (id) {
   ok(K.validate(K.showcases[id]()).ok, "showcase '" + id + "' is valid: " + JSON.stringify(K.validate(K.showcases[id]()).violations));

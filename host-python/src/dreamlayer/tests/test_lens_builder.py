@@ -39,6 +39,7 @@ def test_js_budgets_match_the_python_source():
         ("MAX_PULSE_HZ", F.MAX_PULSE_HZ), ("MIN_SCENE_SEC", F.MIN_SCENE_SEC),
         ("MAX_NAME_LEN", F.MAX_NAME_LEN), ("MAX_BRANCHES", F.MAX_BRANCHES),
         ("MAX_GLYPHS", F.MAX_GLYPHS), ("MAX_GLYPH_POINTS", F.MAX_GLYPH_POINTS),
+        ("MAX_COUNTER_OPS", F.MAX_COUNTER_OPS), ("MAX_EMIT_TAG_LEN", F.MAX_EMIT_TAG_LEN),
     ]:
         assert _js_const(name) == float(py), f"{name} drifted: JS {_js_const(name)} vs py {py}"
 
@@ -88,6 +89,21 @@ class TestUnderNode:
         report = verify(fig)
         assert report.ok, f"{show} rejected by the real gate: {report.violations}"
 
+    @pytest.mark.parametrize("show", ["mandala", "coach", "whisper", "fusion"])
+    def test_shared_link_decodes_to_a_gate_passing_lens(self, show):
+        # a lens travels as a URL-safe code; decoding it in the browser must
+        # yield a figment the REAL Python gate accepts — "shareable" can never
+        # mean "smuggles something unsafe onto the glasses"
+        script = ("var K=require('./figment.js');"
+                  "var code=K.encodeShare(K.showcases['" + show + "'](),{author:'x'});"
+                  "var back=K.decodeShare(code);"
+                  "console.log(JSON.stringify(back.figment));")
+        out = subprocess.run(["node", "-e", script], cwd=LENS,
+                             capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        fig = Figment.from_dict(json.loads(out.stdout))
+        assert verify(fig).ok, f"decoded {show} rejected by the real gate"
+
     # (show, events that reach the {slot} scene before the host pushes text)
     @pytest.mark.parametrize("show,setup", [
         ("whisper", []), ("ask", ["double"]), ("secondSight", ["long"]),
@@ -109,6 +125,67 @@ class TestUnderNode:
         st.inject("text", "HELLO WORLD")           # the host streams a line in
         assert any("HELLO WORLD" in ln.text for ln in st.frame().lines), \
             f"{show} did not surface the host's slot text"
+
+    # The JS reference interpreter (LensKit.Stage) must agree with the Python one
+    # frame-for-frame — this is what makes Figment Golf's "verified" honest: the
+    # browser, the registry, and the glasses all read a lens the same way.
+    _PARITY_SCRIPT = [
+        ["step", 1], ["inject", "single"], ["inject", "double"], ["inject", "long"],
+        ["inject", "imu:nod"], ["inject", "imu:shake"], ["inject", "text", "HOLA"],
+        ["step", 5], ["inject", "place:enter"], ["inject", "bond:near"],
+        ["inject", "ble:3"], ["step", 30], ["step", 300],
+    ]
+
+    def _py_trace(self, fig, script):
+        from dreamlayer.reality_compiler.v2.interpreter import Stage
+        st = Stage(fig)
+
+        def snap():
+            fr = st.frame()
+            return {
+                "scene": "@end" if st.ended else st.current,
+                "ended": st.ended,
+                "lines": [ln.text for ln in fr.lines],
+                "remaining": round(st.remaining(), 3),
+                "pulse": fr.pulse_on,
+                "cadence_phase": fr.cadence_phase,
+                "cadence_level": round(fr.cadence_level, 3),
+                "counters": dict(st.counters),
+            }
+        trace = [snap()]
+        for op in script:
+            if op[0] == "step":
+                st.step(op[1])
+            elif op[0] == "inject":
+                st.inject(op[1], op[2] if len(op) > 2 else None)
+            trace.append(snap())
+        return trace
+
+    @pytest.mark.parametrize("kind,name", [
+        ("templates", "countdown"), ("templates", "score"), ("templates", "reps"),
+        ("templates", "interval"), ("templates", "breathing"), ("templates", "checklist"),
+        ("showcases", "coach"), ("showcases", "keep"), ("showcases", "mandala"),
+        ("showcases", "whisper"), ("showcases", "world"), ("showcases", "fusion"),
+    ])
+    def test_js_python_interpreter_parity(self, kind, name):
+        fig_json = subprocess.run(
+            ["node", "-e",
+             f"console.log(JSON.stringify(require('./figment.js').{kind}.{name}()))"],
+            cwd=LENS, capture_output=True, text=True).stdout
+        fig = Figment.from_dict(json.loads(fig_json))
+        script = self._PARITY_SCRIPT
+        js = subprocess.run(["node", "stage_probe.js"], cwd=LENS, capture_output=True,
+                            text=True, input=json.dumps({"fig": json.loads(fig_json), "script": script}))
+        assert js.returncode == 0, js.stderr
+        js_trace = json.loads(js.stdout)
+        py_trace = self._py_trace(fig, script)
+        assert len(js_trace) == len(py_trace)
+        for i, (a, b) in enumerate(zip(js_trace, py_trace)):
+            # round remaining the same way on both sides before comparing
+            a = {**a, "remaining": round(a["remaining"], 3)}
+            assert a == b, (
+                f"{kind}.{name} diverged at frame {i} "
+                f"(after {script[i-1] if i else 'init'}):\n  js={a}\n  py={b}")
 
 
 # -- the Brain import endpoint (Deploy to my Brain) ---------------------------
@@ -266,12 +343,75 @@ def test_builder_page_is_wired():
     assert "var HELP" in page and "COLOR_LABEL" in page    # plain-language help + colour names
     assert "Full editor" in page                       # mode toggle renamed from "Advanced"
     assert 'loadPreset("mandala")' in page             # lands on a calm showcase, not a scene graph
+    # sharing primitives: link + QR + remix
+    assert 'id="shareBtn"' in page and "encodeShare" in page   # share a lens as a link
+    assert "decodeShare" in page and "#lens=" in page          # open a shared lens as a remix
+    assert "./assets/lens/qr.js" in page                       # the vendored QR encoder
+    assert 'id="remixBanner"' in page
+
+
+def test_gallery_page_is_wired():
+    page = (LENS.parents[1] / "gallery.html").read_text(encoding="utf-8")
+    # the three modules the wall runs on
+    assert "./assets/lens/figment.js" in page          # decode + re-prove every lens
+    assert "./assets/lens/player.js" in page           # live ring preview per card
+    assert "./assets/lens/qr.js" in page               # share-by-QR
+    assert "/api/figments/gallery" in page             # fetches the approved wall
+    assert "decodeShare" in page                        # re-proves each code client-side
+    assert "seedItems" in page and "K.showcases" in page   # never a dead page (offline seed)
+    assert "lens-builder.html#lens=" in page           # Remix hands the lens to the builder
+    assert "new LensPlayer" in page                     # cards actually animate
+    assert "IntersectionObserver" in page              # only on-screen cards animate
+    assert 'id="q"' in page and 'data-sort="newest"' in page   # search + Featured/Newest
+    assert 'id="jamStrip"' in page and "/api/jams" in page      # Lens Jams strip
+    assert "./assets/lens/icons.js" in page and "DLIcon(" in page  # SVG icons, no emoji
+    assert "🌐" not in page and "🔗" not in page and "🎪" not in page  # emoji-free
+
+
+def test_golf_page_is_wired():
+    page = (LENS.parents[1] / "golf.html").read_text(encoding="utf-8")
+    assert "./assets/lens/figment.js" in page          # the game runs on the lens engine
+    assert "./assets/lens/player.js" in page           # live preview of the pasted lens
+    assert "K.GOLF" in page and "runChallenge" in page  # client-side verification
+    assert "/api/golf/" in page and "/submit" in page  # server re-verifies + ranks
+    assert "leaderboard" in page                        # the board
+    assert "decodeShare" in page                        # accepts a share code/link
+    assert "lens-builder.html#lens=" in page           # "study" a rival's lens / start one
+    assert "./assets/lens/icons.js" in page and "DLIcon(" in page  # SVG icons, no emoji
+    assert "⛳" not in page and "🏆" not in page and "🥇" not in page  # emoji-free
+
+
+def test_golf_challenges_carry_icon_keys_not_emoji():
+    # the challenge data drives SVG icons now, not emoji glyphs
+    js = JS.read_text(encoding="utf-8")
+    import re
+    block = js[js.index("var GOLF ="):]
+    assert 'icon: "timer"' in block and 'icon: "score"' in block
+    assert "emoji:" not in block, "GOLF should not carry emoji fields any more"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
+def test_gallery_player_module_loads_under_node():
+    # the preview engine must be a clean UMD module (parses + exports a ctor)
+    r = subprocess.run(
+        ["node", "-e", "var P=require('./player.js');"
+                       "if(typeof P!=='function')process.exit(1);"],
+        cwd=LENS, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
 def test_registry_figment_submit_route():
     api = Path(__file__).resolve().parents[4] / "registry-api"
     r = subprocess.run(["node", "worker.figments.test.mjs"], cwd=api,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
+def test_registry_golf_and_jams_routes():
+    api = Path(__file__).resolve().parents[4] / "registry-api"
+    r = subprocess.run(["node", "worker.golf.test.mjs"], cwd=api,
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
@@ -363,6 +503,8 @@ class TestBuildRouteHttp:
             resp = urllib.request.urlopen(lb.url + "/dreamlayer/build")
             page = resp.read().decode()
             assert "__DL_BUILD__" in page and "/dreamlayer/build/figment.js" in page
+            assert "/dreamlayer/build/qr.js" in page   # the QR asset is rewritten too
+            assert "/dreamlayer/build/icons.js" in page  # the icon set is rewritten too
             # 127.0.0.1 is localhost → the token is injected (same as the panel)
             assert '"token": "tok"' in page
             # SECURITY: this page carries the token, so it must NOT be readable
@@ -371,6 +513,12 @@ class TestBuildRouteHttp:
             jsresp = urllib.request.urlopen(lb.url + "/dreamlayer/build/figment.js")
             assert "LensKit" in jsresp.read().decode()
             assert jsresp.headers.get("Access-Control-Allow-Origin") is None
+            qrresp = urllib.request.urlopen(lb.url + "/dreamlayer/build/qr.js")
+            assert "QRLite" in qrresp.read().decode()
+            assert qrresp.headers.get("Access-Control-Allow-Origin") is None
+            icresp = urllib.request.urlopen(lb.url + "/dreamlayer/build/icons.js")
+            assert "DLIcon" in icresp.read().decode()
+            assert icresp.headers.get("Access-Control-Allow-Origin") is None
         finally:
             lb.stop()
 

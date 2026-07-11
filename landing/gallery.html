@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DreamLayer · Lens Gallery</title>
+<meta name="description" content="A public wall of remixable DreamLayer lenses. Watch each one run live on a ring, then remix it in the builder, share it as a link or QR, or deploy it to your glasses — no code." />
+<meta property="og:title" content="DreamLayer · Lens Gallery" />
+<meta property="og:description" content="A public wall of remixable lenses. Watch each run live, remix it, deploy it." />
+<meta property="og:url" content="https://dreamlayer.app/gallery.html" />
+<link rel="canonical" href="https://dreamlayer.app/gallery.html" />
+<style>
+  :root{
+    --bg:#07100f; --surface:#0e1a18; --surface2:#12211f; --border:#1c2e2b;
+    --text:#eaf3f1; --text2:#8aa5a0; --teal:#2fd4c4; --amber:#e0b54a;
+    --red:#e06b52; --green:#56d364;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--teal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header{padding:20px 26px;border-bottom:1px solid var(--border);display:flex;
+    align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:650}
+  header .tag{color:var(--text2);font-size:13.5px;max-width:560px}
+  header .home{margin-left:auto;font-size:13.5px;display:flex;gap:16px}
+  .toolbar{padding:16px 26px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+    border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(7,16,15,.92);
+    backdrop-filter:blur(8px);z-index:5}
+  .search{flex:1;min-width:200px;max-width:420px;position:relative}
+  .search input{width:100%;font:inherit;background:var(--surface2);color:var(--text);
+    border:1px solid var(--border);border-radius:999px;padding:9px 15px 9px 38px}
+  .search input:focus{outline:0;border-color:var(--teal)}
+  .search .mag{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text2)}
+  .seg{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+  .seg button{font:inherit;background:transparent;color:var(--text2);border:0;padding:8px 15px;
+    cursor:pointer;font-size:13.5px}
+  .seg button.on{background:var(--teal);color:#00201c;font-weight:650}
+  .count{color:var(--text2);font-size:13px;margin-left:auto}
+  .grid{padding:22px 26px 60px;display:grid;gap:18px;
+    grid-template-columns:repeat(auto-fill,minmax(258px,1fr));max-width:1280px;margin:0 auto}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;
+    display:flex;flex-direction:column;transition:.16s}
+  .card:hover{border-color:var(--teal);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+  .card .ringwrap{position:relative;padding:20px;display:flex;justify-content:center;
+    background:radial-gradient(120px 120px at 50% 42%,rgba(47,212,196,.07),transparent)}
+  .card canvas{width:200px;height:200px;border-radius:50%;background:#000;
+    box-shadow:0 0 40px rgba(47,212,196,.08)}
+  .card .body{padding:2px 16px 16px;display:flex;flex-direction:column;flex:1}
+  .card h3{margin:0 0 2px;font-size:16px;font-weight:650}
+  .card .by{color:var(--text2);font-size:12.5px;margin-bottom:9px}
+  .card .by b{color:var(--text);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+  .chip{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--text2);
+    border:1px solid var(--border);border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .chip.safe{color:var(--green);border-color:rgba(86,211,100,.35)}
+  .chip.brain{color:var(--amber);border-color:rgba(224,181,74,.35)}
+  .chip.golf{color:var(--teal);border-color:rgba(47,212,196,.35)}
+  .desc{color:var(--text2);font-size:12.5px;margin:0 0 12px;min-height:1px}
+  .actions{display:flex;gap:8px;margin-top:auto}
+  button.btn{font:inherit;background:var(--teal);color:#00201c;border:0;border-radius:999px;
+    padding:8px 14px;font-weight:650;cursor:pointer;font-size:13px}
+  button.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:600}
+  button.btn.ghost:hover{border-color:var(--teal)}
+  .actions .btn.remix{flex:1}
+  .icnbtn{font:inherit;background:transparent;color:var(--text);border:1px solid var(--border);
+    border-radius:999px;width:34px;height:34px;cursor:pointer;font-size:14px;flex:none;line-height:1}
+  .icnbtn:hover{border-color:var(--teal)}
+  .empty{grid-column:1/-1;text-align:center;color:var(--text2);padding:60px 20px}
+  .empty h2{color:var(--text);font-weight:600}
+  .banner{margin:0;padding:12px 26px;background:var(--surface2);border-bottom:1px solid var(--border);
+    color:var(--text2);font-size:13px;display:flex;gap:10px;align-items:center}
+  .banner b{color:var(--text)}
+  /* lens jams */
+  .jams{padding:16px 26px 4px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch}
+  .jam{background:linear-gradient(135deg,rgba(47,212,196,.09),rgba(224,181,74,.06));
+    border:1px solid var(--border);border-radius:14px;padding:14px 16px;min-width:240px;max-width:340px;
+    display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:.15s}
+  .jam:hover{border-color:var(--teal)}
+  .jam.on{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal)}
+  .jam .jt{font-weight:650;font-size:15px;display:flex;align-items:center;gap:8px}
+  .jam .jtheme{color:var(--text2);font-size:12.5px}
+  .jam .jmeta{display:flex;gap:10px;align-items:center;font-size:11.5px;margin-top:2px}
+  .jam .pill2{text-transform:uppercase;letter-spacing:.04em;border-radius:999px;padding:1px 8px;border:1px solid var(--border)}
+  .jam .pill2.open{color:var(--green);border-color:rgba(86,211,100,.4)}
+  .jam .pill2.upcoming{color:var(--amber);border-color:rgba(224,181,74,.4)}
+  .jam .pill2.closed{color:var(--text2)}
+  .jam .cd{color:var(--teal);font-variant-numeric:tabular-nums}
+  .jamback{margin:12px 26px 0;display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--teal)}
+  /* share modal */
+  .scrim{position:fixed;inset:0;background:rgba(3,8,7,.72);display:none;align-items:center;
+    justify-content:center;z-index:40;padding:20px}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;
+    max-width:380px;width:100%;padding:22px;text-align:center}
+  .modal h3{margin:0 0 4px;font-size:17px}
+  .modal p{color:var(--text2);font-size:13px;margin:0 0 14px}
+  .modal .qrbox{background:#fff;border-radius:12px;padding:12px;display:inline-block;margin-bottom:14px}
+  .modal canvas{display:block}
+  .urlrow{display:flex;gap:8px;margin-bottom:10px}
+  .urlrow input{flex:1;font:inherit;background:var(--surface2);color:var(--text);
+    border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:12px}
+  .modal .row2{display:flex;gap:8px;justify-content:center}
+  .toast{font-size:12.5px;min-height:18px;margin-top:8px}
+  .toast.ok-t{color:var(--green)}
+  .modal .x{position:relative;float:right;color:var(--text2);cursor:pointer;font-size:18px;
+    margin:-8px -6px 0 0;background:none;border:0}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  /* inline-svg icons — inherit colour, scale with text */
+  .ic{width:1em;height:1em;display:inline-block;vertical-align:-0.14em;flex:none}
+  [data-icon]{display:inline-flex;align-items:center}
+  header h1 .ttl-ic .ic{width:1.05em;height:1.05em;vertical-align:-0.16em;color:var(--teal)}
+  .home a [data-icon] .ic{width:.95em;height:.95em}
+  .banner .bn-ic .ic{width:1.15em;height:1.15em;color:var(--teal)}
+  .chip .ic{width:.95em;height:.95em;vertical-align:-0.12em;margin-right:3px}
+  .icnbtn .ic{width:15px;height:15px}
+  .jam .jt .ic{width:1em;height:1em;color:var(--teal);margin-right:3px}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="ttl-ic" data-icon="globe"></span> Lens Gallery</h1>
+  <span class="tag">Every lens here runs live below and is yours to remix — a proven scene machine, not code.</span>
+  <span class="home"><a href="./golf.html"><span data-icon="flag"></span> Golf</a><a href="./lens-builder.html">Build your own →</a><a href="./index.html">Home</a></span>
+</header>
+
+<p class="banner" id="offlineBanner" style="display:none">
+  <span class="bn-ic" data-icon="spark"></span><span>Showing <b>featured lenses</b> — community submissions appear here as they're approved. Every one is fully remixable right now.</span>
+</p>
+
+<!-- Lens Jams: themed, time-boxed collections -->
+<div id="jamStrip" style="display:none"></div>
+
+<div class="toolbar">
+  <label class="search">
+    <span class="mag">⌕</span>
+    <span class="sr">Search lenses</span>
+    <input id="q" type="search" placeholder="Search lenses, makers…" autocomplete="off" />
+  </label>
+  <div class="seg" role="group" aria-label="Sort">
+    <button id="segFeat" class="on" data-sort="featured" aria-pressed="true">Featured</button>
+    <button id="segNew" data-sort="newest" aria-pressed="false">Newest</button>
+  </div>
+  <span class="count" id="count"></span>
+</div>
+
+<div class="jamback" id="jamBack" style="display:none">← back to all lenses <span style="color:var(--text2)">· showing <b></b></span></div>
+
+<div class="grid" id="grid" aria-live="polite"></div>
+
+<!-- share modal -->
+<div class="scrim" id="shareScrim" role="dialog" aria-modal="true" aria-label="Share this lens">
+  <div class="modal">
+    <button class="x" id="shareX" aria-label="Close">×</button>
+    <h3 id="shareName">Share</h3>
+    <p>Anyone with this link opens the lens ready to remix.</p>
+    <div class="qrbox" id="shareQrBox"><canvas id="shareQr" width="200" height="200"></canvas></div>
+    <div class="urlrow">
+      <input id="shareUrl" readonly />
+      <button class="btn" id="shareCopy">Copy</button>
+    </div>
+    <div class="row2">
+      <button class="btn ghost" id="shareTweet">Share on X</button>
+      <button class="btn ghost" id="shareDl">Save QR</button>
+    </div>
+    <div class="toast" id="shareToast"></div>
+  </div>
+</div>
+
+<script src="./assets/lens/icons.js"></script>
+<script src="./assets/lens/qr.js"></script>
+<script src="./assets/lens/figment.js"></script>
+<script src="./assets/lens/player.js"></script>
+<script>
+(function(){
+  "use strict";
+  var REGISTRY = "https://api.dreamlayer.app";
+  var K = window.LensKit; // UMD global from figment.js
+  var grid = document.getElementById("grid");
+  var qEl = document.getElementById("q");
+  var countEl = document.getElementById("count");
+  var players = [];      // live LensPlayer instances
+  var items = [];        // normalized lens rows {id,name,author,description,scenes,code,at,fig,_seed}
+  var sort = "featured";
+
+  // -- seed: the showcases, so the wall is never dead (offline / empty API) --
+  var SEED_META = {
+    whisper:     { name:"Whisper",          blurb:"Read & hear any language, live.",             brain:true },
+    ask:         { name:"Ask",              blurb:"Speak a question — see your Brain's answer.",  brain:true },
+    secondSight: { name:"Second Sight",     blurb:"Glance at anything and just know it.",         brain:true },
+    tethered:    { name:"Tethered",         blurb:"Feel a loved one from across the world.",      brain:true },
+    threshold:   { name:"Threshold",        blurb:"Arrive somewhere and the right thing begins.", brain:true },
+    ember:       { name:"Ember",            blurb:"A memory, handed back where it happened.",     brain:true },
+    coach:       { name:"Coach",            blurb:"It watches your form, not your reps.",         brain:true },
+    mandala:     { name:"Breathing mandala", blurb:"A painted mandala that breathes with you.",   brain:false },
+  };
+  var SEED_ORDER = ["mandala","whisper","secondSight","ask","coach","tethered","threshold","ember"];
+
+  function seedItems(){
+    var out = [], i = 0;
+    if(!K || !K.showcases) return out;
+    SEED_ORDER.forEach(function(id){
+      var mk = K.showcases[id]; var meta = SEED_META[id]; if(!mk || !meta) return;
+      var fig = mk();
+      var code;
+      try{ code = K.encodeShare(fig, { author: "DreamLayer" }); }catch(e){ return; }
+      out.push({
+        id: "seed:"+id, name: meta.name, author: "DreamLayer",
+        description: meta.blurb, scenes: Object.keys(fig.scenes||{}).length,
+        code: code, at: 1e12 - (i++), fig: fig, _seed: true, _brain: meta.brain,
+      });
+    });
+    return out;
+  }
+
+  // -- normalize an API row into a renderable item (decode + re-prove) ------
+  function hydrate(row){
+    var got = K.decodeShare(row.code);
+    if(!got || !got.figment) return null;         // the client re-proves every lens
+    return {
+      id: row.id, name: row.name || got.figment.name || "Untitled",
+      author: row.author || got.author || "someone",
+      description: row.description || "", scenes: row.scenes || Object.keys(got.figment.scenes||{}).length,
+      code: row.code, at: row.at || 0, fig: got.figment, _seed: false,
+      _brain: needsBrain(got.figment),
+    };
+  }
+  function needsBrain(fig){
+    var s = JSON.stringify(fig.scenes||{});
+    return /"emit"/.test(s) || /\{slot\}/.test(s);   // any host/Brain feed
+  }
+
+  function shareUrlFor(item){ return "https://dreamlayer.app/lens-builder.html#lens=" + item.code; }
+  function remixUrlFor(item){ return "./lens-builder.html#lens=" + item.code; }
+
+  // -- render ----------------------------------------------------------------
+  // Stop every live ring AND drop the observer's refs to the canvases we're
+  // about to detach — otherwise each re-render (every search keystroke, every
+  // jam toggle) would leak canvases + LensPlayer instances the observer holds.
+  function stopAllPlayers(){
+    players.forEach(function(p){ try{ p.stop(); }catch(e){} });
+    players = [];
+    if(io) io.disconnect();     // cards rebuilt below re-observe their canvases
+  }
+
+  function render(){
+    stopAllPlayers();
+    grid.innerHTML = "";
+    var term = qEl.value.trim().toLowerCase();
+    var list = items.filter(function(it){
+      if(!term) return true;
+      return (it.name+" "+it.author+" "+it.description).toLowerCase().indexOf(term) >= 0;
+    });
+    list.sort(sort === "newest"
+      ? function(a,b){ return (b.at||0) - (a.at||0); }
+      // Featured: real community lenses lead (_seed false → 0 sorts first),
+      // then by curated order (_featIdx), then newest.
+      : function(a,b){ return (a._seed?1:0)-(b._seed?1:0) || (a._featIdx||0)-(b._featIdx||0) || (b.at||0)-(a.at||0); });
+
+    countEl.textContent = list.length + (list.length === 1 ? " lens" : " lenses");
+
+    if(!list.length){
+      grid.innerHTML = '<div class="empty"><h2>No lens matches that.</h2>' +
+        '<p>Try a different word, or <a href="./lens-builder.html">build the first one</a>.</p></div>';
+      return;
+    }
+    list.forEach(function(it){ grid.appendChild(cardFor(it)); });
+  }
+
+  function cardFor(it){
+    var card = document.createElement("div"); card.className = "card";
+    var cv = document.createElement("canvas"); cv.width = 240; cv.height = 240;
+    cv.setAttribute("role","img");
+    cv.setAttribute("aria-label", it.name + " lens running live");
+
+    var proof = null; try{ proof = K.safetyCard(it.fig); }catch(e){}
+    var guarantees = proof && proof.cannot ? proof.cannot.length : 0;
+
+    var chips = '<span class="chip safe" title="' +
+        (proof && proof.cannot ? proof.cannot.join(" · ") : "budget-proven") +
+        '">' + DLIcon("shield") + (guarantees ? guarantees + " guarantees" : "safe") + '</span>' +
+      '<span class="chip">' + it.scenes + (it.scenes === 1 ? " scene" : " scenes") + '</span>' +
+      (it._brain ? '<span class="chip brain">needs your Brain</span>' : '');
+    try{
+      var g = K.golfScore(it.fig);
+      if(g && g.bytes) chips += '<span class="chip golf" title="Expressiveness per byte — the Figment Golf metric">' +
+        g.bytes + ' B · ' + g.moves + ' moves</span>';
+    }catch(e){}
+
+    card.innerHTML =
+      '<div class="ringwrap"></div>' +
+      '<div class="body">' +
+        '<h3></h3>' +
+        '<div class="by">by <b></b></div>' +
+        '<div class="chips">' + chips + '</div>' +
+        (it.description ? '<p class="desc"></p>' : '') +
+        '<div class="actions">' +
+          '<a class="btn remix" href="' + remixUrlFor(it) + '">✦ Remix</a>' +
+          '<button class="icnbtn share" title="Share link / QR" aria-label="Share">' + DLIcon("link") + '</button>' +
+          '<button class="icnbtn deploy" title="Deploy to your glasses" aria-label="Deploy">' + DLIcon("send") + '</button>' +
+        '</div>' +
+      '</div>';
+    card.querySelector(".ringwrap").appendChild(cv);
+    card.querySelector("h3").textContent = it.name;
+    card.querySelector(".by b").textContent = it.author;
+    if(it.description) card.querySelector(".desc").textContent = it.description;
+    card.querySelector(".share").onclick = function(){ openShare(it); };
+    card.querySelector(".deploy").onclick = function(){ openDeploy(it); };
+
+    // live preview — only animate when the card is on screen
+    var player = new LensPlayer(cv, it.fig, { slot: sampleSlot(it) });
+    players.push(player);
+    if(io) io.observe(cv); else player.start();
+    cv._player = player;
+    return card;
+  }
+
+  // a friendly placeholder for {slot} so streaming showcases read nicely
+  function sampleSlot(it){
+    var m = { whisper:"la cuenta, por favor", ask:"the 14th", secondSight:"Monstera deliciosa" };
+    var id = (it.id||"").replace("seed:","");
+    return m[id] || "…";
+  }
+
+  // pause/resume players as they scroll in and out of view (perf + battery)
+  var io = ("IntersectionObserver" in window) ? new IntersectionObserver(function(ents){
+    ents.forEach(function(e){
+      var p = e.target._player; if(!p) return;
+      if(e.isIntersecting) p.start(); else p.stop();
+    });
+  }, { rootMargin: "120px" }) : null;
+
+  // -- share modal -----------------------------------------------------------
+  var shareScrim = document.getElementById("shareScrim");
+  var shareCur = null;
+  function openShare(it){
+    shareCur = it;
+    var url = shareUrlFor(it);
+    document.getElementById("shareName").textContent = "Share “" + it.name + "”";
+    document.getElementById("shareUrl").value = url;
+    var toast = document.getElementById("shareToast"); toast.className = "toast"; toast.textContent = "";
+    var box = document.getElementById("shareQrBox"), dl = document.getElementById("shareDl");
+    try{
+      if(!window.QRLite) throw new Error("no qr");
+      QRLite.draw(document.getElementById("shareQr"), url, { px:200, ecl:"L", dark:"#0a1012", light:"#ffffff" });
+      box.style.display = ""; dl.style.display = "";
+    }catch(e){ box.style.display = "none"; dl.style.display = "none"; }
+    shareScrim.style.display = "flex";
+    shareReturnFocus = document.activeElement;      // restore focus here on close
+    var x = document.getElementById("shareX"); if(x && x.focus) x.focus();
+  }
+  var shareReturnFocus = null;
+  function shareOpen(){ return shareScrim.style.display === "flex"; }
+  function closeShare(){
+    shareScrim.style.display = "none";
+    if(shareReturnFocus && shareReturnFocus.focus){ try{ shareReturnFocus.focus(); }catch(e){} }
+    shareReturnFocus = null;
+  }
+  document.getElementById("shareX").onclick = closeShare;
+  shareScrim.addEventListener("click", function(e){ if(e.target === shareScrim) closeShare(); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && shareOpen()) closeShare(); });
+  // keep Tab within the open dialog
+  shareScrim.addEventListener("keydown", function(e){
+    if(e.key !== "Tab" || !shareOpen()) return;
+    var f = shareScrim.querySelectorAll('button, [href], input, [tabindex]:not([tabindex="-1"])');
+    if(!f.length) return;
+    var first = f[0], last = f[f.length-1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  });
+  document.getElementById("shareCopy").onclick = function(){
+    var inp = document.getElementById("shareUrl"); inp.select();
+    var toast = document.getElementById("shareToast");
+    function done(){ toast.className = "toast ok-t"; toast.textContent = "✓ Link copied — paste it anywhere."; }
+    if(navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(inp.value).then(done, function(){ try{ document.execCommand("copy"); }catch(e){} done(); });
+    else { try{ document.execCommand("copy"); }catch(e){} done(); }
+  };
+  document.getElementById("shareTweet").onclick = function(){
+    if(!shareCur) return;
+    var text = "Remix this DreamLayer lens: " + shareCur.name;
+    window.open("https://twitter.com/intent/tweet?text=" + encodeURIComponent(text) +
+                "&url=" + encodeURIComponent(shareUrlFor(shareCur)), "_blank", "noopener");
+  };
+  document.getElementById("shareDl").onclick = function(){
+    var cv = document.getElementById("shareQr");
+    try{
+      var a = document.createElement("a");
+      a.href = cv.toDataURL("image/png");
+      a.download = (shareCur ? shareCur.name.replace(/[^\w]+/g,"-").toLowerCase() : "lens") + "-qr.png";
+      a.click();
+    }catch(e){}
+  };
+
+  // -- deploy: send folks to the builder, which owns the real deploy path ---
+  function openDeploy(it){
+    // The builder deploys to paired glasses over the same-origin Brain bridge;
+    // hand it the lens pre-loaded and ready to send.
+    window.location.href = remixUrlFor(it);
+  }
+
+  // -- boot: seed first (instant, offline-safe), then fold in the live wall --
+  function boot(){
+    var seeds = seedItems();
+    seeds.forEach(function(s, i){ s._featIdx = i; });
+    items = seeds.slice();
+    render();
+
+    fetch(REGISTRY + "/api/figments/gallery", { headers: { "Accept":"application/json" } })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(!data || !data.lenses || !data.lenses.length) return;   // keep the seed wall
+        var live = [], seen = {};
+        data.lenses.forEach(function(row){
+          var it = hydrate(row); if(!it) return;
+          seen[it.name.toLowerCase()] = true; live.push(it);
+        });
+        if(!live.length) return;
+        // real community lenses lead; seeds fill in behind any name they don't cover
+        var keptSeeds = seeds.filter(function(s){ return !seen[s.name.toLowerCase()]; });
+        keptSeeds.forEach(function(s, i){ s._featIdx = 100 + i; });
+        items = live.concat(keptSeeds);
+        document.getElementById("offlineBanner").style.display = "none";
+        render();
+      })
+      .catch(function(){
+        document.getElementById("offlineBanner").style.display = "";
+      });
+    // if we never heard back and only have seeds, gently say so
+    setTimeout(function(){
+      if(items.length && items.every(function(x){ return x._seed; }))
+        document.getElementById("offlineBanner").style.display = "";
+    }, 2500);
+
+    loadJams();
+    document.getElementById("jamBack").onclick = clearJam;
+  }
+
+  // -- Lens Jams: themed, time-boxed collections ----------------------------
+  var jams = [], jamCurrent = null, jamTimer = null, allItems = null;
+  function fmtCountdown(secs){
+    if(secs <= 0) return "closing…";
+    var d = Math.floor(secs/86400), h = Math.floor((secs%86400)/3600), m = Math.floor((secs%3600)/60);
+    if(d > 0) return d + "d " + h + "h left";
+    if(h > 0) return h + "h " + m + "m left";
+    return m + "m left";
+  }
+  function loadJams(){
+    fetch(REGISTRY + "/api/jams").then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(!data || !data.jams || !data.jams.length) return;
+        jams = data.jams.filter(function(j){ return j.status !== "closed" || j.entries > 0; });
+        if(jams.length) renderJams();
+      }).catch(function(){});
+  }
+  function renderJams(){
+    var strip = document.getElementById("jamStrip");
+    strip.className = "jams"; strip.style.display = "";
+    strip.innerHTML = jams.map(function(j){
+      var now = Math.floor(Date.now()/1000);
+      // status drives a CSS class — accept only the known states; everything
+      // else (id, entries, closes) is escaped, never trusted into markup.
+      var status = ({open:1,upcoming:1,closed:1}[j.status]) ? j.status : "open";
+      var entries = Math.max(0, parseInt(j.entries, 10) || 0);
+      var closes = parseInt(j.closes, 10) || 0;
+      var cd = status === "open" && closes ? '<span class="cd" data-close="' + closes + '">' + escg(fmtCountdown(closes - now)) + '</span>'
+             : status === "upcoming" && j.opens ? '<span class="cd">opens soon</span>' : '';
+      return '<div class="jam' + (jamCurrent===j.id?" on":"") + '" data-jam="' + escg(j.id) + '">' +
+        '<div class="jt">' + DLIcon("tent") + escg(j.title) + '</div>' +
+        (j.theme ? '<div class="jtheme">' + escg(j.theme) + '</div>' : '') +
+        '<div class="jmeta"><span class="pill2 ' + status + '">' + status + '</span>' +
+          '<span>' + entries + (entries===1?" lens":" lenses") + '</span>' + cd + '</div></div>';
+    }).join("");
+    [].forEach.call(strip.querySelectorAll(".jam"), function(el){
+      el.onclick = function(){ toggleJam(el.getAttribute("data-jam")); };
+    });
+    if(jamTimer) clearInterval(jamTimer);
+    jamTimer = setInterval(function(){
+      var now = Math.floor(Date.now()/1000);
+      [].forEach.call(strip.querySelectorAll(".cd[data-close]"), function(s){
+        s.textContent = fmtCountdown(Number(s.getAttribute("data-close")) - now);
+      });
+    }, 60000);
+  }
+  function toggleJam(id){
+    if(jamCurrent === id){ clearJam(); return; }
+    if(allItems === null) allItems = items;   // snapshot the full wall now, before any async
+    jamCurrent = id; renderJams();
+    var back = document.getElementById("jamBack");
+    fetch(REGISTRY + "/api/jams/" + encodeURIComponent(id)).then(function(r){ return r.json(); })
+      .then(function(data){
+        if(jamCurrent !== id) return;         // the user left this jam before it loaded
+        var live = (data.lenses||[]).map(hydrate).filter(Boolean);
+        items = live;
+        var jam = (data.jam||{});
+        back.style.display = ""; back.querySelector("b").textContent = jam.title || id;
+        render();
+        if(!live.length) grid.innerHTML = '<div class="empty"><h2>No lenses in this jam yet.</h2>' +
+          '<p>' + (jam.prompt ? escg(jam.prompt) + ' ' : '') + '<a href="./lens-builder.html">Build the first →</a></p></div>';
+      }).catch(function(){});
+  }
+  function clearJam(){
+    jamCurrent = null;
+    if(allItems !== null){ items = allItems; allItems = null; }
+    document.getElementById("jamBack").style.display = "none";
+    renderJams(); render();
+  }
+  function escg(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+  var qTimer = null;
+  qEl.addEventListener("input", function(){ clearTimeout(qTimer); qTimer = setTimeout(render, 140); });
+  document.getElementById("segFeat").onclick = function(){ setSort("featured", this); };
+  document.getElementById("segNew").onclick = function(){ setSort("newest", this); };
+  function setSort(s, btn){
+    sort = s;
+    document.querySelectorAll(".seg button").forEach(function(b){ b.classList.remove("on"); b.setAttribute("aria-pressed","false"); });
+    btn.classList.add("on"); btn.setAttribute("aria-pressed","true");
+    render();
+  }
+
+  if(K) boot();
+  else grid.innerHTML = '<div class="empty"><h2>Couldn’t load the lens engine.</h2><p>Refresh to try again.</p></div>';
+})();
+</script>
+</body>
+</html>
