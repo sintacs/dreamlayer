@@ -21,6 +21,7 @@
     MAX_SCENES: 32, MAX_COUNTERS: 8, MAX_LINES: 5, MAX_TEXT_LEN: 24,
     MAX_PULSE_HZ: 4.0, MIN_SCENE_SEC: 0.5, MAX_SCENE_SEC: 24 * 3600.0,
     MAX_NAME_LEN: 40, MAX_BRANCHES: 4,
+    MAX_GLYPHS: 6, MAX_GLYPH_POINTS: 24,
   };
   var END = "@end", SELF = "@self";
   var COLORS = ["background", "surface", "text_primary", "text_secondary",
@@ -50,7 +51,17 @@
     if (o.on) s.on = o.on;                              // {event: {target}}
     if (o.pulse) s.pulse = o.pulse;                     // {window_sec, rate_hz, color}
     if (o.tick) s.tick = o.tick;
+    if (o.glyphs) s.glyphs = o.glyphs;                  // [{points:[[x,y]..], color, width}]
     return s;
+  }
+  // one painted stroke: a polyline in normalized 0..1 display coords. Coords are
+  // rounded to 4 places to match figment.py's canonical form (signature-stable).
+  function r4(n) { return Math.round(Math.max(0, Math.min(1, +n)) * 1e4) / 1e4; }
+  function glyph(points, opts) {
+    opts = opts || {};
+    return { points: (points || []).map(function (p) { return [r4(p[0]), r4(p[1])]; })
+               .slice(0, B.MAX_GLYPH_POINTS),
+             color: opts.color || "accent_attention", width: opts.width || "md" };
   }
   function figment(name, initial) {
     return { id: "", name: name || "My lens", initial: initial || "",
@@ -125,6 +136,39 @@
     { id: "breathing", name: "Box breathing", blurb: "In · hold · out · hold, gently breathing the ring.", make: tBreathing },
   ];
 
+  // -- Ask Juno (client fallback): a lightweight plain-English → figment map ---
+  // When the page is served BY a Brain, "Ask Juno" POSTs to /dreamlayer/rc/compose
+  // and the full offline IntentParser (intent_parser.py) runs there. On the static
+  // landing page there is no Brain, so this keyword matcher picks a recipe and
+  // pulls out durations — a useful subset, always budget-clean because it only
+  // ever emits the vetted templates.
+  function _dur(t, unit) {
+    var m = t.match(new RegExp("(\\d+(?:\\.\\d+)?)\\s*(?:" + unit + ")"));
+    return m ? +m[1] : null;
+  }
+  function composeLocal(prompt) {
+    var t = String(prompt || "").toLowerCase().trim();
+    if (!t) return { matched: false };
+    var mins = _dur(t, "minute|min"), secs = _dur(t, "second|sec");
+    var has = function () { for (var i = 0; i < arguments.length; i++) if (t.indexOf(arguments[i]) >= 0) return true; return false; };
+    var fig, kind;
+    if (has("interval", "hiit", "tabata") || (has("work") && has("rest"))) {
+      var parts = t.split(/work|rest/);
+      fig = tInterval({ work: (mins ? mins * 60 : secs) || 180, rest: 30 }); kind = "interval"; void parts;
+    } else if (has("breath", "box breathing")) {
+      var b = secs || 4; fig = tBreathing({ in_s: b, hold_s: b, out_s: b }); kind = "breathing";
+    } else if (has("checklist", "steps", "ritual", "routine", "then ")) {
+      var steps = t.replace(/^.*?:/, "").split(/,|\bthen\b|;/).map(function (s) { return s.trim(); })
+                   .filter(Boolean).map(function (s) { return s.slice(0, B.MAX_TEXT_LEN); });
+      fig = tChecklist({ steps: steps.length ? steps.slice(0, B.MAX_SCENES) : undefined }); kind = "checklist";
+    } else if (has("countdown", "count down", "timer", "count up", "stopwatch")) {
+      fig = tCountdown({ seconds: (mins ? mins * 60 : secs) || 300 }); kind = "countdown";
+    } else {
+      return { matched: false };
+    }
+    return { matched: true, kind: kind, figment: fig };
+  }
+
   // -- validation (a subset of budgets.verify — everything the builder emits) -
   // mirror reality_compiler/v2/figment._valid_event so a scene's `on` keys are
   // held to the same grammar the Python gate enforces (no false "safe").
@@ -182,6 +226,19 @@
         if (!(s.pulse.rate_hz > 0 && s.pulse.rate_hz <= B.MAX_PULSE_HZ)) bad("pulse_rate", "pulse > " + B.MAX_PULSE_HZ + "Hz (the photic-safety cap)", sid);
         if (timed(s) && s.pulse.window_sec > s.duration_sec) bad("pulse", "pulse window exceeds the scene", sid);
         if (COLORS.indexOf(s.pulse.color) < 0) bad("color", "pulse color is not a token", sid);
+      }
+      // painted strokes: mirror budgets.verify's paint-layer caps exactly
+      if (s.glyphs) {
+        if (s.glyphs.length > B.MAX_GLYPHS) bad("glyphs", s.glyphs.length + " strokes > max " + B.MAX_GLYPHS, sid);
+        s.glyphs.forEach(function (g, gi) {
+          var pts = g.points || [];
+          if (!(pts.length >= 2 && pts.length <= B.MAX_GLYPH_POINTS)) bad("glyph_points", "stroke " + gi + " needs 2.." + B.MAX_GLYPH_POINTS + " points", sid);
+          for (var k = 0; k < pts.length; k++) {
+            if (!(pts[k][0] >= 0 && pts[k][0] <= 1 && pts[k][1] >= 0 && pts[k][1] <= 1)) { bad("glyph_coord", "stroke " + gi + " leaves the display", sid); break; }
+          }
+          if (COLORS.indexOf(g.color) < 0) bad("color", "stroke " + gi + " color is not a token", sid);
+          if (SIZES.indexOf(g.width) < 0) bad("glyph_width", "stroke " + gi + " width unknown", sid);
+        });
       }
     });
     return { ok: v.length === 0, violations: v };
@@ -304,7 +361,8 @@
   return {
     BUDGETS: B, COLORS: COLORS, SIZES: SIZES, HEX: HEX, END: END, SELF: SELF,
     TRIGGERS: TRIGGERS, TEMPLATES: TEMPLATES,
-    figment: figment, scene: scene, line: line, addScene: addScene,
+    composeLocal: composeLocal,
+    figment: figment, scene: scene, line: line, glyph: glyph, addScene: addScene,
     emptyFigment: emptyFigment, addBlankScene: addBlankScene, deleteScene: deleteScene,
     newSceneId: newSceneId, setTransition: setTransition, removeTransition: removeTransition,
     listTransitions: listTransitions, graphEdges: graphEdges,

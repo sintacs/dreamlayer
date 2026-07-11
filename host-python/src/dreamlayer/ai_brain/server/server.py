@@ -8,6 +8,7 @@ Serves the control panel and the API the phone and the panel both call:
     POST /dreamlayer/folders        {action: add|remove, path}  → reindex
     POST /dreamlayer/upload?folder=&name=   drag-drop a file in → reindex
     POST /dreamlayer/brain/ask      {query} → Answer (logged to history)
+    POST /dreamlayer/rc/compose     {prompt} → verified figment ("Ask Juno")
     POST /dreamlayer/brain/explain  {label, image?, want?} → Answer
     GET  /dreamlayer/history        recent questions
 
@@ -76,7 +77,7 @@ def lan_ip() -> str:
 
 
 def _spoken_duration(secs: float) -> str:
-    """'5 minutes', '1 minute 30 seconds' — how Oracle says a length back."""
+    """'5 minutes', '1 minute 30 seconds' — how Juno says a length back."""
     secs = int(round(secs))
     h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
     parts = []
@@ -146,7 +147,7 @@ class Brain:
         from ...plugins import PluginStore
         self.plugins = PluginStore(self.cfg_dir / "plugins",
                                    host_capabilities=self.plugin_capabilities())
-        # Oracle's profile of you (name, interests, people, remembered prefs).
+        # Juno's profile of you (name, interests, people, remembered prefs).
         # Built on the glasses hub from the conversation stream, then *pushed*
         # here so the phone can read it — the hub->Brain bridge. Just a mirror;
         # the Brain never writes it, only stores what the hub sends.
@@ -337,7 +338,7 @@ class Brain:
 
     def rc_suggest(self) -> dict:
         """The right machine for right now, or nothing when none is a confident
-        fit — the Oracle's "Gym? Start the usual circuit?" """
+        fit — the Juno's "Gym? Start the usual circuit?" """
         return {"suggestion": self.rc.suggest()}
 
     def rc_grammar_candidates(self) -> dict:
@@ -373,6 +374,42 @@ class Brain:
         if self._rc_active == figment_id:
             self._rc_active = None
         return {"ok": True, **self.rc_repertoire()}
+
+    def rc_compose(self, prompt: str) -> dict:
+        """Ask Juno: turn a plain-English description of a lens into a figment.
+
+        The builder's "Ask Juno" box (INNOVATION_SESSION Category 1). We run the
+        offline intent parser — no cloud, no model needed — lift it to a figment
+        and budget-verify it *here* before it ever reaches the editor. The result
+        is returned but NOT deployed: it lands in the builder for the author to
+        preview, paint on, and tweak, then Deploy re-checks the proof again.
+        """
+        text = (prompt or "").strip()
+        if not text:
+            return {"ok": False, "unmatched": True,
+                    "error": "Tell Juno what the lens should do."}
+        try:
+            result = self.rc.compile_text(text)
+        except ValueError:
+            return {"ok": False, "unmatched": True,
+                    "error": "Juno couldn't turn that into a lens yet.",
+                    "examples": [
+                        "a 5 minute countdown that pulses at the end",
+                        "interval timer, 3 minutes work 1 minute rest",
+                        "count reps, add one on a nod",
+                        "box breathing, 4 seconds each",
+                        "teleprompter for my speech notes",
+                    ]}
+        except Exception as e:                          # pragma: no cover - defensive
+            return {"ok": False, "error": f"compose failed: {e}"}
+        fig = result.figment
+        return {
+            "ok": result.report.ok,
+            "figment": fig.to_dict(),
+            "describe": fig.describe(),
+            "scenes": len(fig.scenes),
+            "violations": [str(v) for v in result.report.violations],
+        }
 
     def rc_import(self, data: dict) -> dict:
         """Import a figment authored elsewhere — the no-code browser builder's
@@ -439,7 +476,7 @@ class Brain:
         return {"ok": record.success, "name": name, "active": self._rc_active,
                 "mode": record.mode}
 
-    # -- native behaviors Oracle builds (timers, intervals, clock) -----------
+    # -- native behaviors Juno builds (timers, intervals, clock) -----------
 
     def rc_native(self, intent: str, args: dict) -> dict:
         """Turn a parsed voice intent (timer / interval / clock) into a
@@ -489,7 +526,7 @@ class Brain:
             self.rc.vault.revoke(fig.id)   # ephemeral: keep the Repertoire clean
         except Exception:
             pass
-        self.activity.add("rc", f"Oracle started {fig.name!r}")
+        self.activity.add("rc", f"Juno started {fig.name!r}")
         return {"ok": record.success, "intent": intent, "say": say,
                 "figment_id": fig.id, "name": fig.name}
 
@@ -1278,7 +1315,7 @@ class Brain:
         return {"memories": out}
 
     def set_profile(self, data: dict) -> dict:
-        """Store the Oracle profile the glasses hub just pushed (a mirror, so the
+        """Store the Juno profile the glasses hub just pushed (a mirror, so the
         phone can read it). Keeps only the known shape; persists to profile.json."""
         d = data if isinstance(data, dict) else {}
 
@@ -1938,7 +1975,7 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 # owed, dated reminders — assembled from what the Brain holds
                 self._json(200, brain.memories())
             elif path == "/dreamlayer/profile":
-                # what the Oracle has learned about you (mirrored from the hub)
+                # what the Juno has learned about you (mirrored from the hub)
                 self._json(200, brain.profile)
             elif path == "/dreamlayer/brief/latest":
                 self._json(200, brain.last_brief or {})
@@ -2080,6 +2117,10 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 self._json(200, brain.rc_deploy(self._body().get("figment_id", "")))
             elif path == "/dreamlayer/rc/revoke":
                 self._json(200, brain.rc_revoke(self._body().get("figment_id", "")))
+            elif path == "/dreamlayer/rc/compose":
+                # "Ask Juno" — describe a lens in words, get a verified figment
+                # back into the builder (offline intent parser; not deployed)
+                self._json(200, brain.rc_compose(self._body().get("prompt", "")))
             elif path == "/dreamlayer/rc/import":
                 # the no-code browser builder's "Deploy to my Brain"
                 self._json(200, brain.rc_import(self._body().get("figment") or self._body()))
@@ -2130,7 +2171,7 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 elif it.kind == "brief":
                     self._json(200, {"intent": "brief", **brain.brief()})
                 elif it.kind in ("timer", "interval", "clock"):
-                    # native behaviors Oracle builds & runs (docs/RC_V2): a
+                    # native behaviors Juno builds & runs (docs/RC_V2): a
                     # timer/interval compiles to a Figment on the stage; a
                     # clock time-query just answers
                     self._json(200, brain.rc_native(it.kind, it.args))
@@ -2175,7 +2216,7 @@ def make_brain_server(brain: Brain, host: str = "127.0.0.1",
                 self._json(200, {"unlocked": brain.saga_record(ev) if ev else [],
                                  "saga": brain.saga.snapshot()})
             elif path == "/dreamlayer/profile":
-                # the glasses hub pushes its Oracle profile snapshot so the phone
+                # the glasses hub pushes its Juno profile snapshot so the phone
                 # can read it (the hub->Brain bridge). Mirror-only.
                 self._json(200, brain.set_profile(self._body()))
             elif path == "/dreamlayer/model/pull":
