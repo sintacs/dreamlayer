@@ -48,6 +48,7 @@ from .ops_juno_attention import JunoAttentionOps
 from .ops_commitments import CommitmentRecallOps
 from .ops_plugins import PluginOps
 from .ops_ember import EmberOps
+from .ops_stasis import StasisOps
 
 
 class Orchestrator(
@@ -62,6 +63,7 @@ class Orchestrator(
     CommitmentRecallOps,
     PluginOps,
     EmberOps,
+    StasisOps,
 ):
     def __init__(self, bridge, db_path=":memory:", config=None):
         cfg = config or CONFIG
@@ -101,6 +103,7 @@ class Orchestrator(
                          else ResidentGate())
         self.last_retention = None      # last nightly RetentionReport
         self.last_tending = []          # last night's staged Ember offers
+        self.last_stasis_compost = None  # last night's Stasis compost report
 
         # Adaptive confidence: per-card-type dismissal tracking. Real installs
         # persist the window; ephemeral (:memory:) sessions keep it in RAM so
@@ -144,6 +147,21 @@ class Orchestrator(
                                 else db_path + ".ember")
         self.retriever.ember_store = self.embers
         self._ember_active = None   # (engram_id, prompted_ts) while a glow holds
+
+        # Stasis: save states for your mind (docs/STASIS.md). The stack is
+        # in-memory (three deep, like the drift engine's records); each live
+        # frame also rides a kind="stasis" memories row so a held thought
+        # survives a restart. Ephemeral session state (last verbatim
+        # utterance, last gaze panel, offer debounce) lives on self.
+        from .stasis import StasisStack
+        self.stasis = StasisStack()
+        self._stasis_last_utterance = ("", 0.0)   # (verbatim text, ts)
+        self._stasis_gaze = None                  # (key, panel card, ts)
+        self._stasis_overlays: list[dict] = []    # active overlay card dicts
+        self._stasis_offered: dict[int, float] = {}
+        self._stasis_last_place = ""
+        self._stasis_last_replay = None           # (frame_id, ts)
+        self._stasis_load()
 
         # Drift / scrub / tell engines
         self.drift_engine = CommitmentDriftEngine(self.ring)
@@ -541,6 +559,14 @@ class Orchestrator(
         if self.ember_prompt_active() and not detect_wake(text)[0]:
             return self.ember_attempt(text)
         it = parse_intent(text)
+        if it.kind == "stasis_freeze":
+            res = self.freeze_context(source="voice")
+            return {"intent": "stasis_freeze",
+                    "ok": bool(res), **(res or {})}
+        if it.kind == "stasis_resume":
+            res = self.resume_stasis()
+            return {"intent": "stasis_resume",
+                    "ok": bool(res and res.get("ok")), **(res or {})}
         if it.kind in ("ask", "recall"):
             ans = None
             try:

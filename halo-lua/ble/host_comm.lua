@@ -19,6 +19,7 @@
 local protocol = require("ble.protocol")
 local MT       = require("ble.message_types")
 local DC       = require("ble.host_comm_dream")   -- Dream Mode handlers
+local SC       = require("ble.host_comm_stasis")  -- Stasis handlers
 
 local M = {}
 
@@ -30,6 +31,8 @@ local _handlers = {}
 
 -- Register Dream Mode handlers immediately
 DC.register(_handlers)
+-- Register Stasis handlers (shutter + ribbon; docs/STASIS.md)
+SC.register(_handlers)
 
 -- ---------------------------------------------------------------------------
 -- bind(bluetooth_api)

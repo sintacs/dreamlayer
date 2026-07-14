@@ -358,6 +358,10 @@ class CommitmentRecallOps:
             return None
         p = self.proactive.on_place(signature)
         self.publish_plugin_event("place", {"signature": signature})
+        # Stasis ambient offer: returning to a frozen context re-lights the
+        # ribbon glyph — a raw frame, never a card, so it competes with
+        # nothing below and runs in both modes (docs/STASIS.md)
+        self.stasis_on_place(signature)
 
         if self.state.is_dream():
             anchors = []

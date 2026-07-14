@@ -35,6 +35,11 @@ you" is not a promise here; it's a property you can verify.
 - You think *"where did I leave the bike?"* — **north rack, 4th & Alder.**
 - You promised Marcus the lease by Friday. As Friday nears, the promise drifts
   to the rim and starts to glow. You don't forget.
+- Mid-thought at the workbench, the doorbell rings. You double-nod — the edge
+  of vision dims like a slow shutter — and answer the door with a clean
+  conscience. Back at the bench, the glasses hand you back your own last
+  sentence, verbatim, unfinished: *"…the torque spike should show up when—"*
+  Your brain finishes it.
 - You read a menu in a language you don't speak. It reads back in yours.
 - Three weeks ago your father told the lake house story you never wanted to
   lose. At the kitchen doorway a soft gold glow asks: *"What did Dad say
@@ -90,7 +95,7 @@ the full breakdown is in [`docs/LENSES.md`](docs/LENSES.md).
 
 | Lens | For | Includes |
 |---|---|---|
-| 🧠 **Memory** | your life, remembered | Dream Mode · Ghost Layer · Lucid Recall · REM · Yesterlight · Premonition · Waypath · Ember |
+| 🧠 **Memory** | your life, remembered | Dream Mode · Ghost Layer · Lucid Recall · REM · Yesterlight · Premonition · Waypath · Ember · Stasis |
 | 👤 **People** | who's around you | Social Lens · Timbre · Name Capture |
 | ⚖️ **Truth** | what's true, and where beliefs come from | Truth Lens · Candor · Provenance |
 | 🌍 **World** | understand what you look at | **Juno** (look → know) · Label Lens · **AI Brain** · Rosetta · Puente |

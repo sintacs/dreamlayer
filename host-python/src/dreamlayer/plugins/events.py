@@ -25,6 +25,10 @@ from __future__ import annotations
 KINDS = frozenset({
     "card_shown", "glance", "place",
     "dream_enter", "dream_exit", "veil", "mesh",
+    # Stasis (docs/STASIS.md): a freeze-frame was kept / replayed. A
+    # Pomodoro lens, a standup-notes lens, and a "focus room" lens all
+    # fall out of these two moments for free.
+    "stasis_freeze", "stasis_resume",
 })
 
 # kinds that require a declared capability to subscribe to; kinds not listed

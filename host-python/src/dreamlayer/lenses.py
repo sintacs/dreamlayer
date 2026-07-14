@@ -50,6 +50,8 @@ LENSES: list[Lens] = [
                 "dreamlayer.orchestrator.waypath"),
         Feature("ember", "Ember", "memories you tend until they live in you — then the tape burns",
                 "dreamlayer.ember"),
+        Feature("stasis", "Stasis", "save states for your mind: freeze a thought, resume inside it",
+                "dreamlayer.orchestrator.stasis"),
     ]),
     Lens("people", "People", "who's around you", [
         Feature("social_lens", "Social Lens", "recognise your own contacts (never strangers)",

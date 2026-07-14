@@ -230,6 +230,10 @@ end
 local CX,CY = 128,128
 
 local MAT = require("display.materials")
+-- Stasis shutter + ribbon (docs/STASIS.md): drawn just before every show()
+-- in tick(), so the affordance rides over idle Horizon and cards alike
+-- without owning the display (Dream Mode's pass lives in main.lua).
+local STASIS_FX = require("display.stasis")
 
 -- ObjectRecall trace: dim at the wearer, bright at the jewel; the bright
 -- half rides the card band bases so the conduct wave still flows there
@@ -2006,6 +2010,7 @@ function renderer.tick()
               aurora = true, ox = floor(rim_ox), oy = floor(rim_oy) })
     local air_ox, air_oy = PX.offset("air")
     PT.tick(now, air_ox, air_oy)
+    STASIS_FX.draw(now)
     frame.display.show()
     return
   end
@@ -2032,6 +2037,7 @@ function renderer.tick()
     frame.display.clear(0x000000)
     HZ.draw({ now_ms = now, reduce_motion = TR.reduce_motion(),
               ox = floor(rim_ox), oy = floor(rim_oy) })
+    STASIS_FX.draw(now)
     frame.display.show()
     return
   end
@@ -2066,6 +2072,7 @@ function renderer.tick()
   local air_ox, air_oy = PX.offset("air")
   PT.tick(now, air_ox, air_oy)
 
+  STASIS_FX.draw(now)
   frame.display.show()
 end
 

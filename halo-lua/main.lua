@@ -21,6 +21,9 @@ local PalAnim    = require("display.palette_animator")
 local Parallax   = require("display.parallax")
 local Anim       = require("display.animations")
 local Telemetry  = require("ble.telemetry")
+local StasisFx   = require("display.stasis")     -- shutter + ribbon in Dream
+                                                 -- Mode (Renderer owns Memory
+                                                 -- Mode's pass; docs/STASIS.md)
 local Theme      = require("display.theme")      -- Forkable Skin (3.6)
 
 -- Forkable Skin: if the host set a theme table before boot, restyle the
@@ -300,6 +303,8 @@ local function tick_body()
     -- Lumen: door streaks + any light programs ride over the weather
     Particles.tick(_tick_ms)
     PalAnim.tick(_tick_ms)
+    -- Stasis shutter/ribbon rides over the weather too (sub-card, no queue)
+    StasisFx.draw(_tick_ms)
     if has_frame then frame.display.show() end
   else
     -- Memory Mode: the queue decides WHAT holds focus; the renderer
