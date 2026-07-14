@@ -63,6 +63,10 @@ class WorldLensOps:
         panel = self.object_lens.look(frame, now=now, facets=facets)
         if panel is not None:
             self.bridge.send_card(panel.to_hud_card(), event="object_panel")
+            # Stasis: remember what's open (a freeze snapshots it as the
+            # gaze context) and, if this gaze landed on a frozen frame's
+            # object, make the quiet ribbon offer (docs/STASIS.md)
+            self.stasis_note_gaze(panel, now=now)
         elif frame is not None and self.privacy.allow_capture():
             # a deliberate look that produced nothing gets an honest card,
             # never silence and never a guess (veiled = deliberately blind,

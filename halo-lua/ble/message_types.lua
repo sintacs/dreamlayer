@@ -38,6 +38,14 @@ local MT = {
   -- horizon_composer.py — keep in sync)
   HORIZON         = "horizon",
 
+  -- Stasis: save states for your mind (host -> Halo)
+  -- {t="stasis", mode="freeze"|"offer"|"clear"} — the 400ms shutter dim +
+  -- ribbon glyph (freeze), the soft peripheral glow when the wearer returns
+  -- to a frozen context (offer), and the cleanup after a resume (clear).
+  -- Python side orchestrator/ops_stasis.py + bridge/base.py RAW_FRAME_TYPES
+  -- — keep in sync.
+  STASIS          = "stasis",
+
   -- Yesterlight: in-place time scrub (host -> Halo)
   -- {t="yesterlight", active=0|1, notch_dd=deci-deg, echo_dd=deci-deg?}
   -- Python side dream_mode/yesterlight.py MSG_YESTERLIGHT — keep in sync

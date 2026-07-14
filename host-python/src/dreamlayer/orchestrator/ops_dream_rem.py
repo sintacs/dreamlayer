@@ -67,6 +67,11 @@ class DreamRemOps:
                                    ann=self.retriever.ann)
             self.last_retention = sweep.sweep()
             sweep.purge_hot(self.ring)
+            # Stasis composting rides the same night: freeze-frames past
+            # their half-life dissolve into ordinary warm memories —
+            # unresumed thoughts fold into memory while you sleep
+            # (docs/STASIS.md; ops_stasis.compost_stasis).
+            self.last_stasis_compost = self.compost_stasis()
         return reel
 
 

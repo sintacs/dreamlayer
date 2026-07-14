@@ -16,6 +16,9 @@ RAW_FRAME_TYPES = frozenset({
     # Reality Compiler figments (host → app/figment_stage.lua) — the hub
     # deploys native timers/behaviors straight to the glasses, no Brain needed.
     "figment_put", "figment_swap", "figment_revoke", "figment_text",
+    # Stasis (host → ble/host_comm_stasis.lua): {mode: freeze|offer|clear}
+    # — the shutter dim + ribbon glyph. Keep in sync with message_types.lua.
+    "stasis",
 })
 
 # Raw frames still allowed while privacy-paused (mode control only; no

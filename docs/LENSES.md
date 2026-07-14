@@ -33,6 +33,13 @@ The resting state and everything about recall.
   anniversary Ember card is this feature's afterglow: a burned recording
   leaves a cue-only tombstone it resurfaces a year later.
   ([docs/EMBER.md](EMBER.md))
+- **Stasis** — save states for your mind. Interrupted mid-thought? Double-nod
+  (zero words — the ring already holds your last minute of thinking) and go.
+  Come back and it replays your own cues, context first, ending on your
+  unfinished sentence verbatim — the dash is the handoff. Untouched frames
+  compost into ordinary memory within a week; three live frames maximum,
+  because a tool for infinite open loops would recreate the disease it
+  treats. ([docs/STASIS.md](STASIS.md))
 
 ## 👤 People — *who's around you*
 

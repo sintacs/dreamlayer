@@ -333,6 +333,17 @@ def parse_intent(text: str) -> Intent:
     if not t:
         return Intent("ask", {"query": ""})
 
+    # Stasis (docs/STASIS.md) — exact idioms, checked first because both are
+    # complete utterances that must never fall through to ask/recall.
+    # "hold that thought" freezes; "where was I" resumes. Zero arguments by
+    # design: the system already holds the state.
+    if re.match(r"^hold (?:that|this|the)(?: thought)?$", t) \
+            or t == "hold that thought":
+        return Intent("stasis_freeze", {})
+    if re.match(r"^(?:where was i|what was i (?:doing|saying)|"
+                r"resume(?: my)? (?:thought|thread)|unfreeze)$", t):
+        return Intent("stasis_resume", {})
+
     # reply to <who> [with|saying] <text> — capture from the original casing
     m = re.match(r"(?:reply|respond|text|message)\s+(?:to\s+)?(\w[\w'.-]*)"
                  r"(?:[,:]?\s+(?:with|saying|that)\s+(.*))?$", r, re.IGNORECASE)

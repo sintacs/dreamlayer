@@ -197,6 +197,13 @@ class IngestOps:
             amplitude = context.get("mic_amplitude", 0.0)
             if fft is not None:
                 self.dream.feed_mic(fft, float(amplitude))
+        # Stasis keeps ONE verbatim utterance — the deliberate, scoped
+        # loosening of the ring's semantic-only contract (docs/STASIS.md):
+        # a paraphrase kills the retrieval cue, and the whole point of a
+        # resume is handing back your own unfinished sentence. Veil-gated
+        # like every capture path; overwritten by the next utterance.
+        if transcript and self.privacy.allow_capture():
+            self._stasis_last_utterance = (transcript, self._clock())
         return self.silent_capture.capture_transcript(transcript, context=context, now_ms=now_ms)
 
 
@@ -215,13 +222,30 @@ class IngestOps:
         crashes."""
         g = (gesture or "").strip().upper()
         if g == "NOD_SAVE":
+            # NOD_SAVE on a just-replayed freeze-frame pins the FRAME (the
+            # "next month" escape hatch, docs/STASIS.md); anywhere else it
+            # stays the flagship Nod-to-Remember pin.
+            from .ops_stasis import REPLAY_PIN_WINDOW_S
+            replay = getattr(self, "_stasis_last_replay", None)
+            if replay is not None and \
+                    self._clock() - replay[1] <= REPLAY_PIN_WINDOW_S:
+                return {"gesture": g,
+                        "stasis": self.pin_stasis(replay[0])}
             return self.pin_latest(confidence)
         if g == "SHAKE_DISMISS":
             # the wearer swatted the current card away — the same trust signal a
             # tap-dismiss feeds (see _on_event TEL / CARD_DISMISSED)
             self.maturity.observe_card(dismissed=True)
             return {"gesture": g, "dismissed": True}
-        if g in ("GLANCE_PEEK", "DOUBLE_NOD", "TILT_REVEAL"):
+        if g == "DOUBLE_NOD":
+            # Stasis freeze: two quick nods say *keep this* — zero words,
+            # zero decisions. Veiled → freeze_context is a silent no-op.
+            return {"gesture": g, "stasis": self.freeze_context()}
+        if g == "TILT_REVEAL":
+            # Stasis resume: the sustained down-tilt is the natural
+            # "settle back in" posture — reopen the top freeze-frame.
+            return {"gesture": g, "stasis": self.resume_stasis()}
+        if g == "GLANCE_PEEK":
             return {"gesture": g}
         return {"gesture": g, "ignored": True}
 
