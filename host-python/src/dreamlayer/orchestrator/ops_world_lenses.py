@@ -7,12 +7,14 @@ was changed in the move.
 """
 from __future__ import annotations
 
+from ._ops_host import OpsHost
+
 from ..hud import cards
 from ._ops_helpers import _parse_scene_reply
 from ._ops_helpers import _parse_taste_reply
 
 
-class WorldLensOps:
+class WorldLensOps(OpsHost):
 
     # ------------------------------------------------------------------
     # Instant Skill Overlay (a procedure compiled to a Figment)
@@ -36,6 +38,7 @@ class WorldLensOps:
             return None
         result = self.consistency.check(claim, now=now)
         if result.fired:
+            assert result.card is not None      # a fired result always has a card
             self.bridge.send_card(result.card, event="consistency")
         return result
 
@@ -47,6 +50,7 @@ class WorldLensOps:
             return None
         result = self.provenance.trace(claim, now=now)
         if result.found:
+            assert result.card is not None      # a found result always has a card
             self.bridge.send_card(result.card, event="provenance")
         return result
 
@@ -385,9 +389,17 @@ class WorldLensOps:
         lo = (target - _dt.timedelta(days=window_days)).isoformat()
         hi = (target + _dt.timedelta(days=window_days)).isoformat()
         try:
-            rows = self.db.conn.execute(
-                "SELECT summary, meta FROM memories WHERE created_at BETWEEN ? AND ? "
-                "ORDER BY created_at", (lo, hi)).fetchall()
+            # Shared SQLite connection: capture writes off-thread, so this read
+            # must ride the MemoryDB RLock like every other db.conn access
+            # (memory/db.py serializes all statements; memory/vector_store.py
+            # holds the same lock). An unlocked read here raced the writer's
+            # interleaved commits — the exact hazard the lock exists for
+            # (audit 2026-07-14 §7). fetchall() stays inside the guard so the
+            # cursor is fully drained before the lock is released.
+            with self.db._lock:
+                rows = self.db.conn.execute(
+                    "SELECT summary, meta FROM memories WHERE created_at BETWEEN ? AND ? "
+                    "ORDER BY created_at", (lo, hi)).fetchall()
         except Exception:
             return None
         for summary, meta_s in rows:
