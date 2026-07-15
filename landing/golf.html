@@ -9,109 +9,182 @@
 <meta property="og:description" content="Express a behavior in the fewest bytes. Verified, not voted. Climb the board." />
 <meta property="og:url" content="https://dreamlayer.app/golf.html" />
 <link rel="canonical" href="https://dreamlayer.app/golf.html" />
+<meta name="theme-color" content="#DDDDDD" />
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="%232CC79A" stroke-width="4"/><circle cx="32" cy="32" r="6" fill="%232CC79A"/></svg>'>
+<link rel="preload" href="assets/fonts/ChicagoFLF.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/SpaceGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  :root{
-    --bg:#07100f; --surface:#0e1a18; --surface2:#12211f; --border:#1c2e2b;
-    --text:#eaf3f1; --text2:#8aa5a0; --teal:#2fd4c4; --amber:#e0b54a;
-    --red:#e06b52; --green:#56d364;
-  }
+  /* ============================================================
+     Figment Golf — page CSS on top of the shared Platinum kit.
+     One application window; the leaderboard is a classic Mac
+     list view ("High Scores"); the live preview is a screen.
+     ============================================================ */
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  a{color:var(--teal);text-decoration:none}
-  a:hover{text-decoration:underline}
-  header{padding:20px 26px;border-bottom:1px solid var(--border);display:flex;
-    align-items:baseline;gap:14px;flex-wrap:wrap}
-  header h1{font-size:19px;margin:0;font-weight:650}
-  header .tag{color:var(--text2);font-size:13.5px;max-width:600px}
-  header .home{margin-left:auto;font-size:13.5px;display:flex;gap:16px}
-  .wrap{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 62px)}
-  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
-  .col{padding:22px;overflow-y:auto}
-  .col.left{border-right:1px solid var(--border)}
-  @media(max-width:900px){.col.left{border-right:0;border-bottom:1px solid var(--border)}}
-  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin:0 0 12px}
-  .chal{width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);
-    border-radius:14px;padding:13px 15px;margin-bottom:10px;cursor:pointer;color:inherit;transition:.15s;
-    display:flex;gap:12px;align-items:flex-start}
-  .chal:hover{border-color:var(--teal)}
-  .chal.on{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal)}
-  .chal .ico{font-size:22px;flex:none;width:26px;text-align:center}
-  .chal b{display:block;font-size:15px;margin-bottom:2px}
-  .chal span{color:var(--text2);font-size:12.5px;display:block}
-  .chal .par{color:var(--teal);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:4px}
-  .brief{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:18px}
-  .brief h2{margin:0 0 6px;font-size:18px}
-  .brief p{margin:0;color:var(--text2)}
-  .brief .par-line{margin-top:10px;color:var(--teal);font-size:13px}
-  .rules{color:var(--text2);font-size:12.5px;margin:8px 0 0}
-  .grid2{display:grid;grid-template-columns:1fr 300px;gap:20px}
-  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
-  label.f{display:block;font-size:12px;color:var(--text2);margin:14px 0 5px}
-  textarea,input{font:inherit;background:var(--surface2);color:var(--text);
-    border:1px solid var(--border);border-radius:9px;padding:9px 11px;width:100%}
-  textarea{resize:vertical;min-height:64px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
-  .btnrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
-  button.btn{font:inherit;background:var(--teal);color:#00201c;border:0;border-radius:999px;
-    padding:9px 18px;font-weight:650;cursor:pointer}
-  button.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:600}
-  button.btn:disabled{opacity:.45;cursor:default}
-  .verify{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:16px}
-  .verify.pending{opacity:.6}
-  .score{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-  .score .big{font-size:30px;font-weight:700}
-  .score .par{color:var(--text2);font-size:13px}
-  .score .delta{font-size:13px;font-weight:650;padding:2px 10px;border-radius:999px}
-  .score .delta.under{color:var(--green);border:1px solid rgba(86,211,100,.4)}
-  .score .delta.over{color:var(--amber);border:1px solid rgba(224,181,74,.4)}
-  ul.checks{list-style:none;margin:0;padding:0}
-  ul.checks li{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;padding:4px 0}
-  ul.checks li .mk{flex:none;width:18px;text-align:center}
-  ul.checks li.pass .mk{color:var(--green)} ul.checks li.fail .mk{color:var(--red)}
-  ul.checks li.fail{color:var(--text2)}
-  ul.checks li .why{color:var(--text2);font-size:12px;margin-left:6px}
-  .preview{display:flex;flex-direction:column;align-items:center;gap:10px}
-  .preview canvas{width:220px;height:220px;border-radius:50%;background:#000;box-shadow:0 0 40px rgba(47,212,196,.1)}
-  .preview .cap{color:var(--text2);font-size:12px}
-  .board{margin-top:26px}
-  .board h3{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border)}
-  th{color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
-  td.rank{color:var(--teal);font-weight:700;width:38px}
-  td.bytes{font-variant-numeric:tabular-nums;font-weight:650}
-  tr.you{background:rgba(47,212,196,.06)}
-  .board .empty{color:var(--text2);font-size:13px;padding:14px 0}
-  .medal{font-size:14px}
-  .toast{font-size:13px;min-height:18px;margin-top:8px}
-  .toast.ok-t{color:var(--green)} .toast.err-t{color:var(--red)}
-  .offline{color:var(--amber);font-size:12.5px;margin-top:6px}
-  /* inline-svg icons */
+  body{margin:0;color:var(--ink)}
+  .mbody a{color:var(--teal-ink)}
+  .mbody a:hover{text-decoration:underline}
+
+  /* inline-svg icons (DLIcon) */
   .ic{width:1em;height:1em;display:inline-block;vertical-align:-0.14em;flex:none}
   [data-icon]{display:inline-flex;align-items:center}
-  header h1 .ttl-ic .ic{width:1.05em;height:1.05em;vertical-align:-0.16em;color:var(--teal)}
-  .home a [data-icon] .ic{width:.95em;height:.95em}
-  .chal .ico .ic{width:22px;height:22px;color:var(--teal)}
-  .board h3 .ic{width:1em;height:1em;color:var(--amber);margin-right:4px;vertical-align:-0.14em}
-  td.rank .ic{width:18px;height:18px;vertical-align:-0.28em}
-  .ic-gold{color:#e0b54a}.ic-silver{color:#c3ced2}.ic-bronze{color:#c8875a}
+
+  /* ---------- the application window ---------- */
+  .mw.app{margin-bottom:0}
+  .mw.app>.mbody{padding:0}
+  .intro{padding:24px 26px 20px;border-bottom:1px solid var(--frame);background:var(--paper)}
+  .intro h1{font-family:var(--chi);font-weight:400;font-size:clamp(22px,3vw,28px);
+    color:var(--ink);margin:0;display:flex;align-items:center;gap:10px;line-height:1.2}
+  .intro h1 .ic{width:1.05em;height:1.05em;color:var(--teal-ink)}
+  .intro .tag{margin:8px 0 0;color:var(--ink2);font-size:14.5px;line-height:1.6;max-width:660px}
+  .intro .tag b{color:var(--teal-ink)}
+
+  .wrap{display:grid;grid-template-columns:308px minmax(0,1fr)}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .col{padding:22px;min-width:0}
+  .col.left{border-right:1px solid var(--frame);background:#E6E6E6;
+    box-shadow:inset -1px 0 0 var(--pl-hi)}
+  @media(max-width:900px){.col.left{border-right:0;border-bottom:1px solid var(--frame);
+    box-shadow:inset 0 -1px 0 var(--pl-hi)}}
+
+  .eyebrow{display:inline-block;font-family:var(--chi);font-size:12.5px;letter-spacing:.04em;
+    color:var(--teal-ink);border-bottom:1px solid rgba(11,107,82,.35);padding-bottom:2px;margin:0 0 14px}
+
+  /* ---------- challenge list (Platinum cards; selection blue) ---------- */
+  .chal{display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;
+    font:inherit;font-size:14px;color:var(--ink);background:#fff;border:1px solid var(--frame);
+    box-shadow:var(--bev-out),2px 2px 0 rgba(0,0,0,.18);padding:12px 13px;margin-bottom:12px;
+    cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .chal:hover{background:#F7F7F7}
+  .chal:focus-visible{outline:2px solid var(--hi);outline-offset:2px}
+  .chal .ico{flex:none;width:24px;text-align:center;color:var(--teal-ink)}
+  .chal .ico .ic{width:22px;height:22px}
+  .chal .tx{min-width:0}
+  .chal b{display:block;font-family:var(--chi);font-weight:400;font-size:15px;margin-bottom:2px}
+  .chal span{display:block;color:var(--ink2);font-size:12.5px;line-height:1.5}
+  .chal .par{font-family:var(--chi);font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--teal-ink);margin-top:5px}
+  .chal.on{background:var(--hi);color:#fff;
+    box-shadow:inset 1px 1px 0 rgba(255,255,255,.25),inset -1px -1px 0 rgba(0,0,0,.35),
+    2px 2px 0 rgba(0,0,0,.28)}
+  .chal.on b{color:#fff}
+  .chal.on span{color:#C9CDF2}
+  .chal.on .ico,.chal.on .par{color:#9FE8D4}
+  .rules{color:var(--ink2);font-size:12.5px;line-height:1.6;margin:16px 0 0}
+  .rules b{color:var(--ink)}
+
+  /* ---------- brief ---------- */
+  .brief{background:#fff;border:1px solid var(--frame);
+    box-shadow:var(--bev-out),2px 2px 0 rgba(0,0,0,.16);padding:16px 18px;margin-bottom:20px}
+  .brief h2{margin:0 0 6px;font-family:var(--chi);font-weight:400;font-size:21px;color:var(--ink)}
+  .brief p{margin:0;color:var(--ink2);font-size:14.5px;line-height:1.6}
+  .brief .par-line{margin-top:10px;font-family:var(--chi);font-size:12.5px;color:var(--teal-ink)}
+
+  /* ---------- submit form ---------- */
+  .grid2{display:grid;grid-template-columns:minmax(0,1fr) 272px;gap:20px;align-items:start}
+  @media(max-width:1020px){.grid2{grid-template-columns:1fr}}
+  label.f{display:block;font-family:var(--chi);font-size:12px;color:var(--ink);margin:14px 0 6px;line-height:1.5}
+  label.f .ic{color:var(--teal-ink)}
+  .make label.f:first-child{margin-top:0}
+  .make .pfield{display:block;width:100%}
+  #code{font-family:var(--mono);font-size:12px;resize:vertical;min-height:76px}
+  .btnrow{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .pbtn:disabled{opacity:.45;cursor:default}
+  .toast{font-family:var(--chi);font-size:12.5px;min-height:18px;margin-top:10px}
+  .toast.ok-t{color:var(--teal-ink)} .toast.err-t{color:var(--coral-ink)}
+
+  /* ---------- live preview: a little screen window ---------- */
+  .pvwin{width:100%;max-width:272px;justify-self:center}
+  .preview{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 14px 13px}
+  .preview canvas{width:200px;height:200px;max-width:100%;border-radius:50%;background:#000;
+    border:1px solid var(--h-border);
+    box-shadow:0 0 40px rgba(47,212,196,.14),inset 0 0 30px rgba(0,0,0,.6)}
+  .preview .cap{color:var(--h-text2);font-family:var(--chi);font-size:11.5px;text-align:center;
+    line-height:1.5;min-height:1.5em;max-width:100%;overflow-wrap:anywhere}
+
+  /* ---------- verification ---------- */
+  .verify{background:#fff;border:1px solid var(--frame);
+    box-shadow:var(--bev-out),2px 2px 0 rgba(0,0,0,.16);padding:16px 18px;margin-top:20px}
+  .verify.pending{opacity:.72}
+  .score{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .score .big{font-family:var(--chi);font-weight:400;font-size:30px;color:var(--ink)}
+  .score .par{color:var(--ink2);font-size:13px}
+  .score .delta{font-family:var(--chi);font-size:12px;padding:3px 10px;border:1px solid;
+    box-shadow:1px 1px 0 rgba(0,0,0,.16)}
+  .score .delta.under{color:var(--teal-ink);background:#EAF6F1;border-color:var(--teal-ink)}
+  .score .delta.over{color:var(--coral-ink);background:#F9EEEA;border-color:var(--coral-ink)}
+  ul.checks{list-style:none;margin:0;padding:0}
+  ul.checks li{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;padding:5px 0;
+    color:var(--ink);border-top:1px solid #DFDFDF}
+  ul.checks li:first-child{border-top:0}
+  ul.checks li .mk{flex:none;width:18px;text-align:center;font-family:var(--chi)}
+  ul.checks li.pass .mk{color:var(--teal-ink)} ul.checks li.fail .mk{color:var(--coral-ink)}
+  ul.checks li.fail{color:var(--ink2)}
+  ul.checks li .why{color:var(--ink2);font-size:12px;margin-left:6px}
+
+  /* ---------- High Scores: the classic Mac list view ---------- */
+  .board{margin-top:26px}
+  .board h3{font-family:var(--chi);font-weight:400;font-size:15px;margin:0 0 12px;
+    display:flex;align-items:center;gap:8px;color:var(--ink)}
+  .board h3 .ic{width:1em;height:1em;color:#8A6516}
+  .board h3 .note{color:var(--ink2);font-size:12px;font-family:var(--font)}
+  .hswin{max-width:640px}
+  .hswin .mbody{background:#fff;padding:0;overflow-x:auto}
+  .hswin table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:430px}
+  .hswin th{font-family:var(--chi);font-weight:400;font-size:12px;color:var(--ink);text-align:left;
+    padding:6px 12px;background:var(--paper);border-bottom:1px solid var(--frame);
+    border-right:1px solid #C6C6C6;white-space:nowrap}
+  .hswin th:last-child{border-right:0}
+  .hswin th.b{text-align:right}
+  .hswin td{padding:7px 12px;border-bottom:1px solid #E4E4E4;border-right:1px solid #EDEDED;
+    color:var(--ink)}
+  .hswin td:last-child{border-right:0}
+  .hswin tbody tr:last-child td{border-bottom:0}
+  .hswin tbody tr:nth-child(even){background:#F1F3F7}
+  .hswin td.rank{width:52px;font-family:var(--chi)}
+  .hswin td.rank .ic{width:17px;height:17px;vertical-align:-0.28em}
+  .hswin td.fig a{color:var(--teal-ink);border-bottom:1px solid rgba(11,107,82,.35)}
+  .hswin td.fig a:hover{text-decoration:none;border-bottom-color:var(--teal-ink)}
+  .hswin td.bytes{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;
+    font-weight:600;text-align:right;white-space:nowrap}
+  .hswin tr.you td{background:#E4F2EC}
+  /* the #1 row wears the classic selection blue */
+  .hswin tr.first td{background:var(--hi);color:#fff;
+    border-bottom-color:#26267A;border-right-color:rgba(255,255,255,.22)}
+  .hswin tr.first td.fig a{color:#fff;border-bottom-color:rgba(255,255,255,.5)}
+  .ic-gold{color:#C9962B}.ic-silver{color:#7E8A90}.ic-bronze{color:#A66B3F}
+  .hswin tr.first .ic-gold{color:#FFD34D}
+  .board .empty{color:var(--ink2);font-size:13px;padding:16px 14px}
+  .board .offline{color:#8A6516;font-size:12.5px;padding:16px 14px}
 </style>
+<link rel="stylesheet" href="assets/platinum/platinum.css">
 </head>
 <body>
-<header>
-  <h1><span class="ttl-ic" data-icon="flag"></span> Figment Golf</h1>
-  <span class="tag">Express the exact behavior in the fewest bytes. Every entry is <b>verified</b> against the real interpreter — skill, not votes.</span>
-  <span class="home"><a href="./gallery.html"><span data-icon="globe"></span> Gallery</a><a href="./lens-builder.html">Builder</a><a href="./index.html">Home</a></span>
-</header>
 
-<div class="wrap">
-  <div class="col left">
-    <p class="eyebrow">Challenges</p>
-    <div id="chalList"></div>
-    <p class="rules">Each brief is checked by <b>behavior</b>, never shape. Your score is the lens's canonical byte size — the registry recomputes it, so the board can't be gamed.</p>
+<main class="mw app" aria-label="Figment Golf">
+  <div class="tbar">
+    <span class="wbox close" data-balloon="This window stays. It's the whole point." aria-hidden="true"></span>
+    <span class="tstripes" aria-hidden="true"></span>
+    <span class="ttext">Figment Golf</span>
+    <span class="tstripes" aria-hidden="true"></span>
+    <span class="wbox collapse" aria-hidden="true"></span>
+    <span class="wbox zoom" aria-hidden="true"></span>
   </div>
-  <div class="col right" id="detail"></div>
-</div>
+  <div class="fstatus"><span>verified, not voted</span><span aria-hidden="true">·</span><span>fewest bytes wins</span></div>
+  <div class="mbody">
+    <div class="intro">
+      <h1><span data-icon="flag" aria-hidden="true"></span>Figment Golf</h1>
+      <p class="tag">Express the exact behavior in the fewest bytes. Every entry is <b>verified</b> against the real interpreter — skill, not votes.</p>
+    </div>
+    <div class="wrap">
+      <div class="col left">
+        <p class="eyebrow">Challenges</p>
+        <div id="chalList"></div>
+        <p class="rules">Each brief is checked by <b>behavior</b>, never shape. Your score is the lens's canonical byte size — the registry recomputes it, so the board can't be gamed.</p>
+      </div>
+      <div class="col right" id="detail"></div>
+    </div>
+  </div>
+</main>
 
 <script src="./assets/lens/icons.js"></script>
 <script src="./assets/lens/figment.js"></script>
@@ -158,20 +231,22 @@
         '<div class="par-line">Par: <b>' + ch.par + ' bytes</b> — beat it to go under par.</div></div>' +
       '<div class="grid2">' +
         '<div class="make">' +
-          '<label class="f">Paste your lens’s share code or link (the builder’s ' + DLIcon("link") + ' Share button gives you one)</label>' +
-          '<textarea id="code" placeholder="eyJ2Ijox… or https://dreamlayer.app/lens-builder.html#lens=…"></textarea>' +
+          '<label class="f" for="code">Paste your lens’s share code or link (the builder’s ' + DLIcon("link") + ' Share button gives you one)</label>' +
+          '<textarea id="code" class="pfield" placeholder="eyJ2Ijox… or https://dreamlayer.app/lens-builder.html#lens=…"></textarea>' +
           '<div class="btnrow">' +
-            '<a class="btn ghost" href="' + starterUrl(ch) + '">✦ Start one in the builder →</a>' +
-            '<button class="btn" id="submitBtn" disabled>Submit to the board</button>' +
+            '<a class="pbtn" href="' + starterUrl(ch) + '">✦ Start one in the builder →</a>' +
+            '<button class="pbtn go" id="submitBtn" disabled>Submit to the board</button>' +
           '</div>' +
-          '<label class="f">Your maker handle</label>' +
-          '<input id="author" maxlength="40" placeholder="how the board should credit you" />' +
+          '<label class="f" for="author">Your maker handle</label>' +
+          '<input id="author" class="pfield" maxlength="40" placeholder="how the board should credit you" />' +
           '<div class="toast" id="toast"></div>' +
         '</div>' +
-        '<div class="preview"><canvas id="pv" width="240" height="240"></canvas>' +
-          '<div class="cap" id="pvcap">paste a lens to preview it live</div></div>' +
+        '<div class="mw sub pvwin"><div class="tbar"><span class="tstripes" aria-hidden="true"></span>' +
+          '<span class="ttext">Live Preview</span><span class="tstripes" aria-hidden="true"></span></div>' +
+          '<div class="mbody screen preview"><canvas id="pv" width="240" height="240"></canvas>' +
+          '<div class="cap" id="pvcap">paste a lens to preview it live</div></div></div>' +
       '</div>' +
-      '<div class="verify pending" id="verify"><div class="cap" style="color:var(--text2);font-size:13px">Your solution is checked here the moment you paste it.</div></div>' +
+      '<div class="verify pending" id="verify"><div class="cap" style="color:var(--ink2);font-size:13px">Your solution is checked here the moment you paste it.</div></div>' +
       '<div class="board" id="board"></div>';
     d.querySelector(".brief h2").textContent = ch.title;
     d.querySelector(".brief p").textContent = ch.brief;
@@ -195,10 +270,10 @@
     var btn = document.getElementById("submitBtn");
     var cap = document.getElementById("pvcap");
     if(player){ try{ player.stop(); }catch(e){} player=null; }
-    if(!code){ v.className="verify pending"; v.innerHTML='<div class="cap" style="color:var(--text2);font-size:13px">Your solution is checked here the moment you paste it.</div>';
+    if(!code){ v.className="verify pending"; v.innerHTML='<div class="cap" style="color:var(--ink2);font-size:13px">Your solution is checked here the moment you paste it.</div>';
       btn.disabled=true; cap.textContent="paste a lens to preview it live"; drawBlank(); return; }
     var got = K.decodeShare(code);
-    if(!got || !got.figment){ v.className="verify"; v.innerHTML='<div style="color:var(--red)">That code isn’t a valid, safe lens. Copy it from the builder’s Share button.</div>';
+    if(!got || !got.figment){ v.className="verify"; v.innerHTML='<div style="color:var(--coral-ink)">That code isn’t a valid, safe lens. Copy it from the builder’s Share button.</div>';
       btn.disabled=true; cap.textContent="—"; drawBlank(); return; }
     lastCode = code;
     // live preview
@@ -217,8 +292,8 @@
         return '<li class="' + (c.ok?"pass":"fail") + '"><span class="mk">' + (c.ok?"✓":"✕") + '</span>' +
           '<span>' + esc(c.label) + (c.ok?"":('<span class="why">— ' + esc(c.why||"") + '</span>')) + '</span></li>';
       }).join("") + '</ul>' +
-      (res.solved ? '<div style="color:var(--green);margin-top:8px">✓ Solved — submit it and see where you land.</div>'
-                  : '<div style="color:var(--text2);margin-top:8px">Fix the ✕ checks in the builder, re-share, and paste again.</div>');
+      (res.solved ? '<div style="color:var(--teal-ink);margin-top:8px">✓ Solved — submit it and see where you land.</div>'
+                  : '<div style="color:var(--ink2);margin-top:8px">Fix the ✕ checks in the builder, re-share, and paste again.</div>');
     btn.disabled = !res.solved;
   }
 
@@ -250,29 +325,53 @@
       }).catch(function(){ toast.className="toast err-t"; toast.textContent="Offline — the board needs a connection to record your score."; });
   }
 
+  /* the leaderboard, as a classic Mac list view: a sub-window titled
+     "High Scores", Chicago column headers, 1px rules, the #1 row in
+     the old selection blue. */
+  function boardHead(note){
+    return '<h3>' + DLIcon("trophy") + 'Leaderboard' +
+      (note ? ' <span class="note">fewest bytes wins</span>' : '') + '</h3>';
+  }
+  function hsShell(inner){
+    return '<div class="mw sub hswin"><div class="tbar">' +
+      '<span class="tstripes" aria-hidden="true"></span>' +
+      '<span class="ttext">High Scores</span>' +
+      '<span class="tstripes" aria-hidden="true"></span>' +
+      '<span class="wbox zoom" aria-hidden="true"></span></div>' +
+      '<div class="mbody">' + inner + '</div></div>';
+  }
+  function figName(code){
+    try{ var g = K.decodeShare(code); return (g && g.figment && g.figment.name) || "shared lens"; }
+    catch(e){ return "shared lens"; }
+  }
   function loadBoard(id){
     var board = document.getElementById("board");
-    board.innerHTML = '<h3>' + DLIcon("trophy") + 'Leaderboard</h3><div class="empty">Loading…</div>';
+    board.innerHTML = boardHead(false) + hsShell('<div class="empty">Loading…</div>');
     fetch(REGISTRY + "/api/golf/" + id + "/leaderboard")
       .then(function(r){ return r.json(); })
       .then(function(d){ renderBoard(id, d.entries||[]); })
-      .catch(function(){ board.innerHTML = '<h3>' + DLIcon("trophy") + 'Leaderboard</h3><div class="offline">The board loads when you’re online. Verify and build offline — submit when you reconnect.</div>'; });
+      .catch(function(){ board.innerHTML = boardHead(false) +
+        hsShell('<div class="offline">The board loads when you’re online. Verify and build offline — submit when you reconnect.</div>'); });
   }
   function renderBoard(id, entries, you){
     if(id !== sel) return;
     var board = document.getElementById("board");
     var medal = ["ic-gold","ic-silver","ic-bronze"];
-    if(!entries.length){ board.innerHTML = '<h3>' + DLIcon("trophy") + 'Leaderboard</h3><div class="empty">No entries yet — be the first to set par.</div>'; return; }
-    board.innerHTML = '<h3>' + DLIcon("trophy") + 'Leaderboard <span style="color:var(--text2);font-weight:400;font-size:12px">fewest bytes wins</span></h3>' +
-      '<table><thead><tr><th>#</th><th>Maker</th><th>Bytes</th><th></th></tr></thead><tbody>' +
+    if(!entries.length){ board.innerHTML = boardHead(false) +
+      hsShell('<div class="empty">No entries yet — be the first to set par.</div>'); return; }
+    board.innerHTML = boardHead(true) + hsShell(
+      '<table><thead><tr><th>Rank</th><th>Player</th><th>Figment</th><th class="b">Bytes</th></tr></thead><tbody>' +
       entries.map(function(e,i){
         var rank = e.rank || (i+1);
-        return '<tr class="' + (you && e.author===you ? "you":"") + '">' +
+        var cls = [];
+        if(rank===1) cls.push("first");
+        if(you && e.author===you) cls.push("you");
+        return '<tr class="' + cls.join(" ") + '">' +
           '<td class="rank">' + (rank>=1&&rank<=3?DLIcon('medal', medal[rank-1]):rank) + '</td>' +
           '<td>' + esc(e.author) + '</td>' +
-          '<td class="bytes">' + e.bytes + '</td>' +
-          '<td><a href="./lens-builder.html#lens=' + encodeURIComponent(e.code) + '">Study →</a></td></tr>';
-      }).join("") + '</tbody></table>';
+          '<td class="fig"><a href="./lens-builder.html#lens=' + encodeURIComponent(e.code) + '" title="Study this solution in the builder">' + esc(figName(e.code)) + ' →</a></td>' +
+          '<td class="bytes">' + e.bytes + '</td></tr>';
+      }).join("") + '</tbody></table>');
   }
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
@@ -281,5 +380,7 @@
   else document.getElementById("detail").innerHTML = '<div class="brief"><h2>Couldn’t load the game.</h2><p>Refresh to try again.</p></div>';
 })();
 </script>
+<script>window.PLATINUM={app:"Figment Golf",daLine:"fewest bytes wins."}</script>
+<script src="assets/platinum/platinum.js" defer></script>
 </body>
 </html>
