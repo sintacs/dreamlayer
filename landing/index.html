@@ -153,6 +153,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   mask:radial-gradient(circle,transparent 0 3.5px,#000 3.5px 60%,transparent 0)}
 .mitem[aria-expanded="true"] .mark6{filter:brightness(1.6) saturate(.4)}
 .mclock{display:flex;align-items:center;padding:0 14px;font-family:var(--chi);font-size:14px;color:#111}
+.mjuno{padding:0 9px;cursor:default}
+.mjuno img{width:18px;height:18px;image-rendering:pixelated}
 .mright .pulse{gap:8px}
 .mright .pulse .dot{width:7px;height:7px;border-radius:50%;background:var(--teal-ink);
   animation:blink var(--breath) ease-in-out infinite}
@@ -301,9 +303,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .da .tbar{cursor:default}
 .mw.sub.da .mbody{background:var(--scr);padding:12px 10px 9px;text-align:center}
 .dasprite{width:112px;height:auto;margin:0 auto;image-rendering:pixelated;
-  filter:drop-shadow(0 0 14px rgba(44,199,154,.28));
-  animation:dabob 4.2s steps(6) infinite}
-@keyframes dabob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  filter:drop-shadow(0 0 14px rgba(44,199,154,.28))}
 .dacap{margin-top:8px;font-family:var(--chi);font-size:11.5px;color:var(--h-text2);
   line-height:1.45;min-height:2.6em}
 .mw.sub.da.shut .mbody{display:none}
@@ -360,14 +360,15 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   transform:translate(-50%,-50%);border-radius:50%;z-index:-1;
   background:radial-gradient(closest-side,rgba(47,212,196,.20),rgba(120,180,255,.08) 55%,transparent 78%);
   filter:blur(18px);animation:junoAura 6.5s ease-in-out infinite}
-/* the render keeps its black plate; screen-blend over the near-black field
-   composites her wing glow with no matte line. The idle loop is a muted
-   inline video; the still is the reduced-motion / no-autoplay fallback. */
+/* the idle loop is a muted inline video on a black plate — screen-blend +
+   a black crush + a soft radial mask make the plate vanish over the field.
+   The reduced-motion / no-autoplay fallback is a true-alpha still, so it
+   needs none of those hacks. */
 .hero .hero-juno video,.hero .hero-juno img{width:100%;height:auto;display:block;
-  mix-blend-mode:screen;filter:contrast(1.32) brightness(.98);
-  -webkit-mask-image:radial-gradient(ellipse closest-side,#000 74%,transparent 99%);
-  mask-image:radial-gradient(ellipse closest-side,#000 74%,transparent 99%);
   animation:junoFloat 11s ease-in-out infinite;will-change:transform}
+.hero .hero-juno video{mix-blend-mode:screen;filter:contrast(1.32) brightness(.98);
+  -webkit-mask-image:radial-gradient(ellipse closest-side,#000 74%,transparent 99%);
+  mask-image:radial-gradient(ellipse closest-side,#000 74%,transparent 99%)}
 .hero .hero-juno img{display:none}
 @keyframes junoFloat{
   0%{transform:translateY(0) rotate(-.6deg)}
@@ -740,6 +741,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   background:var(--teal-ink);animation:blink var(--breath) ease-in-out infinite}
 .soon .device span{font-family:var(--chi);font-size:12.5px;letter-spacing:.08em;color:var(--ink2);
   text-transform:uppercase}
+/* Juno wakes over the closing window — true-alpha loop, lazy, calm */
+.soon-juno{width:min(48vw,280px);margin:2px auto 6px}
+.soon-juno img{width:100%;height:auto;display:block;
+  filter:drop-shadow(0 6px 30px rgba(11,107,82,.30));
+  animation:junoFloatLite 9s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.soon-juno img{animation:none}}
 .soon h2.display{margin-bottom:20px;color:var(--ink)}
 .soon .body{max-width:560px;margin:0 auto 36px}
 .soon .body a{color:var(--teal-ink);border-bottom:1px solid rgba(11,107,82,.4)}
@@ -898,6 +905,8 @@ footer{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
     <button class="mitem" data-menu="m-help" aria-haspopup="true" aria-expanded="false">Help</button>
   </nav>
   <div class="mright">
+    <span class="mitem mjuno" data-balloon="Juno is running."><img
+      src="assets/juno/juno_icon32b.png" alt="" width="32" height="32"></span>
     <a class="mitem pulse" href="#soon"><i class="dot" aria-hidden="true"></i>Early access</a>
     <span class="mclock" id="mclock" data-balloon="Local time. The layer never phones home to check.">9:41 AM</span>
   </div>
@@ -1013,7 +1022,10 @@ footer{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
     <button class="wbox collapse" id="daShade" tabindex="-1"
       data-balloon="WindowShade — roll Juno up. She won't mind."></button></div>
   <div class="mbody dabody">
-    <img class="dasprite" src="assets/juno/juno_pixel.png" alt="" width="603" height="657">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="assets/juno/juno_da_still.png">
+      <img class="dasprite" src="assets/juno/juno_da.webp" alt="" width="96" height="96">
+    </picture>
     <div class="dacap" id="daCap">hi. i’m juno.</div>
   </div>
 </aside>
@@ -1036,7 +1048,7 @@ footer{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
         <div class="hero-juno" aria-hidden="true">
           <video muted loop playsinline preload="metadata" poster="assets/juno/juno_poster.webp"
                  width="960" height="960"><source src="assets/juno/juno_loop.mp4" type="video/mp4"></video>
-          <img src="assets/juno/juno_render.webp" alt="" width="1176" height="1280"></div>
+          <img src="assets/juno/juno_still.webp" alt="" width="800" height="800"></div>
         <div class="hero-core" id="heroCore">
           <div class="hero-glass" aria-hidden="true"><canvas id="heroGlass"></canvas></div>
           <span class="h-eyebrow-line arrive in" style="--d:60ms">A layer for smart AR glasses</span>
@@ -1924,6 +1936,12 @@ python -m <span class="t">dreamlayer.simulator</span></pre>
   </div>
   <div class="mbody">
     <div class="device arrive"><span class="lens-dot"></span><span>Built for Brilliant Labs Halo</span></div>
+    <div class="soon-juno arrive" aria-hidden="true" style="--d:60ms">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="assets/juno/juno_wake_still.webp">
+        <img src="assets/juno/juno_wake.webp" alt="" width="512" height="512" loading="lazy">
+      </picture>
+    </div>
     <h2 class="display arrive" style="--d:100ms">Coming soon.</h2>
     <p class="body arrive" style="--d:200ms">DreamLayer ships first on the
       <a href="https://brilliant.xyz/" target="_blank" rel="noopener">Brilliant&nbsp;Labs&nbsp;Halo</a>
@@ -2617,10 +2635,12 @@ function finishBoot(fast){
   if(skip){ bootEl.remove(); bootEl=null; document.documentElement.classList.add("desk-in");
     document.body.classList.add("desk-in"); openWindow(heroWin); bootDone=true; return; }
   var exts=document.getElementById("exts");
-  ["ready","listening","saved_memory","object_recall","fact_check",
-   "morning_brief","privacy_veil","world_anchor"].forEach(function(n,i){
+  ["hud/ready","hud/listening","hud/saved_memory","hud/object_recall","hud/fact_check",
+   "hud/morning_brief","hud/privacy_veil","hud/world_anchor",
+   "juno/juno_icon32"].forEach(function(n,i){   // Juno loads last, like a good INIT
     var img=document.createElement("img");
-    img.src="assets/hud/"+n+".png"; img.alt="";
+    img.src="assets/"+n+".png"; img.alt="";
+    if(n.indexOf("juno")===0) img.style.imageRendering="pixelated";
     img.style.animationDelay=(200+i*160)+"ms";
     exts.appendChild(img);
   });
