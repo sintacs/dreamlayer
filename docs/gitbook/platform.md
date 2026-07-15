@@ -132,7 +132,9 @@ validation gate, now **five defences**:
 4. A static AST scan — `subprocess`, sockets, `ctypes`, file deletion,
    `eval`/`exec`/`pickle` are flagged; each allowed only if the matching
    capability was declared, some forbidden outright.
-5. A smoke load against a mock context granting only declared capabilities.
+5. A smoke load against a mock context granting only declared
+   capabilities — **opt-in author tooling only** since the secure-defaults
+   pass: validating a package on the install path never executes its code.
 
 The honest limit, stated in `docs/MARKETPLACE.md`: in-process Python cannot
 be perfectly sandboxed — the gate is defense-in-depth for a curated,
@@ -145,6 +147,10 @@ path.
   browse, search, Featured / Top rated / Most downloaded tabs, per-plugin
   detail with the author's screenshot, plain-English permissions, star
   rating, and a copy-install action.
+  Search is one ranked, typo-tolerant scorer (fielded weights, a curated
+  concept map, one-edit tolerance) shared verbatim by the store page, the
+  phone, and the Worker's search route — the same query ranks the same
+  everywhere.
 - **The phone** — the Plugins screen (Settings, "Build on the layer"):
   same catalog, install/remove, one-tap rating, and a permissions alert
   before any install ("This plugin will be able to use: ..."). Installs

@@ -84,7 +84,9 @@ curated-registry trust with a warning; trusted publisher keys live in
 action, so the six official plugins currently ship unsigned).
 
 The gate itself is now five defences: manifest shape, SDK compatibility,
-checksum integrity, authenticity, the AST scan, and a smoke load. One
+checksum integrity, authenticity, and the AST scan (which follows import
+aliases and rebinds) — plus a smoke load that is **opt-in author tooling
+only**: the install path validates without ever executing plugin code. One
 sharpening worth knowing: `subprocess`, `ctypes`, and `os.system` map to
 a capability that **cannot be declared at all** — they are forbidden
 outright, not merely withheld.
@@ -125,8 +127,11 @@ figment grammar grew its own, deliberately tiny pair:
   **eight named channels** — `{slot:translation}`, `{slot:langs}` — each
   still one 24-character line, still host-fed (a slot fill is a `text`
   event, so it adds zero autonomous budget). The grammar is identical in
-  all three interpreters — Python stage, device Lua, browser `figment.js`
-  — and parity-tested across them.
+  all **four** interpreters — the Python stage, the device Lua, the
+  browser `figment.js`, and the Rust `reality-core` (the embedded
+  native/WASM core) — and parity-tested across them, down to one
+  canonical text-length unit (UTF-8 bytes, truncated on a codepoint
+  boundary, sized to the core's fixed 24-byte slot buffers).
 - **The emit-capability registry** (`reality_compiler/v2/capabilities.py`).
   Three emit tags are host powers with plain-language summaries: `ask`,
   `translate` (passive — the Brain fills a slot; the lens emits nothing),
