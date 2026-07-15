@@ -1,0 +1,183 @@
+/* ============================================================
+   DreamLayer Platinum — shared Mac OS 8.1 chrome for every page.
+   The landing (index.html) carries its own inline copy of this
+   system; sub-pages link this file and let platinum.js inject the
+   menu bar, Juno desk accessory, and footer.
+   Fonts are self-hosted (../fonts/), fully offline.
+   ============================================================ */
+@font-face{font-family:"ChicagoFLF";
+  src:url(../fonts/ChicagoFLF.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Space Grotesk";
+  src:url(../fonts/SpaceGrotesk-latin.woff2) format("woff2");
+  font-weight:300 700;font-display:swap}
+:root{
+  --plat:#DDDDDD; --plat2:#CCCCCC; --plat3:#BBBBBB;
+  --pl-hi:#FFFFFF; --pl-sh:#8E8E8E; --pl-dk:#4A4A4A; --frame:#000000;
+  --hi:#333399; --paper:#EFEFEF;
+  --ink:#141414; --ink2:#4A5054; --teal-ink:#0B6B52; --coral-ink:#B3402E;
+  --scr:#0E1416; --scr2:#141F23; --scr-border:#1F2A2E;
+  --teal:#2FD4C4; --coral:#FF6B5E; --green:#56D364; --paused:#6B7A82;
+  --h-text:#ECF0F1; --h-text2:#A8B8C0; --h-ghost:#58686F;
+  --h-teal:#2CC79A; --h-teal-dim:#1A7A60; --h-coral:#E06B52; --h-border:#2A3C44;
+  --desk:#0F1A1D; --mbh:28px; --tbh:22px; --gutter:22px;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --fast:180ms; --base:240ms; --slow:400ms; --breath:2400ms;
+  --chi:"ChicagoFLF","Charcoal","Geneva",system-ui,sans-serif;
+  --font:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  --bev-out:inset 1px 1px 0 var(--pl-hi), inset -1px -1px 0 var(--pl-sh);
+  --bev-in:inset 1px 1px 0 var(--pl-sh), inset -1px -1px 0 var(--pl-hi);
+}
+html.platinum,html.platinum body{overflow-x:clip}
+html.platinum body{
+  background-color:var(--desk);
+  background-image:
+    radial-gradient(rgba(44,199,154,.10) 1px, transparent 1.2px),
+    conic-gradient(from 90deg at 1px 1px, rgba(255,255,255,.05) 90deg, transparent 0);
+  background-size:96px 96px, 4px 4px;
+  font-family:var(--font);padding-top:var(--mbh)}
+html.platinum ::selection{background:rgba(47,212,196,.35);color:#00201C}
+.chi{font-family:var(--chi);font-weight:400;letter-spacing:.01em}
+
+/* ---------- menu bar ---------- */
+.menubar{position:fixed;inset:0 0 auto 0;height:var(--mbh);z-index:300;
+  display:flex;align-items:stretch;justify-content:space-between;
+  background:linear-gradient(180deg,#F6F6F6,#D8D8D8);
+  border-bottom:1px solid var(--frame);box-shadow:inset 0 1px 0 #fff;
+  font-family:var(--chi);font-size:14px;user-select:none;-webkit-user-select:none}
+.mleft,.mright{display:flex;align-items:stretch}
+.mitem{display:flex;align-items:center;gap:7px;padding:0 13px;font-family:var(--chi);
+  font-size:14px;color:#111;white-space:nowrap;background:none;border:0;cursor:pointer;
+  text-decoration:none}
+.mitem[aria-expanded="true"],.mitem:active{background:var(--hi);color:#fff}
+.mitem.appname{cursor:default;color:#111;gap:8px}
+.mitem.appname:active{background:none;color:#111}
+.mitem .mark6{width:15px;height:15px;border-radius:50%;position:relative;display:block;
+  background:conic-gradient(#61BB46 0 60deg,#FDB827 0 120deg,#F5821F 0 180deg,
+    #E03A3E 0 240deg,#963D97 0 300deg,#009DDC 0 360deg);
+  -webkit-mask:radial-gradient(circle,transparent 0 3.5px,#000 3.5px 60%,transparent 0);
+  mask:radial-gradient(circle,transparent 0 3.5px,#000 3.5px 60%,transparent 0)}
+.mclock{display:flex;align-items:center;padding:0 14px;font-family:var(--chi);font-size:14px;color:#111}
+.mjuno{padding:0 9px;cursor:default}
+.mjuno img{width:18px;height:18px;image-rendering:pixelated}
+.mright .pulse{gap:8px}
+.mright .pulse .dot{width:7px;height:7px;border-radius:50%;background:var(--teal-ink);
+  animation:pblink var(--breath) ease-in-out infinite}
+@keyframes pblink{0%,100%{opacity:1}50%{opacity:.25}}
+.mpanel{position:fixed;top:var(--mbh);left:0;z-index:299;min-width:230px;
+  background:#EFEFEF;border:1px solid var(--frame);border-top:0;
+  box-shadow:var(--bev-out),2px 2px 0 rgba(0,0,0,.42);padding:3px 1px;display:none}
+.mpanel.on{display:block}
+.mpanel a,.mpanel button{display:flex;width:100%;align-items:center;justify-content:space-between;
+  gap:26px;padding:6px 16px 6px 18px;font-family:var(--chi);font-size:14px;color:#111;
+  text-align:left;white-space:nowrap;background:none;border:0;cursor:pointer;text-decoration:none}
+.mpanel a:hover,.mpanel button:hover,.mpanel a:focus-visible,.mpanel button:focus-visible{
+  background:var(--hi);color:#fff;outline:none}
+.mpanel .mdim{color:#777;font-size:11px}
+.mpanel a:hover .mdim{color:#D8D8FF}
+.mpanel hr{border:0;border-top:1px solid #A6A6A6;border-bottom:1px solid #fff;margin:4px 1px}
+@media (hover:hover){
+  [data-balloon]{position:relative}
+  [data-balloon]:hover::after{content:attr(data-balloon);position:absolute;left:50%;
+    bottom:calc(100% + 10px);transform:translateX(-50%);z-index:350;width:max-content;
+    max-width:230px;white-space:normal;background:#FFFFE8;border:1px solid var(--frame);
+    border-radius:10px 10px 10px 2px;padding:7px 11px;font-family:var(--font);font-size:12.5px;
+    line-height:1.45;color:#222;box-shadow:2px 2px 0 rgba(0,0,0,.35);pointer-events:none}
+}
+
+/* ---------- window kit ---------- */
+.mw{position:relative;width:min(1160px,calc(100vw - 2*var(--gutter)));
+  margin:5svh auto;background:var(--plat);border:1px solid var(--frame);
+  box-shadow:var(--bev-out), inset 2px 2px 0 #EFEFEF, 4px 4px 0 rgba(0,0,0,.34)}
+.tbar{position:relative;display:flex;align-items:center;gap:8px;height:var(--tbh);
+  padding:0 7px;background:var(--plat);border-bottom:1px solid var(--frame);
+  box-shadow:var(--bev-out);user-select:none;-webkit-user-select:none}
+.tstripes{flex:1;height:11px;
+  background:repeating-linear-gradient(180deg,#FFFFFF 0 1px,#DDDDDD 1px 2px,#ACACAC 2px 3px)}
+.ttext{font-family:var(--chi);font-weight:400;font-size:14.5px;color:#1A1A1A;
+  padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%}
+.wbox{width:13px;height:13px;flex:none;border:1px solid var(--frame);
+  background:linear-gradient(135deg,#FDFDFD,#C9C9C9);box-shadow:var(--bev-out);
+  position:relative;cursor:pointer;padding:0}
+.wbox:active{background:#8E8E8E}
+.wbox.collapse::after{content:"";position:absolute;left:1px;right:1px;top:5px;height:1px;
+  background:#333;box-shadow:0 1px 0 #fff}
+.wbox.zoom::after{content:"";position:absolute;left:2px;top:2px;width:6px;height:6px;border:1px solid #333}
+.mbody{position:relative;background:var(--paper);
+  box-shadow:inset 1px 1px 0 var(--pl-sh), inset -1px -1px 0 var(--pl-hi)}
+.mbody.screen{background:var(--scr);color:var(--h-text)}
+.mw.sub{width:auto;margin:0;box-shadow:var(--bev-out),3px 3px 0 rgba(0,0,0,.3)}
+.mw.sub .tbar{height:19px}
+.mw.sub .ttext{font-size:12.5px}
+/* Finder-style status strip under a title bar */
+.fstatus{display:flex;justify-content:center;gap:20px;padding:4px 10px;
+  font-family:var(--chi);font-size:11.5px;color:#3A3F42;background:var(--plat);
+  border-bottom:1px solid var(--frame);box-shadow:var(--bev-out)}
+
+/* ---------- buttons + fields ---------- */
+.pbtn{display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  font-family:var(--chi);font-size:15px;color:#111;padding:9px 22px;
+  background:linear-gradient(180deg,#F6F6F6,#D2D2D2);
+  border:1px solid var(--frame);border-radius:8px;
+  box-shadow:var(--bev-out),2px 2px 0 rgba(0,0,0,.22);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;text-decoration:none}
+.pbtn:active{background:#6E6E6E;color:#fff;box-shadow:var(--bev-in)}
+.pbtn.go{background:linear-gradient(180deg,#49E8BC,#17AE85);color:#00251C}
+.pbtn.go:active{background:#0B6B52;color:#fff}
+.pbtn.default{position:relative;margin:5px}
+.pbtn.default::before{content:"";position:absolute;inset:-5px;border:2.5px solid var(--frame);
+  border-radius:12px;pointer-events:none}
+.pfield{background:#fff;border:1px solid var(--frame);box-shadow:var(--bev-in);
+  padding:10px 13px;color:var(--ink);font-size:15px;font-family:var(--font)}
+.pfield:focus{outline:2px solid var(--teal-ink);outline-offset:-1px}
+
+/* ---------- Juno desk accessory ---------- */
+.mw.sub.da{position:fixed;left:14px;bottom:14px;z-index:60;width:176px;display:none;
+  opacity:0;transform:translateY(8px);
+  transition:opacity 500ms var(--ease) 400ms,transform 500ms var(--ease) 400ms}
+.desk-in .mw.sub.da{opacity:1;transform:none}
+@media(min-width:960px){.mw.sub.da{display:block}}
+.da .tbar{cursor:default}
+.mw.sub.da .mbody{background:var(--scr);padding:12px 10px 9px;text-align:center}
+.dasprite{width:112px;height:auto;margin:0 auto;image-rendering:pixelated;
+  filter:drop-shadow(0 0 14px rgba(44,199,154,.28))}
+.dacap{margin-top:8px;font-family:var(--chi);font-size:11.5px;color:var(--h-text2);
+  line-height:1.45;min-height:2.6em}
+.mw.sub.da.shut .mbody{display:none}
+
+/* ---------- footer strip ---------- */
+.pfoot{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
+  box-shadow:inset 0 1px 0 #fff;padding:18px var(--gutter) max(18px,env(safe-area-inset-bottom));
+  font-family:var(--font)}
+.pfoot .in{max-width:1120px;margin:0 auto;display:flex;justify-content:space-between;
+  align-items:center;gap:18px;flex-wrap:wrap}
+.pfoot .wordmark{display:flex;align-items:center;gap:9px;font-family:var(--chi);
+  font-size:14px;color:var(--ink);text-decoration:none}
+.pfoot .wordmark .ring{width:15px;height:15px;border:2.5px solid var(--teal-ink);
+  border-radius:50%;position:relative}
+.pfoot .wordmark .ring::after{content:"";position:absolute;inset:3.5px;
+  background:var(--teal-ink);border-radius:50%}
+.pfoot .lnks{font-family:var(--mono);font-size:12px;color:var(--ink2)}
+.pfoot .lnks a{color:inherit;text-decoration:none}
+.pfoot .lnks a:hover{color:var(--teal-ink)}
+.pfoot small{color:#5E686C;font-size:12px;font-family:var(--chi)}
+
+@media (max-width:560px){
+  .mright .pulse{display:none}
+  .mitem{padding:0 10px}
+  .mclock{padding:0 12px}
+  .mitem.appname .apptxt{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .mright .pulse .dot{animation:none}
+  .mw.sub.da{transition:none;opacity:1;transform:none}
+}
+/* keep the footer's wordmark clear of the Juno desk accessory */
+@media(min-width:960px){.pfoot .in{padding-left:196px}}
+/* Desktop Picture — Juno's dreamscape behind the windows (desktop only) */
+@media(min-width:960px){
+  html.platinum body.deskpic{background-image:
+    linear-gradient(rgba(8,14,16,.42),rgba(8,14,16,.62)),
+    url(../juno/dreamscape.webp);
+    background-size:cover;background-position:center;background-attachment:fixed}
+}
