@@ -13,9 +13,9 @@ and captured headlessly with a seeded index.*
 ## Getting it
 
 - **Download:** the site's "Download for Mac" buttons point at the latest
-  notarized dmg in the public `dreamlayer-releases` repository. CI builds
-  it on every version tag: py2app bundle, every nested library signed,
-  hardened runtime, Apple notarization, stapled.
+  notarized dmg on this repository's [Releases page](https://github.com/LetsGetToWorkBro/dreamlayer/releases/latest).
+  CI builds it on every version tag: py2app bundle, every nested library
+  signed, hardened runtime, Apple notarization, stapled.
 - On first launch it mints a pairing token, starts the server on port 7777,
   begins the folder watcher, brief scheduler, and calendar sync, and sits
   in the menu bar (no Dock icon): a status dot, **Open panel**, **Sync
