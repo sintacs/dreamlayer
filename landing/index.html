@@ -206,9 +206,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   background:repeating-linear-gradient(135deg,#7B7BE8 0 8px,#4A4AC4 8px 16px);
   animation:bootfill 1.7s steps(18) 120ms forwards}
 @keyframes bootfill{to{width:calc(100% - 2px)}}
-.exts{position:fixed;left:14px;bottom:12px;display:flex;gap:9px}
-.exts img{width:34px;height:34px;border-radius:50%;background:#000;
-  border:1px solid #555;opacity:0;animation:extin 240ms steps(3) forwards}
+.exts{position:fixed;left:14px;bottom:12px;display:flex;gap:11px;align-items:flex-end}
+/* extensions march in as little Mac icons — the same set that lives on
+   the desktop, plus Juno loading last like a good INIT */
+.exts svg,.exts img{width:32px;height:32px;opacity:0;
+  animation:extin 240ms steps(3) forwards;
+  filter:drop-shadow(1px 1px 0 rgba(0,0,0,.35))}
+.exts img{image-rendering:pixelated}
 @keyframes extin{to{opacity:1}}
 #boot .hint{position:fixed;right:16px;bottom:16px;font-family:var(--chi);font-size:12px;color:#666}
 
@@ -2635,15 +2639,16 @@ function finishBoot(fast){
   if(skip){ bootEl.remove(); bootEl=null; document.documentElement.classList.add("desk-in");
     document.body.classList.add("desk-in"); openWindow(heroWin); bootDone=true; return; }
   var exts=document.getElementById("exts");
-  ["hud/ready","hud/listening","hud/saved_memory","hud/object_recall","hud/fact_check",
-   "hud/morning_brief","hud/privacy_veil","hud/world_anchor",
-   "juno/juno_icon32"].forEach(function(n,i){   // Juno loads last, like a good INIT
-    var img=document.createElement("img");
-    img.src="assets/"+n+".png"; img.alt="";
-    if(n.indexOf("juno")===0) img.style.imageRendering="pixelated";
-    img.style.animationDelay=(200+i*160)+"ms";
-    exts.appendChild(img);
+  var icons=[].slice.call(document.querySelectorAll(".deskicons a.dicon svg"));
+  icons.forEach(function(sv,i){
+    var c=sv.cloneNode(true);
+    c.style.animationDelay=(200+i*150)+"ms";
+    exts.appendChild(c);
   });
+  var jn=document.createElement("img");    // Juno loads last, like a good INIT
+  jn.src="assets/juno/juno_icon32.png"; jn.alt="";
+  jn.style.animationDelay=(200+icons.length*150)+"ms";
+  exts.appendChild(jn);
   bootEl.addEventListener("pointerdown",function(){ finishBoot(true); });
   addEventListener("keydown",function once(){ finishBoot(true); removeEventListener("keydown",once); });
   setTimeout(function(){ finishBoot(false); }, 2150);
