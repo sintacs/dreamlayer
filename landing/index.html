@@ -774,6 +774,8 @@ footer{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
   box-shadow:inset 0 1px 0 #fff;padding:20px var(--gutter) max(20px,env(safe-area-inset-bottom))}
 .foot{max-width:1080px;margin:0 auto;display:flex;justify-content:space-between;
   align-items:center;gap:18px;flex-wrap:wrap}
+/* keep the wordmark clear of the Juno desk accessory */
+@media(min-width:960px){.foot{padding-left:186px}}
 .wordmark{display:flex;align-items:center;gap:9px;font-family:var(--chi);font-size:14px;color:var(--ink)}
 .wordmark .ring{width:15px;height:15px;border:2.5px solid var(--teal-ink);border-radius:50%;position:relative}
 .wordmark .ring::after{content:"";position:absolute;inset:3.5px;background:var(--teal-ink);border-radius:50%}

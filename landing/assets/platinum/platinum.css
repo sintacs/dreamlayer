@@ -172,3 +172,5 @@ html.platinum ::selection{background:rgba(47,212,196,.35);color:#00201C}
   .mright .pulse .dot{animation:none}
   .mw.sub.da{transition:none;opacity:1;transform:none}
 }
+/* keep the footer's wordmark clear of the Juno desk accessory */
+@media(min-width:960px){.pfoot .in{padding-left:196px}}

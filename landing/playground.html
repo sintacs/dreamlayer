@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="platinum">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,96 +17,153 @@
 <meta name="twitter:title" content="DreamLayer · WebBLE Playground">
 <meta name="twitter:description" content="Talk Lua to a real Brilliant Labs Halo over Web Bluetooth, from the browser.">
 <meta name="twitter:image" content="https://dreamlayer.app/assets/cine/still-dawn.webp">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#DDDDDD">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='%232CC79A' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%232CC79A'/%3E%3C/svg%3E">
 <style>
-  :root{
-    --bg:#000; --surface:#0a0f10; --border:#1b2a2c; --text:#e7f3f1;
-    --text-2:#88a09c; --teal:#2CC79A; --coral:#E06B52; --mono:ui-monospace,"SF Mono",Menlo,monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);
-    font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    max-width:760px;margin:0 auto;padding:28px 20px 80px}
-  h1{font-size:22px;letter-spacing:-.01em;margin:0 0 4px;display:flex;align-items:center;gap:10px}
-  .ring{width:16px;height:16px;border:2px solid var(--teal);border-radius:50%;position:relative;flex:none}
-  .ring::after{content:"";position:absolute;inset:4px;background:var(--teal);border-radius:50%}
-  .sub{color:var(--text-2);margin:0 0 22px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin:14px 0}
-  button{font:inherit;font-weight:600;border-radius:999px;border:1px solid var(--border);
-    background:transparent;color:var(--text);padding:11px 18px;cursor:pointer;transition:.15s}
-  button:hover:not(:disabled){border-color:var(--teal);color:#fff}
-  button.primary{background:var(--teal);color:#00201c;border-color:var(--teal)}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  input[type=text]{flex:1;min-width:220px;background:#050a0a;border:1px solid var(--border);
-    border-radius:10px;color:var(--text);padding:11px 14px;font-family:var(--mono);font-size:13px}
-  input:focus{outline:none;border-color:var(--teal)}
-  .status{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2)}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#456;margin-right:7px;vertical-align:middle}
-  .dot.on{background:var(--teal);box-shadow:0 0 8px var(--teal)}
-  pre#log{background:#050a0a;border:1px solid var(--border);border-radius:10px;padding:14px;
-    font-family:var(--mono);font-size:12px;color:#bfe;min-height:120px;max-height:280px;overflow:auto;white-space:pre-wrap;margin:0}
-  .grid{display:flex;gap:10px;flex-wrap:wrap}
-  .warn{border-color:var(--coral)}
-  .warn b{color:var(--coral)}
-  code{font-family:var(--mono);background:#0d1414;padding:1px 6px;border-radius:5px;font-size:12.5px}
-  a{color:var(--teal)}
-  .muted{color:var(--text-2);font-size:13px}
+/* ============================================================
+   Web BLE Playground — page styles on top of the shared Platinum
+   kit (assets/platinum/platinum.css). One application window on
+   the desktop; the Lua REPL runs as an MPW Shell terminal
+   sub-window on the dark screen.
+   ============================================================ */
+*{box-sizing:border-box}
+body{margin:0;background:#0F1A1D}
+main{display:block}
+#playwin{width:min(880px,calc(100vw - 2*var(--gutter,22px)));
+  margin:clamp(24px,6svh,56px) auto clamp(28px,7svh,64px)}
+#playwin .fstatus{flex-wrap:wrap}
+@media(max-width:430px){#playwin .fstatus{gap:9px}}
+.pg{padding:clamp(20px,3.6vw,38px) clamp(16px,3.8vw,40px) clamp(24px,4vw,42px)}
+.pg-head h1{display:flex;align-items:center;gap:12px;margin:0 0 8px;
+  font-family:var(--chi);font-weight:400;font-size:clamp(21px,3.4vw,27px);
+  letter-spacing:.01em;color:#fff;line-height:1.2}
+.ring{width:16px;height:16px;border:2px solid var(--h-teal);border-radius:50%;
+  position:relative;flex:none;box-shadow:0 0 12px rgba(44,199,154,.4)}
+.ring::after{content:"";position:absolute;inset:4px;background:var(--h-teal);border-radius:50%}
+.lede{margin:0 0 22px;color:var(--h-text2);font-size:15px;line-height:1.65;max-width:58ch}
+/* dark cards on the screen */
+.card{background:var(--scr2);border:1px solid var(--h-border);
+  box-shadow:2px 2px 0 rgba(0,0,0,.35);padding:15px 16px;margin:14px 0}
+.card.warn{border-color:rgba(224,107,82,.65)}
+.card.warn b{color:var(--h-coral)}
+.card .muted{margin:.5em 0 0}
+.muted{color:var(--h-text2);font-size:13px;line-height:1.6}
+.klabel,.status{font-family:var(--chi);font-size:11.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--h-teal)}
+.klabel{display:block;margin-bottom:11px}
+.status{display:inline-flex;align-items:center}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row.spread{justify-content:space-between}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+  background:#3A4A50;margin-right:8px;vertical-align:middle;flex:none}
+.dot.on{background:var(--h-teal);box-shadow:0 0 8px var(--h-teal);
+  animation:dotblink 2.4s ease-in-out infinite}
+@keyframes dotblink{0%,100%{opacity:1}50%{opacity:.45}}
+.grid{display:flex;gap:10px;flex-wrap:wrap}
+/* Platinum buttons, playground-sized */
+.pg .pbtn{font-size:13.5px;padding:7px 15px}
+.pg .pbtn:disabled{opacity:.45;cursor:not-allowed}
+/* the MPW Shell terminal sub-window */
+.term{margin:20px 0 18px}
+#log{margin:0;padding:13px 14px 11px;min-height:150px;max-height:300px;overflow:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#BFEFE2;
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.cmdline{display:flex;align-items:center;gap:10px;padding:9px 12px 9px 14px;
+  border-top:1px solid #1C2529}
+.cmdline:focus-within{box-shadow:inset 0 0 0 1px rgba(44,199,154,.45)}
+.cmdline .pr{color:var(--h-teal);font-family:var(--mono);font-size:14px;
+  font-weight:700;flex:none}
+#lua{flex:1;min-width:0;background:transparent;border:0;padding:5px 0;
+  color:#D9EEE8;font-family:var(--mono);font-size:13px;caret-color:var(--h-teal)}
+#lua::placeholder{color:#4E6168}
+#lua:focus{outline:none}
+#lua:disabled{opacity:.5}
+.termnote{margin:0;padding:9px 14px 12px;border-top:1px solid #151D21;
+  color:#6E8188;font-size:12px;line-height:1.6}
+.mono-note{margin:18px 0 0;color:var(--h-text2);font-size:13px;line-height:1.7}
+code{font-family:var(--mono);font-size:12px;background:#121B1E;
+  border:1px solid #22323A;padding:1px 6px;color:#CFE7E0}
+@media (prefers-reduced-motion:reduce){.dot.on{animation:none}}
 </style>
+<link rel="stylesheet" href="assets/platinum/platinum.css">
 </head>
 <body>
-  <p style="margin:0 0 18px;font-size:13px"><a href="./index.html" style="color:var(--text-2)">← DreamLayer</a>
-    &nbsp;·&nbsp; <a href="./plugins.html" style="color:var(--text-2)">Plugin store</a></p>
-  <h1><span class="ring"></span>WebBLE Playground</h1>
-  <p class="sub">Drive the Halo / Frame HUD straight from your browser over Bluetooth — no app store,
-    no build. Talks Lua to the glasses over the Nordic UART service.</p>
 
-  <div id="unsupported" class="card warn" hidden>
-    <b>This browser can't do Web Bluetooth.</b>
-    <p class="muted" style="margin:.5em 0 0">Web Bluetooth needs <b>Chrome or Edge on Android, macOS,
-      Windows, or Linux</b>. <b>iPhone/iPad Safari does not support it</b> (Apple blocks the API) — on
-      iOS use the DreamLayer app instead. Firefox doesn't support it either.</p>
-  </div>
+<main>
+  <section class="mw" id="playwin" aria-labelledby="pg-title">
+    <div class="tbar">
+      <span class="wbox close" data-balloon="Stays open. The glasses might call." aria-hidden="true"></span>
+      <span class="tstripes" aria-hidden="true"></span>
+      <span class="ttext">Web BLE Playground</span>
+      <span class="tstripes" aria-hidden="true"></span>
+      <span class="wbox collapse" aria-hidden="true"></span>
+      <span class="wbox zoom" aria-hidden="true"></span>
+    </div>
+    <div class="fstatus"><span>Chrome/Edge</span><span aria-hidden="true">·</span>
+      <span>Nordic UART</span><span aria-hidden="true">·</span><span>live Lua</span></div>
+    <div class="mbody screen pg">
 
-  <div class="card" id="panel">
-    <div class="row" style="justify-content:space-between">
-      <span class="status"><span class="dot" id="dot"></span><span id="state">disconnected</span></span>
-      <div class="row">
-        <button class="primary" id="connect">Connect glasses</button>
-        <button id="disconnect" disabled>Disconnect</button>
+      <header class="pg-head">
+        <h1 id="pg-title"><span class="ring" aria-hidden="true"></span>WebBLE Playground</h1>
+        <p class="lede">Drive the Halo / Frame HUD straight from your browser over Bluetooth — no app store,
+          no build. Talks Lua to the glasses over the Nordic UART service.</p>
+      </header>
+
+      <div id="unsupported" class="card warn" hidden>
+        <b>This browser can't do Web Bluetooth.</b>
+        <p class="muted">Web Bluetooth needs <b>Chrome or Edge on Android, macOS,
+          Windows, or Linux</b>. <b>iPhone/iPad Safari does not support it</b> (Apple blocks the API) — on
+          iOS use the DreamLayer app instead. Firefox doesn't support it either.</p>
       </div>
+
+      <div class="card" id="panel">
+        <div class="row spread">
+          <span class="status"><span class="dot" id="dot"></span><span id="state">disconnected</span></span>
+          <div class="row">
+            <button class="pbtn go" id="connect"
+              data-balloon="Opens the browser's Bluetooth picker.">Connect glasses</button>
+            <button class="pbtn" id="disconnect" disabled>Disconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="klabel">Canned demos</span>
+        <div class="grid">
+          <button class="pbtn demo" data-lua="frame.display.text('DreamLayer',120,220);frame.display.show()" disabled>Show text</button>
+          <button class="pbtn demo" data-lua="frame.display.clear();frame.display.show()" disabled>Clear</button>
+          <button class="pbtn demo" data-lua="print(frame.battery_level())" disabled>Battery</button>
+          <button class="pbtn demo" data-lua="for i=1,3 do frame.display.text('•',120+i*20,220);frame.display.show();end" disabled>Dots</button>
+        </div>
+      </div>
+
+      <div class="mw sub term">
+        <div class="tbar"><span class="tstripes" aria-hidden="true"></span>
+          <span class="ttext">MPW Shell — Lua</span>
+          <span class="tstripes" aria-hidden="true"></span></div>
+        <div class="mbody" style="background:#0B0F11">
+          <pre id="log">Ready. Connect to begin.</pre>
+          <div class="cmdline">
+            <span class="pr" aria-hidden="true">›</span>
+            <input type="text" id="lua" placeholder="print('hello from the browser')" disabled
+                   value="print(1+1)" aria-label="Lua to send to the glasses"
+                   autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button id="send" class="pbtn go" disabled>Send</button>
+          </div>
+          <p class="termnote">Sent verbatim to the glasses' Lua VM over the UART RX
+            characteristic; replies stream back on TX above.</p>
+        </div>
+      </div>
+
+      <p class="mono-note">Nordic UART Service <code>6e400001-…</code> · RX write <code>…0002</code> ·
+        TX notify <code>…0003</code>. This is a companion/dev surface — the phone app stays the hub.</p>
+
     </div>
-  </div>
+  </section>
+</main>
 
-  <div class="card">
-    <div class="status" style="margin-bottom:10px">Canned demos</div>
-    <div class="grid">
-      <button class="demo" data-lua="frame.display.text('DreamLayer',120,220);frame.display.show()" disabled>Show text</button>
-      <button class="demo" data-lua="frame.display.clear();frame.display.show()" disabled>Clear</button>
-      <button class="demo" data-lua="print(frame.battery_level())" disabled>Battery</button>
-      <button class="demo" data-lua="for i=1,3 do frame.display.text('•',120+i*20,220);frame.display.show();end" disabled>Dots</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="status" style="margin-bottom:10px">Lua REPL</div>
-    <div class="row">
-      <input type="text" id="lua" placeholder="print('hello from the browser')" disabled
-             value="print(1+1)">
-      <button id="send" class="primary" disabled>Send</button>
-    </div>
-    <p class="muted" style="margin:.7em 0 0">Sent verbatim to the glasses' Lua VM over the UART RX
-      characteristic; replies stream back on TX below.</p>
-  </div>
-
-  <div class="card">
-    <div class="status" style="margin-bottom:10px">Log</div>
-    <pre id="log">Ready. Connect to begin.</pre>
-  </div>
-
-  <p class="muted">Nordic UART Service <code>6e400001-…</code> · RX write <code>…0002</code> ·
-    TX notify <code>…0003</code>. This is a companion/dev surface — the phone app stays the hub.</p>
+<script>window.PLATINUM={app:"Web BLE Playground",daLine:"speak lua to the glass."}</script>
+<script src="assets/platinum/platinum.js" defer></script>
 
 <script>
 // Nordic UART Service (Frame's Lua transport)
