@@ -123,6 +123,15 @@ body{
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   padding-top:var(--mbh)}
 ::selection{background:rgba(47,212,196,.35);color:#00201C}
+/* Desktop Picture — Mac OS 8's Appearance panel let you swap the pattern
+   for a picture; ours is Juno's dreamscape, dimmed for legibility.
+   Desktop-only: fixed-attachment cover is janky on mobile. */
+@media(min-width:960px){
+  body.deskpic{background-image:
+    linear-gradient(rgba(8,14,16,.42),rgba(8,14,16,.62)),
+    url(assets/juno/dreamscape.webp);
+    background-size:cover;background-position:center;background-attachment:fixed}
+}
 img,video{display:block;max-width:100%}
 a{color:inherit;text-decoration:none}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
@@ -313,6 +322,21 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .mw.sub.da.shut .mbody{display:none}
 .about-juno{width:54px;height:auto;margin-left:auto;image-rendering:pixelated;flex:none;
   filter:drop-shadow(0 0 10px rgba(44,199,154,.3))}
+/* Dreamscape.mov — a QuickTime Player window on the desktop */
+.mw.sub.qt{width:min(720px,92vw);margin:9svh auto;display:block}
+.qtbody{padding:0;background:#000}
+.qtbody video{display:block;width:100%;height:auto}
+.qtbar{display:flex;align-items:center;gap:10px;padding:5px 8px;background:var(--plat);
+  border-top:1px solid var(--frame);box-shadow:var(--bev-out)}
+.qbtn{width:24px;height:19px;border:1px solid var(--frame);
+  background:linear-gradient(180deg,#F6F6F6,#D2D2D2);box-shadow:var(--bev-out);
+  font-size:9px;line-height:1;display:grid;place-items:center;cursor:pointer;padding:0}
+.qbtn:active{background:#8E8E8E;color:#fff}
+.qtrack{flex:1;height:11px;border:1px solid var(--frame);background:#fff;
+  box-shadow:var(--bev-in);position:relative;overflow:hidden}
+.qtrack i{position:absolute;inset:1px auto 1px 1px;width:0;
+  background:linear-gradient(135deg,#B8B8E8,#8989CE)}
+.qtime{font-size:11px;color:#333;font-family:var(--chi)}
 
 /* ---------- type on paper ---------- */
 .eyebrow{display:inline-block;font-family:var(--chi);font-size:12.5px;letter-spacing:.04em;
@@ -919,6 +943,7 @@ footer{margin:9svh 0 0;background:var(--plat);border-top:1px solid var(--frame);
 </header>
 <nav class="mpanel" id="m-dl" aria-label="DreamLayer">
   <button id="aboutOpen">About This Layer…</button>
+  <button id="deskpicToggle">Use Platinum Pattern</button>
   <hr>
   <a href="https://github.com/LetsGetToWorkBro/dreamlayer/releases/latest/download/DreamLayer.dmg">Download for Mac <span class="mdim">.dmg</span></a>
   <a href="https://github.com/LetsGetToWorkBro/dreamlayer" target="_blank" rel="noopener">GitHub <span class="mdim">↗</span></a>
@@ -1930,6 +1955,25 @@ python -m <span class="t">dreamlayer.simulator</span></pre>
   </div>
 </section>
 
+<!-- Dreamscape.mov — a window into Juno's world, playing on the desktop -->
+<aside class="mw sub qt tilt-l" id="dreamscape" aria-label="Dreamscape — a look into Juno's world">
+  <div class="tbar"><span class="wbox close" aria-hidden="true"></span>
+    <span class="tstripes" aria-hidden="true"></span>
+    <span class="ttext">Dreamscape.mov</span>
+    <span class="tstripes" aria-hidden="true"></span>
+    <span class="wbox zoom" aria-hidden="true"></span></div>
+  <div class="mbody qtbody">
+    <video id="qtv" muted loop playsinline preload="metadata"
+           poster="assets/juno/dreamscape.webp" width="1280" height="720">
+      <source src="assets/juno/dreamscape.mp4" type="video/mp4"></video>
+    <div class="qtbar">
+      <button class="qbtn" id="qtPlay" aria-label="Play or pause Dreamscape">▶</button>
+      <div class="qtrack" aria-hidden="true"><i id="qtProg"></i></div>
+      <span class="qtime" id="qtTime">0:00</span>
+    </div>
+  </div>
+</aside>
+
 <!-- ======================= coming soon ======================= -->
 <section class="mw soon tilt-r" id="soon" data-wtitle="Coming Soon">
   <div class="tbar">
@@ -2729,6 +2773,41 @@ function closeAbout(){ about.classList.remove("on"); mveil.classList.remove("on"
 if(aboutBtn) aboutBtn.addEventListener("click",openAbout);
 if(aboutX) aboutX.addEventListener("click",closeAbout);
 mveil.addEventListener("click",closeAbout);
+
+/* ---------- Desktop Picture toggle (Appearance panel, in spirit) ---------- */
+(function(){
+  var btn=document.getElementById("deskpicToggle");
+  function apply(on){ document.body.classList.toggle("deskpic",on);
+    if(btn) btn.textContent = on ? "Use Platinum Pattern" : "Use Dreamscape Picture"; }
+  var on=true;
+  try{ on = localStorage.getItem("dldesk")!=="pattern"; }catch(e){}
+  apply(on);
+  if(btn) btn.addEventListener("click",function(){ on=!on;
+    try{ localStorage.setItem("dldesk",on?"pic":"pattern"); }catch(e){} apply(on); });
+})();
+
+/* ---------- Dreamscape.mov: the QuickTime window ---------- */
+(function(){
+  var v=document.getElementById("qtv"); if(!v) return;
+  var play=document.getElementById("qtPlay"), prog=document.getElementById("qtProg"), tm=document.getElementById("qtTime");
+  function setBtn(){ play.textContent = v.paused ? "▶" : "❚❚"; }
+  play.addEventListener("click",function(){
+    if(v.paused){ v.muted=true; var p=v.play(); if(p&&p.catch)p.catch(function(){}); }
+    else v.pause();
+  });
+  v.addEventListener("play",setBtn); v.addEventListener("pause",setBtn);
+  v.addEventListener("timeupdate",function(){
+    if(v.duration){ prog.style.width=(v.currentTime/v.duration*100)+"%";
+      var s=Math.floor(v.currentTime); tm.textContent="0:"+(s<10?"0":"")+s; }
+  });
+  if(!reduced){
+    new IntersectionObserver(function(en){
+      if(en[0].isIntersecting){ v.muted=true; var p=v.play(); if(p&&p.catch)p.catch(function(){}); }
+      else v.pause();
+    },{threshold:0.2}).observe(v);
+  }
+  setBtn();
+})();
 
 /* ---------- Juno, desk accessory: section-aware captions ---------- */
 (function(){

@@ -174,3 +174,10 @@ html.platinum ::selection{background:rgba(47,212,196,.35);color:#00201C}
 }
 /* keep the footer's wordmark clear of the Juno desk accessory */
 @media(min-width:960px){.pfoot .in{padding-left:196px}}
+/* Desktop Picture — Juno's dreamscape behind the windows (desktop only) */
+@media(min-width:960px){
+  html.platinum body.deskpic{background-image:
+    linear-gradient(rgba(8,14,16,.42),rgba(8,14,16,.62)),
+    url(../juno/dreamscape.webp);
+    background-size:cover;background-position:center;background-attachment:fixed}
+}

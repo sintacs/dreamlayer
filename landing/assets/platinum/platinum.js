@@ -33,6 +33,7 @@ var panels = h('<div></div>');
 panels.innerHTML = '\
 <nav class="mpanel" id="pm-dl" aria-label="DreamLayer">\
   <a href="./">The Desktop <span class="mdim">home</span></a>\
+  <button id="pdeskpic">Use Platinum Pattern</button>\
   <hr>\
   <a href="https://github.com/LetsGetToWorkBro/dreamlayer/releases/latest/download/DreamLayer.dmg">Download for Mac <span class="mdim">.dmg</span></a>\
   <a href="https://github.com/LetsGetToWorkBro/dreamlayer" target="_blank" rel="noopener">GitHub <span class="mdim">↗</span></a>\
@@ -85,6 +86,18 @@ addEventListener("keydown",function(e){ if(e.key==="Escape") closeMenus(); });
 document.querySelectorAll(".mpanel a").forEach(function(a){
   a.addEventListener("click",function(){ setTimeout(closeMenus,10); });
 });
+
+/* ---------- Desktop Picture toggle ---------- */
+(function(){
+  var btn=document.getElementById("pdeskpic");
+  function apply(on){ document.body.classList.toggle("deskpic",on);
+    if(btn) btn.textContent = on ? "Use Platinum Pattern" : "Use Dreamscape Picture"; }
+  var on=true;
+  try{ on = localStorage.getItem("dldesk")!=="pattern"; }catch(e){}
+  apply(on);
+  if(btn) btn.addEventListener("click",function(){ on=!on;
+    try{ localStorage.setItem("dldesk",on?"pic":"pattern"); }catch(e){} apply(on); });
+})();
 
 /* ---------- clock ---------- */
 var clockEl=document.getElementById("pmclock");
