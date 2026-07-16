@@ -1,12 +1,16 @@
 """ai_brain/server/macos_sources.py — read (and, with approval, send) Mail
-and iMessage on a Mac mini.
+and iMessage on a Mac mini. Extended to support Windows Outlook and cross-platform
+ICS file sync.
 
 These feed the Brain's index as extra "documents" so "ask your stuff" also
 covers your messages and mail. Reading is local: iMessage from the Messages
 SQLite db, Mail from the on-disk .emlx files. Nothing leaves the machine.
 
+On Windows, it reads from Outlook (classic) via COM. On any platform, it also
+supports parsing and syncing .ics (iCalendar) files in any watched folders.
+
 The parsing is pure and unit-tested against fixture data; the actual file/db
-access only happens on macOS with the databases present (returns [] anywhere
+access only happens on macOS/Windows with the databases present (returns [] anywhere
 else). Sending is deliberately gated: a draft is built, and it is only
 dispatched through `send_message(draft, approved=True)` — an outbound action
 is never taken silently.
@@ -18,6 +22,7 @@ import platform
 import re
 import sqlite3
 import time
+import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, cast
@@ -108,29 +113,70 @@ def mail_documents(mail_root: str = MAIL_ROOT, limit: int = 200
     return docs
 
 
-def collect_documents(config) -> list[tuple[str, str]]:
-    """All macOS message/mail documents for the Brain index. [] off macOS."""
-    if platform.system() != "Darwin":
+# ---------------------------------------------------------------------------
+# Outlook Windows Documents
+# ---------------------------------------------------------------------------
+
+def outlook_documents(limit: int = 200) -> list[tuple[str, str]]:
+    """Recent Outlook emails grouped by sender into documents."""
+    try:
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        inbox = ns.GetDefaultFolder(6)  # 6 = olFolderInbox
+        items = inbox.Items
+        items.Sort("[ReceivedTime]", True)
+        
+        convos: dict[str, list[str]] = {}
+        count = 0
+        for item in items:
+            if count >= limit:
+                break
+            try:
+                sender = item.SenderName or "unknown"
+                subj = item.Subject or ""
+                body = item.Body or ""
+                line = f"From {sender} (Subject: {subj}):\n{body.strip()}"
+                convos.setdefault(sender, []).append(line)
+                count += 1
+            except Exception:
+                continue
+                
+        docs = []
+        for sender, lines in convos.items():
+            docs.append((f"Outlook Mail · {sender}", "\n---\n".join(lines)))
+        return docs
+    except Exception:
         return []
-    docs = []
-    docs += imessage_documents()
-    docs += mail_documents()
-    return docs
+
+
+def collect_documents(config) -> list[tuple[str, str]]:
+    """All message/mail documents for the Brain index. [] off macOS/Windows."""
+    if platform.system() == "Darwin":
+        docs = []
+        docs += imessage_documents()
+        docs += mail_documents()
+        return docs
+    elif platform.system() == "Windows":
+        return outlook_documents()
+    return []
 
 
 # ---------------------------------------------------------------------------
-# Live feed — the recent messages your glasses read hands-free (the Mac is the
-# bridge; the reading + reply happen on the glasses, not here).
+# Live feed — the recent messages your glasses read hands-free
 # ---------------------------------------------------------------------------
 
 def recent_messages(config=None, limit: int = 20) -> list[dict]:
-    """Newest Messages + Mail as structured items for the glasses/phone to
-    surface: {channel, who, from_me, text, subject?, ts}. [] off macOS."""
-    if platform.system() != "Darwin":
-        return []
-    out = _recent_imessages(limit) + _recent_mail(limit)
-    out.sort(key=lambda m: m.get("ts", 0), reverse=True)
-    return out[:limit]
+    """Newest Messages + Mail as structured items for the glasses/phone to surface."""
+    if platform.system() == "Darwin":
+        out = _recent_imessages(limit) + _recent_mail(limit)
+        out.sort(key=lambda m: m.get("ts", 0), reverse=True)
+        return out[:limit]
+    elif platform.system() == "Windows":
+        out = _recent_outlook_emails(limit)
+        out.sort(key=lambda m: m.get("ts", 0), reverse=True)
+        return out[:limit]
+    return []
 
 
 # Apple stores message dates as nanoseconds since 2001-01-01.
@@ -177,14 +223,40 @@ def _recent_mail(limit: int) -> list[dict]:
     return out
 
 
+def _recent_outlook_emails(limit: int) -> list[dict]:
+    try:
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        inbox = ns.GetDefaultFolder(6)
+        items = inbox.Items
+        items.Sort("[ReceivedTime]", True)
+        
+        out = []
+        count = 0
+        for item in items:
+            if count >= limit:
+                break
+            try:
+                ts = item.ReceivedTime.timestamp()
+                out.append({
+                    "channel": "email",
+                    "who": item.SenderName or "unknown",
+                    "from_me": False,
+                    "subject": item.Subject or "",
+                    "text": (item.Body or "")[:280].strip(),
+                    "ts": ts
+                })
+                count += 1
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
-# Calendar — sync macOS Calendar.app into the Brain's agenda (read-only).
-#
-# Same posture as Messages/Mail: local read via AppleScript, [] off macOS, and
-# a `reader` seam so the parsing is unit-tested against fixture output without a
-# real calendar. The reader returns tab-separated lines; we avoid AppleScript
-# date math entirely by asking for *seconds from now*, then adding that to the
-# Python clock — no locale-dependent date parsing.
+# Calendar — sync macOS Calendar.app or Windows Outlook / ICS files
 # ---------------------------------------------------------------------------
 
 def _calendar_script(days_ahead: int) -> str:
@@ -216,52 +288,177 @@ def _calendar_script(days_ahead: int) -> str:
 
 
 def list_calendars(reader: Optional[Callable[[str], str]] = None) -> list[str]:
-    """The names of every calendar in Calendar.app. [] off macOS."""
-    if reader is None and platform.system() != "Darwin":
-        return []
-    run = reader or _osascript_out
-    try:
-        raw = run('tell application "Calendar" to get name of every calendar')
-    except Exception:
-        return []
-    return [n.strip() for n in (raw or "").split(",") if n.strip()]
+    """The names of every calendar. [] off macOS/Windows."""
+    if reader is not None or platform.system() == "Darwin":
+        run = reader or _osascript_out
+        try:
+            raw = run('tell application "Calendar" to get name of every calendar')
+            return [n.strip() for n in (raw or "").split(",") if n.strip()]
+        except Exception:
+            return []
+    elif platform.system() == "Windows":
+        try:
+            import win32com.client
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            ns = outlook.GetNamespace("MAPI")
+            calendar = ns.GetDefaultFolder(9)
+            calendars = ["Outlook"]
+            for folder in calendar.Folders:
+                calendars.append(folder.Name)
+            return calendars
+        except Exception:
+            return []
+    return []
 
 
 def read_calendar_events(config=None, days_ahead: int = 14,
-                         reader: Optional[Callable[[str], str]] = None
-                         ) -> list[dict]:
-    """Upcoming Calendar.app events as {title, ts, place, calendar}.
-
-    Restricted to `config.calendar_names` when that list is non-empty (empty =
-    all calendars). [] off macOS unless a `reader` is injected (tests).
-    """
-    if reader is None and platform.system() != "Darwin":
-        return []
-    run = reader or _osascript_out
-    days = int(getattr(config, "calendar_days", days_ahead) or days_ahead)
-    try:
-        raw = run(_calendar_script(days))
-    except Exception:
-        return []
-    selected = {n for n in (getattr(config, "calendar_names", []) or [])}
-    now = time.time()
-    out: list[dict] = []
-    for line in (raw or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 4:
-            continue
-        title, secs, loc, cal = parts[0].strip(), parts[1], parts[2].strip(), parts[3].strip()
-        if not title:
-            continue
-        if selected and cal not in selected:
-            continue
+                          reader: Optional[Callable[[str], str]] = None
+                          ) -> list[dict]:
+    """Upcoming events as {title, ts, place, calendar}."""
+    out = []
+    
+    # 1. Read OS-specific native calendar events
+    if reader is not None or platform.system() == "Darwin":
+        run = reader or _osascript_out
+        days = int(getattr(config, "calendar_days", days_ahead) or days_ahead)
         try:
-            ts = now + float(secs)
-        except ValueError:
-            continue
-        out.append({"title": title, "ts": ts, "place": loc, "calendar": cal})
+            raw = run(_calendar_script(days))
+            selected = {n for n in (getattr(config, "calendar_names", []) or [])}
+            now = time.time()
+            for line in (raw or "").splitlines():
+                parts = line.split("\t")
+                if len(parts) < 4:
+                    continue
+                title, secs, loc, cal = parts[0].strip(), parts[1], parts[2].strip(), parts[3].strip()
+                if not title:
+                    continue
+                if selected and cal not in selected:
+                    continue
+                try:
+                    ts = now + float(secs)
+                except ValueError:
+                    continue
+                out.append({"title": title, "ts": ts, "place": loc, "calendar": cal})
+        except Exception:
+            pass
+    elif platform.system() == "Windows":
+        days = int(getattr(config, "calendar_days", days_ahead) or days_ahead)
+        out += _read_outlook_calendar(days)
+        
+    # 2. Sync/merge from local .ics files in watched folders
+    if config and getattr(config, "folders", None):
+        out += _read_ics_files_from_folders(config.folders, days_ahead)
+        
     out.sort(key=lambda e: e["ts"])
     return out
+
+
+def _read_outlook_calendar(days_ahead: int) -> list[dict]:
+    try:
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        calendar = ns.GetDefaultFolder(9)  # 9 = olFolderCalendar
+        items = calendar.Items
+        items.IncludeRecurrences = True
+        items.Sort("[Start]")
+        
+        now = datetime.datetime.now()
+        end = now + datetime.timedelta(days=days_ahead)
+        
+        restriction = "[Start] >= '" + now.strftime("%m/%d/%Y %I:%M %p") + "' AND [Start] <= '" + end.strftime("%m/%d/%Y %I:%M %p") + "'"
+        restricted_items = items.Restrict(restriction)
+        
+        out = []
+        for item in restricted_items:
+            try:
+                out.append({
+                    "title": item.Subject or "No Subject",
+                    "ts": item.Start.timestamp(),
+                    "place": item.Location or "",
+                    "calendar": "Outlook"
+                })
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
+def _read_ics_files_from_folders(folders: list[str], days_ahead: int) -> list[dict]:
+    out = []
+    now = time.time()
+    end_time = now + days_ahead * 86400
+    
+    for f_str in folders:
+        try:
+            folder_path = Path(f_str).expanduser().resolve()
+            if not folder_path.is_dir():
+                continue
+            for ics_file in folder_path.glob("*.ics"):
+                events = parse_ics_file(ics_file)
+                for e in events:
+                    if now <= e["ts"] <= end_time:
+                        out.append(e)
+        except Exception:
+            continue
+    return out
+
+
+def parse_ics_file(path: Path) -> list[dict]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return []
+        
+    events = []
+    in_event = False
+    current_event = {}
+    
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("BEGIN:VEVENT"):
+            in_event = True
+            current_event = {}
+        elif line.startswith("END:VEVENT"):
+            if in_event and "summary" in current_event and "dtstart" in current_event:
+                dtstr = current_event["dtstart"]
+                ts = None
+                try:
+                    dtstr_clean = re.sub(r'^.*:', '', dtstr).strip()
+                    if "T" in dtstr_clean:
+                        is_utc = dtstr_clean.endswith("Z")
+                        dtstr_clean = dtstr_clean.rstrip("Z")
+                        dt = datetime.datetime.strptime(dtstr_clean[:15], "%Y%m%dT%H%M%S")
+                        if is_utc:
+                            dt = dt.replace(tzinfo=datetime.timezone.utc)
+                        ts = dt.timestamp()
+                    else:
+                        dt = datetime.datetime.strptime(dtstr_clean[:8], "%Y%m%d")
+                        ts = dt.timestamp()
+                except Exception:
+                    pass
+                if ts is not None:
+                    events.append({
+                        "title": current_event["summary"],
+                        "ts": ts,
+                        "place": current_event.get("location", ""),
+                        "calendar": path.stem
+                    })
+            in_event = False
+        elif in_event:
+            if ":" in line:
+                name, val = line.split(":", 1)
+                name_upper = name.upper()
+                if "SUMMARY" in name_upper:
+                    current_event["summary"] = val
+                elif "DTSTART" in name_upper:
+                    current_event["dtstart"] = val
+                elif "LOCATION" in name_upper:
+                    current_event["location"] = val
+    return events
 
 
 def _osascript_out(script: str) -> str:
@@ -272,10 +469,29 @@ def _osascript_out(script: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Contacts — sync macOS Contacts.app into the People registry (read-only).
-# One reader, two homes: the Brain's People registry and (via the hub, when a
-# face-embedding fn is present) the on-device face database.
+# Contacts — sync contacts into the registry
 # ---------------------------------------------------------------------------
+
+def read_contacts(config=None, reader: Optional[Callable[[str], str]] = None) -> list[dict]:
+    """Contacts as {name, company, role, email}. [] off macOS/Windows."""
+    if reader is not None or platform.system() == "Darwin":
+        run = reader or _osascript_out
+        try:
+            raw = run(_contacts_script())
+            out: list[dict] = []
+            for line in (raw or "").splitlines():
+                parts = line.split("\t")
+                if len(parts) < 4 or not parts[0].strip():
+                    continue
+                out.append({"name": parts[0].strip(), "company": parts[1].strip(),
+                            "role": parts[2].strip(), "email": parts[3].strip()})
+            return out
+        except Exception:
+            return []
+    elif platform.system() == "Windows":
+        return _read_outlook_contacts()
+    return []
+
 
 def _contacts_script() -> str:
     return (
@@ -302,27 +518,34 @@ def _contacts_script() -> str:
     )
 
 
-def read_contacts(config=None, reader: Optional[Callable[[str], str]] = None) -> list[dict]:
-    """macOS Contacts as {name, company, role, email}. [] off macOS."""
-    if reader is None and platform.system() != "Darwin":
-        return []
-    run = reader or _osascript_out
+def _read_outlook_contacts() -> list[dict]:
     try:
-        raw = run(_contacts_script())
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        contacts = ns.GetDefaultFolder(10)  # 10 = olFolderContacts
+        
+        out = []
+        for item in contacts.Items:
+            try:
+                name = item.FullName or ""
+                if not name.strip():
+                    continue
+                out.append({
+                    "name": name.strip(),
+                    "company": item.CompanyName or "",
+                    "role": item.JobTitle or "",
+                    "email": item.Email1Address or ""
+                })
+            except Exception:
+                continue
+        return out
     except Exception:
         return []
-    out: list[dict] = []
-    for line in (raw or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 4 or not parts[0].strip():
-            continue
-        out.append({"name": parts[0].strip(), "company": parts[1].strip(),
-                    "role": parts[2].strip(), "email": parts[3].strip()})
-    return out
 
 
 # ---------------------------------------------------------------------------
-# Reminders — sync macOS Reminders.app open to-dos (read-only).
+# Reminders — sync open to-dos
 # ---------------------------------------------------------------------------
 
 def _reminders_script() -> str:
@@ -348,43 +571,82 @@ def _reminders_script() -> str:
 
 
 def read_reminders(config=None, reader: Optional[Callable[[str], str]] = None) -> list[dict]:
-    """Open macOS reminders as {title, ts, list}. ts is 0 when undated.
-    Filtered to `config.reminder_lists` ([] = all). [] off macOS."""
-    if reader is None and platform.system() != "Darwin":
-        return []
-    run = reader or _osascript_out
+    """Open reminders as {title, ts, list}. ts is 0 when undated."""
+    if reader is not None or platform.system() == "Darwin":
+        run = reader or _osascript_out
+        try:
+            raw = run(_reminders_script())
+            selected = {n for n in (getattr(config, "reminder_lists", []) or [])}
+            now = time.time()
+            out: list[dict] = []
+            for line in (raw or "").splitlines():
+                parts = line.split("\t")
+                if len(parts) < 3 or not parts[0].strip():
+                    continue
+                title, secs, lst = parts[0].strip(), parts[1].strip(), parts[2].strip()
+                if selected and lst not in selected:
+                    continue
+                try:
+                    ts = now + float(secs) if secs else 0.0
+                except ValueError:
+                    ts = 0.0
+                out.append({"title": title, "ts": ts, "list": lst})
+            out.sort(key=lambda e: (e["ts"] == 0, e["ts"]))
+            return out
+        except Exception:
+            return []
+    elif platform.system() == "Windows":
+        return _read_outlook_tasks(config)
+    return []
+
+
+def _read_outlook_tasks(config=None) -> list[dict]:
     try:
-        raw = run(_reminders_script())
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        tasks = ns.GetDefaultFolder(13)  # 13 = olFolderTasks
+        items = tasks.Items
+        
+        selected = {n for n in (getattr(config, "reminder_lists", []) or [])}
+        out = []
+        for item in items:
+            try:
+                if item.Complete:
+                    continue
+                title = item.Subject or ""
+                if not title.strip():
+                    continue
+                ts = 0.0
+                if item.DueDate and item.DueDate.year < 4000:
+                    ts = item.DueDate.timestamp()
+                lst = "Outlook Tasks"
+                if selected and lst not in selected:
+                    continue
+                out.append({
+                    "title": title.strip(),
+                    "ts": ts,
+                    "list": lst
+                })
+            except Exception:
+                continue
+        out.sort(key=lambda e: (e["ts"] == 0, e["ts"]))
+        return out
     except Exception:
         return []
-    selected = {n for n in (getattr(config, "reminder_lists", []) or [])}
-    now = time.time()
-    out: list[dict] = []
-    for line in (raw or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3 or not parts[0].strip():
-            continue
-        title, secs, lst = parts[0].strip(), parts[1].strip(), parts[2].strip()
-        if selected and lst not in selected:
-            continue
-        try:
-            ts = now + float(secs) if secs else 0.0
-        except ValueError:
-            ts = 0.0
-        out.append({"title": title, "ts": ts, "list": lst})
-    out.sort(key=lambda e: (e["ts"] == 0, e["ts"]))       # dated first, by time
-    return out
 
 
 def list_reminder_lists(reader: Optional[Callable[[str], str]] = None) -> list[str]:
-    if reader is None and platform.system() != "Darwin":
-        return []
-    run = reader or _osascript_out
-    try:
-        raw = run('tell application "Reminders" to get name of every list')
-    except Exception:
-        return []
-    return [n.strip() for n in (raw or "").split(",") if n.strip()]
+    if reader is not None or platform.system() == "Darwin":
+        run = reader or _osascript_out
+        try:
+            raw = run('tell application "Reminders" to get name of every list')
+            return [n.strip() for n in (raw or "").split(",") if n.strip()]
+        except Exception:
+            return []
+    elif platform.system() == "Windows":
+        return ["Outlook Tasks"]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -421,14 +683,25 @@ def build_send_script(draft: MessageDraft) -> str:
 def send_message(draft: MessageDraft, approved: bool,
                  executor: Optional[Callable[[str], None]] = None,
                  dry_run: bool = False) -> dict:
-    """Dispatch a draft — only when explicitly approved.
-
-    Nothing is sent unless approved is True. `executor(script)` runs the
-    AppleScript (default: osascript on macOS); dry_run/off-macOS returns the
-    script without running it, so you can preview exactly what would happen.
-    """
+    """Dispatch a draft — only when explicitly approved."""
     if not approved:
         raise PermissionError("draft not approved — outbound is never silent")
+    
+    if platform.system() == "Windows" and draft.channel == "email":
+        if dry_run:
+            return {"sent": False, "reason": "preview", "script": "Outlook Mail Send"}
+        try:
+            import win32com.client
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            mail = outlook.CreateItem(0)  # 0 = olMailItem
+            mail.To = draft.to
+            mail.Subject = draft.subject or "DreamLayer Message"
+            mail.Body = draft.text
+            mail.Send()
+            return {"sent": True, "channel": "email", "to": draft.to}
+        except Exception as e:
+            return {"sent": False, "reason": f"Outlook error: {str(e)}"}
+
     script = build_send_script(draft)
     if dry_run or (executor is None and platform.system() != "Darwin"):
         return {"sent": False, "reason": "preview", "script": script}
