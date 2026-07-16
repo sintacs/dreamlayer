@@ -199,7 +199,7 @@ class TestDevicePlotter:
         lupa = pytest.importorskip("lupa")
         rt = lupa.LuaRuntime(unpack_returned_tuples=True)
         root = Path(__file__).resolve().parents[4] / "halo-lua"
-        rt.execute(f'package.path = "{root}/?.lua;" .. package.path')
+        rt.execute(f'package.path = "{root.as_posix()}/?.lua;" .. package.path')
         hz = rt.eval('require("display.horizon")')
         hz = hz[0] if isinstance(hz, tuple) else hz
         hz.reset()

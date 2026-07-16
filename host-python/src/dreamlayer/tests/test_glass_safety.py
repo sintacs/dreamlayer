@@ -43,7 +43,7 @@ _G.halo = {
 class Device:
     def __init__(self):
         rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-        rt.execute(f'package.path = "{HALO_LUA}/?.lua;{HALO_LUA}/app/?.lua;"'
+        rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;{HALO_LUA.as_posix()}/app/?.lua;"'
                    ' .. package.path')
         rt.execute(DEVICE_STUB)
         self.rt = rt

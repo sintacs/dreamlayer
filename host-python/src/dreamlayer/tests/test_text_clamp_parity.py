@@ -166,7 +166,7 @@ def test_lua_matches_python():
         # default utf-8 encoding: boundary-safe clamping guarantees the rendered
         # bytes are valid UTF-8, so lupa hands back a clean Python str.
         rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-        rt.execute('package.path = "%s/?.lua;" .. package.path' % HALO_LUA)
+        rt.execute('package.path = "%s/?.lua;" .. package.path' % HALO_LUA.as_posix())
         env = rt.execute(_LUA_RUNNER)
         env["deliver"](env["decode"](json.dumps(transport.put_envelope(fig))))
         env["deliver"](env["decode"](json.dumps(transport.swap_envelope(fig.id))))

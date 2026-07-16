@@ -903,7 +903,7 @@ class Orchestrator(
         from ..reality_compiler.v2 import native, transport
         a = args or {}
         if intent == "clock" and a.get("mode") == "time":
-            return {"intent": "clock", "ok": True, "say": _t.strftime("It's %-I:%M %p.")}
+            return {"intent": "clock", "ok": True, "say": "It's " + _t.strftime("%I:%M %p.").lstrip("0")}
         if not self.privacy.allow_capture():
             return {"intent": intent, "ok": False, "say": "Not while you're incognito."}
         fig = None
@@ -932,7 +932,7 @@ class Orchestrator(
         self.bridge.send_raw(transport.put_envelope(fig))
         self.bridge.send_raw(transport.swap_envelope(fig.id))
         if intent == "clock":
-            self.bridge.send_raw(transport.text_envelope(fig.id, _t.strftime("%-I:%M %p")))
+            self.bridge.send_raw(transport.text_envelope(fig.id, _t.strftime("%I:%M %p").lstrip("0")))
         self._active_figment = fig.id
         return {"intent": intent, "ok": True, "say": say, "figment_id": fig.id}
 

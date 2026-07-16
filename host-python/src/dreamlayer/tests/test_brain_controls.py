@@ -617,7 +617,9 @@ class TestControls:
         BrainConfig(token="t").save(cfg)
         brain = Brain(cfg)
         now = time.time()
-        day_start = now - (now % 86400)
+        lt = time.localtime(now)
+        import datetime
+        day_start = datetime.datetime(lt.tm_year, lt.tm_mon, lt.tm_mday).timestamp()
         brain.activity.add("folder", "Added folder /docs", ts=day_start + 9 * 3600 + 5)
         brain.activity.add("ask", "asked about the lease", ts=day_start + 9 * 3600 + 200)
         brain.activity.add("cloud-egress", "cloud call", ts=day_start + 14 * 3600)

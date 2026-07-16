@@ -21,7 +21,7 @@ RED, GREEN, BLUE, YELLOW = 0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00
 
 def _make_runtime(with_frame=True):
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     if with_frame:
         rt.execute("""
         _pal = {}
@@ -206,7 +206,7 @@ def test_headless_tick_is_a_noop():
 
 def _dream_runtime():
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("""
     _pal = {}
     frame = { display = {

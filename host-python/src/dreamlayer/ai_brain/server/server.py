@@ -653,7 +653,18 @@ class Brain(RCOps, CalendarOps, SocialOps, ReminderOps, WaypathOps):
             p = self.cfg_dir / name
             tmp = p.with_suffix(p.suffix + ".tmp")
             tmp.write_text(json.dumps(obj))
-            os.replace(tmp, p)
+            import sys
+            if sys.platform == "win32":
+                for _ in range(10):
+                    try:
+                        os.replace(tmp, p)
+                        break
+                    except PermissionError:
+                        time.sleep(0.01)
+                else:
+                    os.replace(tmp, p)
+            else:
+                os.replace(tmp, p)
 
     def saga_record(self, event: str, count: int | None = None) -> list:
         """Advance the Saga profile for an ecosystem event and unlock any badges
@@ -772,7 +783,7 @@ class Brain(RCOps, CalendarOps, SocialOps, ReminderOps, WaypathOps):
             # calendar days, not 24h buckets — so tomorrow's reminder reads
             # "Tomorrow", not "Yesterday", and a same-day dawn stash stays today
             days = (date.fromtimestamp(ts) - today).days
-            clock = _t.strftime("%-I:%M %p", _t.localtime(ts))
+            clock = _t.strftime("%I:%M %p", _t.localtime(ts)).lstrip("0")
             if days == 0:
                 return clock
             if days == -1:
@@ -781,7 +792,8 @@ class Brain(RCOps, CalendarOps, SocialOps, ReminderOps, WaypathOps):
                 return "Tomorrow, " + clock
             if -7 < days < 7:
                 return _t.strftime("%a, ", _t.localtime(ts)) + clock
-            return _t.strftime("%b %-d, ", _t.localtime(ts)) + clock
+            lt = _t.localtime(ts)
+            return _t.strftime(f"%b {lt.tm_mday}, ", lt) + clock
 
         rows = []
         # places you saved (Waypath) — real timestamps

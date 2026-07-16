@@ -18,7 +18,7 @@ HALO_LUA = Path(__file__).resolve().parents[4] / "halo-lua"
 @pytest.fixture
 def lua():
     rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{HALO_LUA}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;" .. package.path')
     return rt
 
 
@@ -117,7 +117,7 @@ class TestReferenceThemes:
 class TestBoot:
     def test_main_applies_a_boot_theme(self, lua):
         # a host that sets _G.DREAMLAYER_THEME before boot gets it applied
-        lua.execute(f'package.path = "{HALO_LUA}/?.lua;{HALO_LUA}/app/?.lua;" .. package.path')
+        lua.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;{HALO_LUA.as_posix()}/app/?.lua;" .. package.path')
         lua.execute('''
           _G.__rx_queue, _G.__tx = {}, {}
           _G.halo = {

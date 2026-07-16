@@ -33,6 +33,8 @@ class TestSigner:
         sig = SessionSigner(tmp_path).sign(fig)
         assert SessionSigner(tmp_path).verify(fig, sig)
 
+    import sys
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod / octal permissions are not supported on Windows")
     def test_key_file_is_private(self, tmp_path, fig):
         SessionSigner(tmp_path).sign(fig)
         assert (tmp_path / "session.key").stat().st_mode & 0o077 == 0

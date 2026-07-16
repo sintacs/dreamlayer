@@ -33,7 +33,7 @@ HALO_LUA = Path(__file__).resolve().parents[4] / "halo-lua"
 
 def make_protocol():
     rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{HALO_LUA}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;" .. package.path')
     proto = rt.eval('require("ble.protocol")')
     if isinstance(proto, tuple):        # require returns (module, path)
         proto = proto[0]

@@ -22,7 +22,7 @@ def _rt():
     if not LUPA_AVAILABLE:
         pytest.skip("lupa not installed")
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("""
     _n = { line = 0, circle = 0 }
     frame = { display = {
@@ -92,7 +92,7 @@ def test_headless_materials_are_noops():
     if not LUPA_AVAILABLE:
         pytest.skip("lupa not installed")
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("frame = nil")
     rt.execute('MAT = require("display.materials")')
     assert int(rt.eval("MAT.glass_disc(128, 112, 62)")) == 0

@@ -19,7 +19,7 @@ def _rt():
     if not LUPA_AVAILABLE:
         pytest.skip("lupa not installed")
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;{LUA_ROOT}/app/?.lua;"'
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;{LUA_ROOT.as_posix()}/app/?.lua;"'
                ' .. package.path')
     rt.execute("""
     _lines, _circles = {}, {}

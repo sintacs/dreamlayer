@@ -20,7 +20,7 @@ LUA_ROOT = pathlib.Path(__file__).parents[4] / "halo-lua"
 def _make_runtime():
     rt = LuaRuntime(unpack_returned_tuples=True)
     # Inject package.path so require() resolves halo-lua modules
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     # Stub out the frame global so HAS_FRAME = false (no draw calls)
     rt.execute("frame = nil")
     # Stub compat adapter (no-op)

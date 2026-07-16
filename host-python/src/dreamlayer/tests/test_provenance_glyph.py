@@ -65,7 +65,7 @@ def _fig(origin=None):
 @pytest.fixture
 def rig():
     rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{HALO_LUA}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;" .. package.path')
     return rt, rt.execute(HARNESS)
 
 

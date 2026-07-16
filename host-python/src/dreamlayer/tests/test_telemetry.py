@@ -18,7 +18,7 @@ LUA_ROOT = pathlib.Path(__file__).parents[4] / "halo-lua"
 
 def _make_runtime():
     rt = LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("frame = nil")
     rt.execute("package.loaded['compat.frame_adapter'] = {}")
     return rt

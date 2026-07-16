@@ -32,6 +32,7 @@ def wasm_built():
     if not HARNESS.exists():
         pytest.skip("reality-core wasm parity harness not present")
     _require("cargo")
+    _require("rustup")
     _require("node")
     # ensure the wasm target is installed; skip (don't fail) if we can't add it
     have = subprocess.run(["rustup", "target", "list", "--installed"],

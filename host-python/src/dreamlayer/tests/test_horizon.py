@@ -25,7 +25,7 @@ STATUS_PAUSED     = 0x8FA8B2
 
 def _make_runtime():
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("""
     _calls = {}
     frame = { display = {

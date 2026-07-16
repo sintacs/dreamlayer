@@ -39,7 +39,7 @@ _G.halo = {
 class _Dev:
     def __init__(self, config_line: str):
         rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-        rt.execute(f'package.path = "{HALO_LUA}/?.lua;{HALO_LUA}/app/?.lua;"'
+        rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;{HALO_LUA.as_posix()}/app/?.lua;"'
                    ' .. package.path')
         rt.execute(_STUB % config_line)
         self.rt = rt

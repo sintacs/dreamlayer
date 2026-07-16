@@ -41,7 +41,10 @@ def _load_core():
         pytest.skip("reality-core crate not present")
     so = _find_dylib()
     if so is None:
-        if subprocess.run(["cargo", "--version"], capture_output=True).returncode:
+        try:
+            if subprocess.run(["cargo", "--version"], capture_output=True).returncode:
+                pytest.skip("cargo not available to build the Rust core")
+        except FileNotFoundError:
             pytest.skip("cargo not available to build the Rust core")
         r = subprocess.run(["cargo", "build", "--release"], cwd=CRATE,
                             capture_output=True, text=True)

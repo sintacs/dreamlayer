@@ -57,7 +57,7 @@ def test_message_type_lockstep():
     if not LUPA_AVAILABLE:
         pytest.skip("lupa not installed")
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute('_mt = require("ble.message_types")')
     assert rt.eval("_mt.PRISM") == MSG_PRISM
 
@@ -68,7 +68,7 @@ def test_message_type_lockstep():
 
 def _prism_rt():
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("""
     _calls = {}
     _pal = {}

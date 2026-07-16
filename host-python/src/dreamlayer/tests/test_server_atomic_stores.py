@@ -80,6 +80,9 @@ def test_add_event_concurrent_no_lost_writes(tmp_path):
     assert len(disk) == n_threads * per
 
 
+import sys
+import pytest
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows does not allow replacing open files")
 def test_concurrent_reader_never_sees_torn_write(tmp_path):
     """os.replace atomicity: while writers hammer people.json, a reader must
     only ever observe a complete previous-or-next version — never a truncated,

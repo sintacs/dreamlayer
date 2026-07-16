@@ -361,7 +361,7 @@ class RCOps(BrainHost):
             if a.get("mode") == "time":
                 now = time.localtime()
                 return {"ok": True, "intent": "clock",
-                        "say": time.strftime("It's %-I:%M %p.", now)}
+                        "say": "It's " + time.strftime("%I:%M %p.", now).lstrip("0")}
             fig = native.clock_figment()
             say = "Clock's up. Hold to dismiss it."
         else:
@@ -374,7 +374,7 @@ class RCOps(BrainHost):
         if intent == "clock" and record.success:
             # seed the slot so the clock isn't blank; the stage refreshes it
             # each minute (device tick / host push) once it's on real glasses
-            self.rc.deployer.push_text(fig.id, time.strftime("%-I:%M %p"))
+            self.rc.deployer.push_text(fig.id, time.strftime("%I:%M %p").lstrip("0"))
         try:
             self.rc.vault.revoke(fig.id)   # ephemeral: keep the Repertoire clean
         except Exception as exc:

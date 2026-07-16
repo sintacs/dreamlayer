@@ -46,6 +46,8 @@ class TestKeyLifecycle:
         key = bytes.fromhex((tmp_path / KEY_FILE).read_text().strip())
         assert len(key) == KEY_BYTES == 32         # 256-bit key, not fewer
 
+    import sys
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod / octal permissions are not supported on Windows")
     def test_key_file_is_owner_only(self, tmp_path):
         SessionSigner(tmp_path)
         mode = stat.S_IMODE(os.stat(tmp_path / KEY_FILE).st_mode)

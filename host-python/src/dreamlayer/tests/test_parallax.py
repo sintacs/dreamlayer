@@ -21,7 +21,7 @@ def _rt(imu=True):
     if not LUPA_AVAILABLE:
         pytest.skip("lupa not installed")
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     if imu:
         rt.execute("""
         __imu = nil

@@ -208,7 +208,7 @@ def test_composed_frame_decodes_on_device():
     wire = json.dumps(c.compose(), separators=(",", ":"))
 
     rt = lua53.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{LUA_ROOT}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{LUA_ROOT.as_posix()}/?.lua;" .. package.path')
     rt.execute("frame = nil")   # codec test: no drawing needed
     rt.execute('_hz = require("display.horizon"); _hz.reset()')
     rt.execute('_json = require("lib.json")')

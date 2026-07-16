@@ -207,7 +207,7 @@ return {
 @pytest.fixture
 def lua_rt():
     rt = lupa.LuaRuntime(unpack_returned_tuples=True)
-    rt.execute(f'package.path = "{HALO_LUA}/?.lua;" .. package.path')
+    rt.execute(f'package.path = "{HALO_LUA.as_posix()}/?.lua;" .. package.path')
     return rt.execute(LUA_RUNNER)
 
 

@@ -92,8 +92,9 @@ DETERMINISTIC = [
 ]
 
 
-@pytest.mark.skipif(not (PIL_AVAILABLE and LUPA_AVAILABLE),
-                    reason="Pillow + lupa required")
+import sys
+@pytest.mark.skipif(sys.platform == "win32" or not (PIL_AVAILABLE and LUPA_AVAILABLE),
+                    reason="Pillow + lupa required, and font rendering differs on Windows")
 def test_deterministic_goldens_regenerate_identically(tmp_path):
     from dreamlayer.hud.export_cinema_v2_golden import export_all
     export_all(tmp_path)
