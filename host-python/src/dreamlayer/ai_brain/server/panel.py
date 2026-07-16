@@ -12,7 +12,25 @@ from __future__ import annotations
 
 
 def render_panel(token: str = "") -> str:
-    return _PAGE.replace("__TOKEN__", token or "")
+    import platform
+    page = _PAGE.replace("__TOKEN__", token or "")
+    if platform.system() == "Windows":
+        # Adapt UI labels for Windows/Outlook
+        page = page.replace("Sync macOS Calendar", "Sync Outlook Calendar")
+        page = page.replace("Calendar.app", "Outlook")
+        page = page.replace("Sync macOS Contacts", "Sync Outlook Contacts")
+        page = page.replace("Sync macOS Reminders", "Sync Outlook Tasks")
+        page = page.replace("macOS Reminders.app", "Outlook Tasks")
+        page = page.replace("this Mac mini", "this PC")
+        page = page.replace("your Mac mini", "your PC")
+        page = page.replace("on this Mac mini", "on this PC")
+        page = page.replace("this Mac", "this PC")
+        page = page.replace("this Mac.", "this PC.")
+        page = page.replace("stays on this Mac", "stays on this PC")
+        page = page.replace("This Mac is the bridge to your Messages & Mail", "This PC is the bridge to your Outlook Mail")
+        page = page.replace("Read email & iMessage", "Read Outlook Mail")
+        page = page.replace("Let the Brain read Mail and Messages", "Let the Brain read Outlook Mail")
+    return page
 
 
 _PAGE = r"""<!doctype html><html lang="en"><head>
