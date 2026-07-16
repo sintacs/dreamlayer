@@ -74,8 +74,10 @@ xs 4 · sm 8 · md 12 · lg 16 · xl 20 · xxl 24 · xxxl 32 · huge 48
 Source of truth: [`src/ui/theme/typography.ts`](src/ui/theme/typography.ts).
 
 Two faces, paired exactly as the landing page and Mac panel pair them: **Chicago
-(`ChicagoFLF`)** is the Mac OS 8.1 system voice — titles, chrome, tab labels;
-**Space Grotesk** is the reading face — body, captions, the tracked eyebrow.
+(`ChicagoFLF`)** is the Mac OS 8.1 system voice — titles, window/menu chrome;
+**Space Grotesk** is the reading face — body, captions, the tracked eyebrow, and
+the small tab-strip labels (the way the Mac used Geneva for small labels and
+Chicago for titles).
 
 | Style | Face · size | Use |
 |---|---|---|

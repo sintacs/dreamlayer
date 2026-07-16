@@ -93,8 +93,12 @@ export default function Layout() {
           paddingTop: 10,
           paddingBottom: Platform.OS === "ios" ? 30 : 16,
         },
-        tabBarLabelStyle: { fontFamily: fonts.chicago, fontSize: 10, letterSpacing: 0.2 },
-        tabBarItemStyle: { paddingVertical: 2 },
+        // Chicago is too wide for a 7-up label row (and truncates the longer
+        // localized strings) — the control strip uses the narrower reading face,
+        // the way the Mac used Geneva for small labels and Chicago for titles.
+        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 9, letterSpacing: 0 },
+        tabBarItemStyle: { paddingTop: 3, paddingBottom: 2, paddingHorizontal: 0 },
+        tabBarAllowFontScaling: false,
         sceneStyle: { backgroundColor: platinum.desk },
       }}
     >
